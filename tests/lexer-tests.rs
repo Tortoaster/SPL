@@ -2,8 +2,7 @@
 mod tests {
     use std::fs;
 
-    use SPL::lexer::{BasicType, Op, Stmt, Token, Tokenize};
-    use SPL::lexer;
+    use spl::lexer::{BasicType, Op, Stmt, Token, Tokenize};
 
     #[test]
     fn lex_fac() {
