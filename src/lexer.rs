@@ -71,7 +71,8 @@ pub enum Token {
     Field(Field),
     Not, // !
     Operation(Op),
-    Num(i32),
+    Number(i32),
+    Character(char),
     Id(String),
 }
 
@@ -164,7 +165,7 @@ impl Iterator for Scanner<'_> {
                     Token::To
                 } else if let Some(c) = self.chars.peek() {
                     if c.is_ascii_digit() {
-                        Token::Num(-self.read_num(None))
+                        Token::Number(-self.read_num(None))
                     } else {
                         Token::Operation(Op::Minus)
                     }
@@ -286,6 +287,18 @@ impl Iterator for Scanner<'_> {
                 } else {
                     Token::Id(self.read_id(current))
                 }
+                '\'' => {
+                    if let Some(c) = self.chars.next() {
+                        if let Some('\'') = self.chars.peek() {
+                            self.chars.next();
+                            Token::Character(c)
+                        } else {
+                            self.abort()
+                        }
+                    } else {
+                        self.abort()
+                    }
+                }
                 ';' => Token::Terminal,
                 '(' => Token::OpenParen,
                 ')' => Token::CloseParen,
@@ -297,7 +310,7 @@ impl Iterator for Scanner<'_> {
                     Token::Id(self.read_id(current))
                 }
                 ',' => Token::Separator,
-                '0'..='9' => Token::Num(self.read_num(Some(current))),
+                '0'..='9' => Token::Number(self.read_num(Some(current))),
                 'a'..='z' | 'A'..='Z' => Token::Id(self.read_id(current)),
                 ' ' | '\r' | '\n' | '\t' => return self.next(),
                 _ => panic!("Invalid character '{:?}' at {}:{}", current, 0, 0)
