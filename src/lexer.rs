@@ -173,7 +173,27 @@ impl Iterator for Scanner<'_> {
                     self.abort()
                 }
                 '*' => Token::Operation(Op::Times),
-                '/' => Token::Operation(Op::Divide),
+                '/' => if self.followed_by('/') {
+                    while let Some(c) = self.chars.next() {
+                        if c == '\n' {
+                            break;
+                        }
+                    }
+                    return self.next();
+                } else if self.followed_by('*') {
+                    loop {
+                        while let Some(c) = self.chars.next() {
+                            if c == '*' {
+                                break;
+                            }
+                        }
+                        if self.followed_by('/') {
+                            return self.next();
+                        }
+                    }
+                } else {
+                    Token::Operation(Op::Divide)
+                },
                 '%' => Token::Operation(Op::Modulo),
                 '=' => if self.followed_by('=') {
                     Token::Operation(Op::Equals)
