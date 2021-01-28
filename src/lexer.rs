@@ -1,28 +1,29 @@
 use std::str::Chars;
 use std::iter::Peekable;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum BasicType {
     Int, // Int
     Bool, // Bool
     Char, // Char
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Stmt {
     If, // if
+    Else, // else
     While, // while
     Return, // return
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Expr {
     False, // False,
     True, // True,
     Nil, // []
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Field {
     Dot, // .
     Head, // hd
@@ -31,8 +32,8 @@ pub enum Field {
     Second, // snd
 }
 
-#[derive(Debug)]
-pub enum Op2 {
+#[derive(Debug, Eq, PartialEq)]
+pub enum Op {
     Plus, // +
     Minus, // -
     Times, // *
@@ -49,7 +50,7 @@ pub enum Op2 {
     Cons, // :
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Token {
     Var, // var
     Assign, // =
@@ -60,7 +61,7 @@ pub enum Token {
     OpenBrac, // {
     CloseBrac, // }
     Void, // Void
-    Returns, // ->
+    To, // ->
     Separator, // ,
     OpenArr, // [
     CloseArr, // ]
@@ -69,7 +70,7 @@ pub enum Token {
     Expression(Expr),
     Field(Field),
     Not, // !
-    Op2(Op2),
+    Operation(Op),
     Num(i32),
     Id(String),
 }
@@ -78,7 +79,7 @@ pub trait Tokenize {
     fn tokenize(&self) -> Scanner<'_>;
 }
 
-impl Tokenize for &str {
+impl Tokenize for String {
     fn tokenize(&self) -> Scanner<'_> {
         Scanner {
             chars: self.chars().peekable()
@@ -103,6 +104,20 @@ impl Scanner<'_> {
         }
     }
 
+    fn followed_by_str(&mut self, s: &str) -> bool {
+        s.chars().all(|c|
+            match self.chars.peek() {
+                None => false,
+                Some(d) => if c == *d {
+                    self.chars.next();
+                    true
+                } else {
+                    false
+                }
+            }
+        )
+    }
+
     fn read_num(&mut self, start: Option<char>) -> i32 {
         let mut digits: Vec<char> = start.into_iter().collect();
 
@@ -115,6 +130,20 @@ impl Scanner<'_> {
         }
 
         digits.into_iter().collect::<String>().parse::<i32>().unwrap()
+    }
+
+    fn read_id(&mut self, start: char) -> String {
+        let mut alpha_numericals = vec![start];
+
+        while let Some(c) = self.chars.peek() {
+            if c.is_alphanumeric() {
+                alpha_numericals.push(self.chars.next().unwrap())
+            } else {
+                break;
+            }
+        }
+
+        alpha_numericals.into_iter().collect()
     }
 
     fn abort(&mut self) -> Token {
@@ -130,79 +159,148 @@ impl Iterator for Scanner<'_> {
 
         Some(
             match current {
-                '+' => Token::Op2(Op2::Plus),
-                '-' => {
-                    if let Some(c) = self.chars.peek() {
-                        if c.is_ascii_digit() {
-                            Token::Num(-self.read_num(None))
-                        } else {
-                            Token::Op2(Op2::Minus)
-                        }
+                '+' => Token::Operation(Op::Plus),
+                '-' => if self.followed_by('>') {
+                    Token::To
+                } else if let Some(c) = self.chars.peek() {
+                    if c.is_ascii_digit() {
+                        Token::Num(-self.read_num(None))
                     } else {
-                        self.abort()
+                        Token::Operation(Op::Minus)
                     }
-                },
-                '*' => Token::Op2(Op2::Times),
-                '/' => Token::Op2(Op2::Divide),
-                '%' => Token::Op2(Op2::Modulo),
-                '=' => {
-                    if self.followed_by('=') {
-                        Token::Op2(Op2::Equals)
-                    } else {
-                        Token::Assign
-                    }
+                } else {
+                    self.abort()
                 }
-                '<' => {
-                    if self.followed_by('=') {
-                        Token::Op2(Op2::SmallerEqual)
-                    } else {
-                        Token::Op2(Op2::Smaller)
-                    }
+                '*' => Token::Operation(Op::Times),
+                '/' => Token::Operation(Op::Divide),
+                '%' => Token::Operation(Op::Modulo),
+                '=' => if self.followed_by('=') {
+                    Token::Operation(Op::Equals)
+                } else {
+                    Token::Assign
                 }
-                '>' => {
-                    if self.followed_by('=') {
-                        Token::Op2(Op2::SmallerEqual)
-                    } else {
-                        Token::Op2(Op2::Smaller)
-                    }
+                '<' => if self.followed_by('=') {
+                    Token::Operation(Op::SmallerEqual)
+                } else {
+                    Token::Operation(Op::Smaller)
                 }
-                '!' => {
-                    if self.followed_by('=') {
-                        Token::Op2(Op2::NotEqual)
-                    } else {
-                        Token::Not
-                    }
+                '>' => if self.followed_by('=') {
+                    Token::Operation(Op::GreaterEqual)
+                } else {
+                    Token::Operation(Op::Greater)
                 }
-                '&' => {
-                    if self.followed_by('&') {
-                        Token::Op2(Op2::And)
-                    } else {
-                        self.abort()
-                    }
+                '!' => if self.followed_by('=') {
+                    Token::Operation(Op::NotEqual)
+                } else {
+                    Token::Not
                 }
-                '|' => {
-                    if self.followed_by('|') {
-                        Token::Op2(Op2::Or)
-                    } else {
-                        self.abort()
-                    }
+                '&' => if self.followed_by('&') {
+                    Token::Operation(Op::And)
+                } else {
+                    self.abort()
                 }
-                ':' => Token::Op2(Op2::Cons),
-                '[' => {
-                    if self.followed_by(']') {
-                        Token::Expression(Expr::Nil)
-                    } else {
-                        Token::OpenArr
-                    }
+                '|' => if self.followed_by('|') {
+                    Token::Operation(Op::Or)
+                } else {
+                    self.abort()
+                }
+                ':' => if self.followed_by(':') {
+                    Token::HasType
+                } else {
+                    Token::Operation(Op::Cons)
+                }
+                '[' => if self.followed_by(']') {
+                    Token::Expression(Expr::Nil)
+                } else {
+                    Token::OpenArr
                 }
                 ']' => Token::CloseArr,
-                '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => {
-                    Token::Num(self.read_num(Some(current)))
+                '.' => Token::Field(Field::Dot),
+                'h' => if self.followed_by('d') {
+                    Token::Field(Field::Head)
+                } else {
+                    Token::Id(self.read_id(current))
                 }
-                ' ' | '\n' | '\t' => {
-                    return self.next();
+                't' => if self.followed_by('l') {
+                    Token::Field(Field::Tail)
+                } else {
+                    Token::Id(self.read_id(current))
                 }
-                _ => self.abort()
+                'f' => if self.followed_by_str("st") {
+                    Token::Field(Field::First)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                's' => if self.followed_by_str("nd") {
+                    Token::Field(Field::Second)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'F' => if self.followed_by_str("alse") {
+                    Token::Expression(Expr::False)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'T' => if self.followed_by_str("rue") {
+                    Token::Expression(Expr::True)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'i' => if self.followed_by('f') {
+                    Token::Statement(Stmt::If)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'e' => if self.followed_by_str("lse") {
+                    Token::Statement(Stmt::Else)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'w' => if self.followed_by_str("hile") {
+                    Token::Statement(Stmt::While)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'r' => if self.followed_by_str("eturn") {
+                    Token::Statement(Stmt::Return)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'I' => if self.followed_by_str("nt") {
+                    Token::Basic(BasicType::Int)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'B' => if self.followed_by_str("ool") {
+                    Token::Basic(BasicType::Bool)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'C' => if self.followed_by_str("har") {
+                    Token::Basic(BasicType::Char)
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                'v' => if self.followed_by_str("ar") {
+                    Token::Var
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                ';' => Token::Terminal,
+                '(' => Token::OpenParen,
+                ')' => Token::CloseParen,
+                '{' => Token::OpenBrac,
+                '}' => Token::CloseBrac,
+                'V' => if self.followed_by_str("oid") {
+                    Token::Void
+                } else {
+                    Token::Id(self.read_id(current))
+                }
+                ',' => Token::Separator,
+                '0'..='9' => Token::Num(self.read_num(Some(current))),
+                'a'..='z' | 'A'..='Z' => Token::Id(self.read_id(current)),
+                ' ' | '\r' | '\n' | '\t' => return self.next(),
+                _ => panic!("Invalid character '{:?}' at {}:{}", current, 0, 0)
             }
         )
     }
