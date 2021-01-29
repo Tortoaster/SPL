@@ -134,17 +134,17 @@ impl Scanner<'_> {
     }
 
     fn read_id(&mut self, start: char) -> String {
-        let mut alpha_numericals = vec![start];
+        let mut chars = vec![start];
 
         while let Some(c) = self.chars.peek() {
-            if c.is_alphanumeric() {
-                alpha_numericals.push(self.chars.next().unwrap())
+            if c.is_alphanumeric() || *c == '_' {
+                chars.push(self.chars.next().unwrap())
             } else {
                 break;
             }
         }
 
-        alpha_numericals.into_iter().collect()
+        chars.into_iter().collect()
     }
 
     fn abort(&mut self) -> Token {
