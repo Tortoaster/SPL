@@ -1,13 +1,12 @@
 #[cfg(test)]
 mod tests {
     use std::fs;
-
-    use spl::lexer::{BasicType, Op, Stmt, Token, Tokenize};
+    use spl::lexer::{Lexer, Token, BasicType, Stmt, Op};
 
     #[test]
     fn lex_fac() {
         let code = fs::read_to_string("tests/fac.spl").expect("File inaccessible");
-        let tokens: Vec<Token> = code.tokenize().collect();
+        let tokens: Vec<Token> = Lexer::new(&code[..]).collect();
         let expected = vec![
             Token::Id("fac".into()),
             Token::OpenParen,
