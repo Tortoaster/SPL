@@ -107,21 +107,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn followed_by_str(&mut self, s: &str) -> bool {
-        s.chars().all(|c|
-            match self.chars.peek() {
-                None => false,
-                Some(d) => if c == *d {
-                    self.chars.next();
-                    true
-                } else {
-                    false
-                }
-            }
-        )
-    }
-
-    fn read_num(&mut self, start: Option<char>) -> i32 {
+    fn read_number(&mut self, start: Option<char>) -> i32 {
         let mut digits: Vec<char> = start.into_iter().collect();
 
         while let Some(c) = self.chars.peek() {
@@ -135,7 +121,7 @@ impl<'a> Lexer<'a> {
         digits.into_iter().collect::<String>().parse::<i32>().unwrap()
     }
 
-    fn read_id(&mut self, start: char) -> String {
+    fn read_word(&mut self, start: char) -> String {
         let mut chars = vec![start];
 
         while let Some(c) = self.chars.peek() {
@@ -162,81 +148,6 @@ impl Iterator for Lexer<'_> {
 
         Some(
             match current {
-                'h' => if self.followed_by('d') {
-                    Token::Field(Field::Head)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'B' => if self.followed_by_str("ool") {
-                    Token::Basic(BasicType::Bool)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'C' => if self.followed_by_str("har") {
-                    Token::Basic(BasicType::Char)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'e' => if self.followed_by_str("lse") {
-                    Token::Statement(Stmt::Else)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'f' => if self.followed_by_str("st") {
-                    Token::Field(Field::First)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'F' => if self.followed_by_str("alse") {
-                    Token::Expression(Expr::False)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'i' => if self.followed_by('f') {
-                    Token::Statement(Stmt::If)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'I' => if self.followed_by_str("nt") {
-                    Token::Basic(BasicType::Int)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'r' => if self.followed_by_str("eturn") {
-                    Token::Statement(Stmt::Return)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                's' => if self.followed_by_str("nd") {
-                    Token::Field(Field::Second)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                't' => if self.followed_by('l') {
-                    Token::Field(Field::Tail)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'T' => if self.followed_by_str("rue") {
-                    Token::Expression(Expr::True)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'v' => if self.followed_by_str("ar") {
-                    Token::Var
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'V' => if self.followed_by_str("oid") {
-                    Token::Void
-                } else {
-                    Token::Id(self.read_id(current))
-                }
-                'w' => if self.followed_by_str("hile") {
-                    Token::Statement(Stmt::While)
-                } else {
-                    Token::Id(self.read_id(current))
-                }
                 '=' => if self.followed_by('=') {
                     Token::Op2(InfixOp::Equals)
                 } else {
@@ -292,7 +203,7 @@ impl Iterator for Lexer<'_> {
                     Token::To
                 } else if let Some(c) = self.chars.peek() {
                     if c.is_ascii_digit() {
-                        Token::Number(-self.read_num(None))
+                        Token::Number(-self.read_number(None))
                     } else {
                         Token::Op2(InfixOp::Minus)
                     }
@@ -332,8 +243,27 @@ impl Iterator for Lexer<'_> {
                         self.abort()
                     }
                 }
-                '0'..='9' => Token::Number(self.read_num(Some(current))),
-                'a'..='z' | 'A'..='Z' => Token::Id(self.read_id(current)),
+                'a'..='z' | 'A'..='Z' => {
+                    match self.read_word(current).as_str() {
+                        "Int" => Token::Basic(BasicType::Int),
+                        "Bool" => Token::Basic(BasicType::Bool),
+                        "Char" => Token::Basic(BasicType::Char),
+                        "Void" => Token::Void,
+                        "hd" => Token::Field(Field::Head),
+                        "tl" => Token::Field(Field::Tail),
+                        "fst" => Token::Field(Field::First),
+                        "snd" => Token::Field(Field::Second),
+                        "if" => Token::Statement(Stmt::If),
+                        "else" => Token::Statement(Stmt::Else),
+                        "while" => Token::Statement(Stmt::While),
+                        "return" => Token::Statement(Stmt::Return),
+                        "True" => Token::Expression(Expr::True),
+                        "False" => Token::Expression(Expr::False),
+                        "var" => Token::Var,
+                        id => Token::Id(String::from(id))
+                    }
+                },
+                '0'..='9' => Token::Number(self.read_number(Some(current))),
                 ' ' | '\r' | '\n' | '\t' => return self.next(),
                 _ => panic!("Invalid character '{:?}' at {}:{}:\n{}", current, 0, 0, self.code)
             }
