@@ -1,6 +1,5 @@
 use std::env;
 use std::fs;
-use crate::lexer::Lexer;
 
 mod lexer;
 mod parser;
@@ -14,8 +13,7 @@ fn main() -> Result<(), String> {
 
     let code = fs::read_to_string(&args[1]).expect("File inaccessible");
 
-    let tokens = Lexer::new(&code[..]);
-    let ast = tokens.parse()?;
+    let ast = parser::parse(&code[..])?;
 
     println!("{}", ast);
 

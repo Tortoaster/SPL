@@ -32,7 +32,7 @@ pub enum Field {
     Second, // snd
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Op {
     Plus, // +
     Minus, // -
