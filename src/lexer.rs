@@ -33,7 +33,12 @@ pub enum Field {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Op {
+pub enum PrefixOp {
+    Not, // !
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InfixOp {
     Plus, // +
     Minus, // -
     Times, // *
@@ -69,8 +74,8 @@ pub enum Token {
     Statement(Stmt),
     Expression(Expr),
     Field(Field),
-    Not, // !
-    Operation(Op),
+    Op1(PrefixOp),
+    Op2(InfixOp),
     Number(i32),
     Character(char),
     Id(String),
@@ -233,48 +238,48 @@ impl Iterator for Lexer<'_> {
                     Token::Id(self.read_id(current))
                 }
                 '=' => if self.followed_by('=') {
-                    Token::Operation(Op::Equals)
+                    Token::Op2(InfixOp::Equals)
                 } else {
                     Token::Assign
                 }
                 '<' => if self.followed_by('=') {
-                    Token::Operation(Op::SmallerEqual)
+                    Token::Op2(InfixOp::SmallerEqual)
                 } else {
-                    Token::Operation(Op::Smaller)
+                    Token::Op2(InfixOp::Smaller)
                 }
                 '>' => if self.followed_by('=') {
-                    Token::Operation(Op::GreaterEqual)
+                    Token::Op2(InfixOp::GreaterEqual)
                 } else {
-                    Token::Operation(Op::Greater)
+                    Token::Op2(InfixOp::Greater)
                 }
                 '!' => if self.followed_by('=') {
-                    Token::Operation(Op::NotEqual)
+                    Token::Op2(InfixOp::NotEqual)
                 } else {
-                    Token::Not
+                    Token::Op1(PrefixOp::Not)
                 }
                 '&' => if self.followed_by('&') {
-                    Token::Operation(Op::And)
+                    Token::Op2(InfixOp::And)
                 } else {
                     self.abort()
                 }
                 '|' => if self.followed_by('|') {
-                    Token::Operation(Op::Or)
+                    Token::Op2(InfixOp::Or)
                 } else {
                     self.abort()
                 }
                 ':' => if self.followed_by(':') {
                     Token::HasType
                 } else {
-                    Token::Operation(Op::Cons)
+                    Token::Op2(InfixOp::Cons)
                 }
                 '[' => if self.followed_by(']') {
                     Token::Expression(Expr::Nil)
                 } else {
                     Token::OpenArr
                 }
-                '+' => Token::Operation(Op::Plus),
-                '*' => Token::Operation(Op::Times),
-                '%' => Token::Operation(Op::Modulo),
+                '+' => Token::Op2(InfixOp::Plus),
+                '*' => Token::Op2(InfixOp::Times),
+                '%' => Token::Op2(InfixOp::Modulo),
                 ']' => Token::CloseArr,
                 '.' => Token::Field(Field::Dot),
                 ';' => Token::Terminal,
@@ -289,7 +294,7 @@ impl Iterator for Lexer<'_> {
                     if c.is_ascii_digit() {
                         Token::Number(-self.read_num(None))
                     } else {
-                        Token::Operation(Op::Minus)
+                        Token::Op2(InfixOp::Minus)
                     }
                 } else {
                     self.abort()
@@ -313,7 +318,7 @@ impl Iterator for Lexer<'_> {
                         }
                     }
                 } else {
-                    Token::Operation(Op::Divide)
+                    Token::Op2(InfixOp::Divide)
                 },
                 '\'' => {
                     if let Some(c) = self.chars.next() {
@@ -339,7 +344,7 @@ impl Iterator for Lexer<'_> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use crate::lexer::{Token, Lexer, BasicType, Stmt, Op};
+    use crate::lexer::{Token, Lexer, BasicType, Stmt, InfixOp};
 
     #[test]
     fn lex_fac() {
@@ -358,7 +363,7 @@ mod tests {
             Token::Statement(Stmt::If),
             Token::OpenParen,
             Token::Id("n".into()),
-            Token::Operation(Op::Smaller),
+            Token::Op2(InfixOp::Smaller),
             Token::Number(2),
             Token::CloseParen,
             Token::OpenBrac,
@@ -370,11 +375,11 @@ mod tests {
             Token::OpenBrac,
             Token::Statement(Stmt::Return),
             Token::Id("n".into()),
-            Token::Operation(Op::Times),
+            Token::Op2(InfixOp::Times),
             Token::Id("fac".into()),
             Token::OpenParen,
             Token::Id("n".into()),
-            Token::Operation(Op::Minus),
+            Token::Op2(InfixOp::Minus),
             Token::Number(1),
             Token::CloseParen,
             Token::Terminal,
