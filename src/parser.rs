@@ -8,6 +8,7 @@ type ParseError = String;
 impl Operator {
     fn prefix_binding_power(&self) -> Result<((), u8), ParseError> {
         let bp = match self {
+            Operator::Minus => ((), 17),
             Operator::Not => ((), 7),
             o => Err(format!("{:?} is not a prefix operator", o))?
         };

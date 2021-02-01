@@ -89,8 +89,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn read_number(&mut self, start: Option<char>) -> i32 {
-        let mut digits: Vec<char> = start.into_iter().collect();
+    fn read_number(&mut self, start: char) -> i32 {
+        let mut digits: Vec<char> = vec![start];
 
         while let Some(c) = self.chars.peek() {
             if c.is_ascii_digit() {
@@ -170,6 +170,11 @@ impl Iterator for Lexer<'_> {
                 } else {
                     Token::OpenArr
                 }
+                '-' => if self.followed_by('>') {
+                    Token::To
+                } else {
+                    Token::Operator(Operator::Minus)
+                }
                 '+' => Token::Operator(Operator::Plus),
                 '*' => Token::Operator(Operator::Times),
                 '%' => Token::Operator(Operator::Modulo),
@@ -181,17 +186,6 @@ impl Iterator for Lexer<'_> {
                 '{' => Token::OpenBracket,
                 '}' => Token::CloseBracket,
                 ',' => Token::Separator,
-                '-' => if self.followed_by('>') {
-                    Token::To
-                } else if let Some(c) = self.chars.peek() {
-                    if c.is_ascii_digit() {
-                        Token::Number(-self.read_number(None))
-                    } else {
-                        Token::Operator(Operator::Minus)
-                    }
-                } else {
-                    self.abort()
-                }
                 '/' => if self.followed_by('/') {
                     while let Some(c) = self.chars.next() {
                         if c == '\n' {
@@ -245,7 +239,7 @@ impl Iterator for Lexer<'_> {
                         id => Token::Identifier(String::from(id))
                     }
                 },
-                '0'..='9' => Token::Number(self.read_number(Some(current))),
+                '0'..='9' => Token::Number(self.read_number(current)),
                 ' ' | '\r' | '\n' | '\t' => return self.next(),
                 _ => panic!("Invalid character '{:?}' at {}:{}:\n{}", current, 0, 0, self.code)
             }
