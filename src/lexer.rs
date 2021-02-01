@@ -1,44 +1,10 @@
 use std::str::Chars;
 use std::iter::Peekable;
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum BasicType {
-    Int, // Int
-    Bool, // Bool
-    Char, // Char
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum Stmt {
-    If, // if
-    Else, // else
-    While, // while
-    Return, // return
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum Expr {
-    False, // False,
-    True, // True,
-    Nil, // []
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum Field {
-    Dot, // .
-    Head, // hd
-    Tail, // tl
-    First, // fst
-    Second, // snd
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PrefixOp {
+pub enum Operator {
     Not, // !
-}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum InfixOp {
     Plus, // +
     Minus, // -
     Times, // *
@@ -63,22 +29,38 @@ pub enum Token {
     OpenParen, // (
     CloseParen, // )
     HasType, // ::
-    OpenBrac, // {
-    CloseBrac, // }
+    OpenBracket, // {
+    CloseBracket, // }
     Void, // Void
     To, // ->
     Separator, // ,
     OpenArr, // [
     CloseArr, // ]
-    Basic(BasicType),
-    Statement(Stmt),
-    Expression(Expr),
-    Field(Field),
-    Op1(PrefixOp),
-    Op2(InfixOp),
+
+    Int, // Int
+    Bool, // Bool
+    Char, // Char
+
+    If, // if
+    Else, // else
+    While, // while
+    Return, // return
+
+    False, // False,
+    True, // True,
+    Nil, // []
+
+    Dot, // .
+    Head, // hd
+    Tail, // tl
+    First, // fst
+    Second, // snd
+
+    Operator(Operator),
+
     Number(i32),
     Character(char),
-    Id(String),
+    Identifier(String),
 }
 
 pub struct Lexer<'a> {
@@ -149,55 +131,55 @@ impl Iterator for Lexer<'_> {
         Some(
             match current {
                 '=' => if self.followed_by('=') {
-                    Token::Op2(InfixOp::Equals)
+                    Token::Operator(Operator::Equals)
                 } else {
                     Token::Assign
                 }
                 '<' => if self.followed_by('=') {
-                    Token::Op2(InfixOp::SmallerEqual)
+                    Token::Operator(Operator::SmallerEqual)
                 } else {
-                    Token::Op2(InfixOp::Smaller)
+                    Token::Operator(Operator::Smaller)
                 }
                 '>' => if self.followed_by('=') {
-                    Token::Op2(InfixOp::GreaterEqual)
+                    Token::Operator(Operator::GreaterEqual)
                 } else {
-                    Token::Op2(InfixOp::Greater)
+                    Token::Operator(Operator::Greater)
                 }
                 '!' => if self.followed_by('=') {
-                    Token::Op2(InfixOp::NotEqual)
+                    Token::Operator(Operator::NotEqual)
                 } else {
-                    Token::Op1(PrefixOp::Not)
+                    Token::Operator(Operator::Not)
                 }
                 '&' => if self.followed_by('&') {
-                    Token::Op2(InfixOp::And)
+                    Token::Operator(Operator::And)
                 } else {
                     self.abort()
                 }
                 '|' => if self.followed_by('|') {
-                    Token::Op2(InfixOp::Or)
+                    Token::Operator(Operator::Or)
                 } else {
                     self.abort()
                 }
                 ':' => if self.followed_by(':') {
                     Token::HasType
                 } else {
-                    Token::Op2(InfixOp::Cons)
+                    Token::Operator(Operator::Cons)
                 }
                 '[' => if self.followed_by(']') {
-                    Token::Expression(Expr::Nil)
+                    Token::Nil
                 } else {
                     Token::OpenArr
                 }
-                '+' => Token::Op2(InfixOp::Plus),
-                '*' => Token::Op2(InfixOp::Times),
-                '%' => Token::Op2(InfixOp::Modulo),
+                '+' => Token::Operator(Operator::Plus),
+                '*' => Token::Operator(Operator::Times),
+                '%' => Token::Operator(Operator::Modulo),
                 ']' => Token::CloseArr,
-                '.' => Token::Field(Field::Dot),
+                '.' => Token::Dot,
                 ';' => Token::Terminal,
                 '(' => Token::OpenParen,
                 ')' => Token::CloseParen,
-                '{' => Token::OpenBrac,
-                '}' => Token::CloseBrac,
+                '{' => Token::OpenBracket,
+                '}' => Token::CloseBracket,
                 ',' => Token::Separator,
                 '-' => if self.followed_by('>') {
                     Token::To
@@ -205,7 +187,7 @@ impl Iterator for Lexer<'_> {
                     if c.is_ascii_digit() {
                         Token::Number(-self.read_number(None))
                     } else {
-                        Token::Op2(InfixOp::Minus)
+                        Token::Operator(Operator::Minus)
                     }
                 } else {
                     self.abort()
@@ -229,7 +211,7 @@ impl Iterator for Lexer<'_> {
                         }
                     }
                 } else {
-                    Token::Op2(InfixOp::Divide)
+                    Token::Operator(Operator::Divide)
                 },
                 '\'' => {
                     if let Some(c) = self.chars.next() {
@@ -245,22 +227,22 @@ impl Iterator for Lexer<'_> {
                 }
                 'a'..='z' | 'A'..='Z' => {
                     match self.read_word(current).as_str() {
-                        "Int" => Token::Basic(BasicType::Int),
-                        "Bool" => Token::Basic(BasicType::Bool),
-                        "Char" => Token::Basic(BasicType::Char),
+                        "Int" => Token::Int,
+                        "Bool" => Token::Bool,
+                        "Char" => Token::Char,
                         "Void" => Token::Void,
-                        "hd" => Token::Field(Field::Head),
-                        "tl" => Token::Field(Field::Tail),
-                        "fst" => Token::Field(Field::First),
-                        "snd" => Token::Field(Field::Second),
-                        "if" => Token::Statement(Stmt::If),
-                        "else" => Token::Statement(Stmt::Else),
-                        "while" => Token::Statement(Stmt::While),
-                        "return" => Token::Statement(Stmt::Return),
-                        "True" => Token::Expression(Expr::True),
-                        "False" => Token::Expression(Expr::False),
+                        "hd" => Token::Head,
+                        "tl" => Token::Tail,
+                        "fst" => Token::First,
+                        "snd" => Token::Second,
+                        "if" => Token::If,
+                        "else" => Token::Else,
+                        "while" => Token::While,
+                        "return" => Token::Return,
+                        "True" => Token::True,
+                        "False" => Token::False,
                         "var" => Token::Var,
-                        id => Token::Id(String::from(id))
+                        id => Token::Identifier(String::from(id))
                     }
                 },
                 '0'..='9' => Token::Number(self.read_number(Some(current))),
@@ -274,47 +256,47 @@ impl Iterator for Lexer<'_> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use crate::lexer::{Token, Lexer, BasicType, Stmt, InfixOp};
+    use crate::lexer::{Token, Lexer, Operator};
 
     #[test]
     fn lex_fac() {
         let code = fs::read_to_string("tests/fac.spl").expect("File inaccessible");
         let tokens: Vec<Token> = Lexer::new(&code[..]).collect();
         let expected = vec![
-            Token::Id("fac".into()),
+            Token::Identifier("fac".into()),
             Token::OpenParen,
-            Token::Id("n".into()),
+            Token::Identifier("n".into()),
             Token::CloseParen,
             Token::HasType,
-            Token::Basic(BasicType::Int),
+            Token::Int,
             Token::To,
-            Token::Basic(BasicType::Int),
-            Token::OpenBrac,
-            Token::Statement(Stmt::If),
+            Token::Int,
+            Token::OpenBracket,
+            Token::If,
             Token::OpenParen,
-            Token::Id("n".into()),
-            Token::Op2(InfixOp::Smaller),
+            Token::Identifier("n".into()),
+            Token::Operator(Operator::Smaller),
             Token::Number(2),
             Token::CloseParen,
-            Token::OpenBrac,
-            Token::Statement(Stmt::Return),
+            Token::OpenBracket,
+            Token::Return,
             Token::Number(1),
             Token::Terminal,
-            Token::CloseBrac,
-            Token::Statement(Stmt::Else),
-            Token::OpenBrac,
-            Token::Statement(Stmt::Return),
-            Token::Id("n".into()),
-            Token::Op2(InfixOp::Times),
-            Token::Id("fac".into()),
+            Token::CloseBracket,
+            Token::Else,
+            Token::OpenBracket,
+            Token::Return,
+            Token::Identifier("n".into()),
+            Token::Operator(Operator::Times),
+            Token::Identifier("fac".into()),
             Token::OpenParen,
-            Token::Id("n".into()),
-            Token::Op2(InfixOp::Minus),
+            Token::Identifier("n".into()),
+            Token::Operator(Operator::Minus),
             Token::Number(1),
             Token::CloseParen,
             Token::Terminal,
-            Token::CloseBrac,
-            Token::CloseBrac,
+            Token::CloseBracket,
+            Token::CloseBracket,
         ];
 
         assert_eq!(tokens, expected)
