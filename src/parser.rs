@@ -15,7 +15,7 @@ impl Operator {
 
         Ok(bp)
     }
-    
+
     fn infix_binding_power(&self) -> Result<(u8, u8), ParseError> {
         let bp = match self {
             Operator::Times | Operator::Divide | Operator::Modulo => (15, 16),
@@ -43,10 +43,12 @@ pub fn parse(input: &str) -> Result<AST, ParseError> {
     let mut lexer = Lexer::new(input).peekable();
     let ast = parse_expr(&mut lexer, 0)?;
 
-    if lexer.peek().is_some() {
-        Err(String::from("Too many closing parentheses"))
-    } else {
-        Ok(ast)
+    match lexer.peek() {
+        None => Ok(ast),
+        Some(t) => match t {
+            Token::CloseParen => Err(String::from("Too many closing parentheses")),
+            _ => Err(String::from("Could not parse entire input"))
+        }
     }
 }
 
