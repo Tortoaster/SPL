@@ -41,27 +41,41 @@ pub enum AST {
 
 pub fn parse(input: &str) -> Result<AST, ParseError> {
     let mut lexer = Lexer::new(input).peekable();
-    parse_expr(&mut lexer, 0)
+    let ast = parse_expr(&mut lexer, 0)?;
+
+    if lexer.peek().is_some() {
+        Err(String::from("Too many closing parentheses"))
+    } else {
+        Ok(ast)
+    }
 }
 
 fn parse_expr(lexer: &mut Peekable<Lexer>, min_bp: u8) -> Result<AST, ParseError> {
-    let mut lhs = match lexer.next() {
-        Some(Token::Identifier(id)) => AST::Identifier(id),
-        Some(Token::Number(n)) => AST::Number(n),
-        Some(Token::Character(c)) => AST::Character(c),
-        Some(Token::Operator(op)) => {
+    let mut lhs = match lexer.next().ok_or(String::from("Unexpected EOF"))? {
+        Token::Identifier(id) => AST::Identifier(id),
+        Token::Number(n) => AST::Number(n),
+        Token::Character(c) => AST::Character(c),
+        Token::OpenParen => {
+            let lhs = parse_expr(lexer, 0)?;
+            if lexer.next() != Some(Token::CloseParen) {
+                return Err(String::from("Missing closing parentheses"));
+            }
+            lhs
+        }
+        Token::Operator(op) => {
             let ((), r_bp) = op.prefix_binding_power()?;
             let rhs = parse_expr(lexer, r_bp)?;
             AST::Cons(op.clone(), vec![rhs])
         }
-        t => Err(format!("bad token: {:?}", t))?,
+        t => return Err(format!("bad token: {:?}", t)),
     };
 
     loop {
         let op = match lexer.peek() {
             None => break,
+            Some(Token::CloseParen) => break,
             Some(Token::Operator(op)) => op.clone(),
-            t => Err(format!("bad token: {:?}", t))?,
+            t => return Err(format!("bad token: {:?}", t)),
         };
 
         let (l_bp, r_bp) = op.infix_binding_power()?;
