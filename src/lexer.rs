@@ -1,6 +1,8 @@
 use std::str::Chars;
 use std::iter::Peekable;
 
+use crate::parser::Result;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operator {
     Not, // !
@@ -21,7 +23,7 @@ pub enum Operator {
     Cons, // :
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token {
     Var, // var
     Assign, // =
@@ -63,6 +65,7 @@ pub enum Token {
     Identifier(String),
 }
 
+#[derive(Clone)]
 pub struct Lexer<'a> {
     code: &'a str,
     chars: Peekable<Chars<'a>>,
