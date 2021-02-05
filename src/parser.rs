@@ -7,6 +7,17 @@ type ParseError = String;
 
 trait Parsable: Sized {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self>;
+
+    /**
+    Tries to parse this parsable. If it succeeds, this returns the same value as parse,
+    but if it fails, this function won't advance the iterator (at the cost of performance)
+    **/
+    fn try_parse(mut tokens: &mut Peekable<Lexer>) -> Result<Self> {
+        let mut copy = (*tokens).clone();
+        let parsed = Self::parse(&mut copy)?;
+        *tokens = copy;
+        Ok(parsed)
+    }
 }
 
 pub struct SPL(Vec<Decl>);
@@ -37,13 +48,12 @@ pub enum Decl {
 
 impl Parsable for Decl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let mut copy = (*tokens).clone();
+        let decl = match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
+            Token::Identifier(_) => Decl::FunDecl(FunDecl::parse(tokens)?),
+            _ => Decl::VarDecl(VarDecl::parse(tokens)?)
+        };
 
-        if let Ok(v) = VarDecl::parse(&mut copy) {
-            Ok(Decl::VarDecl(v))
-        } else {
-            Ok(Decl::FunDecl(FunDecl::parse(tokens)?))
-        }
+        Ok(decl)
     }
 }
 
