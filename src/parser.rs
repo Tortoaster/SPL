@@ -19,7 +19,13 @@ trait Parsable: Sized {
         Ok(parsed)
     }
 
-    // TODO: parse+ and/or parse*
+    fn parse_many(mut tokens: &mut Peekable<Lexer>) -> Vec<Self> {
+        let mut parsed = Vec::new();
+        while let Ok(p) = Self::try_parse(tokens) {
+            parsed.push(p);
+        }
+        parsed
+    }
 }
 
 pub struct SPL(Vec<Decl>);
@@ -79,12 +85,8 @@ impl Parsable for FunDecl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let id = Id::parse(tokens)?;
         munch(tokens, Token::OpenParen)?;
-        let mut params = Vec::new();
+        let mut params = Id::parse_many(tokens);
         munch(tokens, Token::CloseParen)?;
-
-        while let Ok(id) = Id::try_parse(tokens) {
-            params.push(id);
-        }
 
         let fun_type = if *tokens.peek().ok_or(String::from("Unexpected EOF"))? == Token::HasType {
             Some(FunType::parse(tokens)?)
@@ -93,17 +95,8 @@ impl Parsable for FunDecl {
         };
 
         munch(tokens, Token::OpenBracket)?;
-
-        let mut var_decls = Vec::new();
-        while let Ok(d) = VarDecl::try_parse(tokens) {
-            var_decls.push(d);
-        }
-
-        let mut stmts = Vec::new();
-        while let Ok(s) = Stmt::try_parse(tokens) {
-            stmts.push(s);
-        }
-
+        let mut var_decls = VarDecl::parse_many(tokens);
+        let mut stmts = Stmt::parse_many(tokens);
         munch(tokens, Token::CloseBracket)?;
 
         Ok(FunDecl(id, params, fun_type, var_decls, stmts))
