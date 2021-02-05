@@ -18,6 +18,8 @@ trait Parsable: Sized {
         *tokens = copy;
         Ok(parsed)
     }
+
+    // TODO: parse+ and/or parse*
 }
 
 pub struct SPL(Vec<Decl>);
@@ -80,11 +82,11 @@ impl Parsable for FunDecl {
         let mut params = Vec::new();
         munch(tokens, Token::CloseParen)?;
 
-        while let Ok(id) = Id::parse(tokens) {
+        while let Ok(id) = Id::try_parse(tokens) {
             params.push(id);
         }
 
-        let fun_type = if munch(tokens, Token::HasType).is_ok() {
+        let fun_type = if *tokens.peek().ok_or(String::from("Unexpected EOF"))? == Token::HasType {
             Some(FunType::parse(tokens)?)
         } else {
             None
@@ -92,14 +94,13 @@ impl Parsable for FunDecl {
 
         munch(tokens, Token::OpenBracket)?;
 
-        todo!("Don't consume last");
         let mut var_decls = Vec::new();
-        while let Ok(d) = VarDecl::parse(tokens) {
+        while let Ok(d) = VarDecl::try_parse(tokens) {
             var_decls.push(d);
         }
 
         let mut stmts = Vec::new();
-        while let Ok(s) = Stmt::parse(tokens) {
+        while let Ok(s) = Stmt::try_parse(tokens) {
             stmts.push(s);
         }
 
@@ -127,7 +128,15 @@ pub enum RetType {
 
 impl Parsable for RetType {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        unimplemented!()
+        let ret_type = match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
+            Token::Void => {
+                tokens.next();
+                RetType::Void
+            },
+            _ => RetType::Type(Type::parse(tokens)?)
+        };
+
+        Ok(ret_type)
     }
 }
 
