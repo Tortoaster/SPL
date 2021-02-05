@@ -1,8 +1,6 @@
 use std::str::Chars;
 use std::iter::Peekable;
 
-use crate::parser::Result;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operator {
     Not, // !
