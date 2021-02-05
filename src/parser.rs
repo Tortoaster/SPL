@@ -138,7 +138,27 @@ pub enum Type {
 
 impl Parsable for Type {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        unimplemented!()
+        let t = match tokens.next().ok_or(String::from("Unexpected EOF"))? {
+            Token::Int => Type::BasicType(BasicType::Int),
+            Token::Bool => Type::BasicType(BasicType::Bool),
+            Token::Char => Type::BasicType(BasicType::Char),
+            Token::OpenParen => {
+                let l = Type::parse(tokens)?;
+                munch(tokens, Token::Separator)?;
+                let r = Type::parse(tokens)?;
+                munch(tokens, Token::CloseArr)?;
+                Type::Tuple(Box::new(l), Box::new(r))
+            }
+            Token::OpenArr => {
+                let t = Type::parse(tokens)?;
+                munch(tokens, Token::CloseArr)?;
+                t
+            }
+            Token::Identifier(s) => Type::Generic(s),
+            t => return Err(format!("Bad token: expected type, found {:?}", t))
+        };
+
+        Ok(t)
     }
 }
 
