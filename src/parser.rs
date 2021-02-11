@@ -164,7 +164,8 @@ impl Parsable for SPL {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let mut decls = Vec::new();
 
-        while let Ok(d) = Decl::parse(tokens) {
+        while tokens.peek().is_some() {
+            let d = Decl::parse(tokens)?;
             decls.push(d);
         }
 
