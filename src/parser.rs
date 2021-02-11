@@ -2,6 +2,7 @@ use std::fmt;
 use std::iter::Peekable;
 
 use crate::lexer::{Lexer, Operator, Token, Field};
+use std::fmt::Debug;
 
 pub type Result<T, E = ParseError> = std::result::Result<T, E>;
 type ParseError = String;
@@ -35,12 +36,15 @@ trait Parsable: Sized {
         parsed
     }
 
-    fn parse_many_sep(tokens: &mut Peekable<Lexer>, separator: Token) -> Result<Vec<Self>> {
+    /**
+    Parses as many instances of this parsable after each other as possible, separated by separator.
+    **/
+    fn parse_many_sep(tokens: &mut Peekable<Lexer>, separator: &Token) -> Result<Vec<Self>> {
         let mut parsed = Vec::new();
         while let Ok(p) = Self::try_parse(tokens) {
             parsed.push(p);
-            if tokens.peek() == Some(&separator) {
-                munch(tokens, &separator)?;
+            if tokens.peek() == Some(separator) {
+                munch(tokens, separator)?;
             } else {
                 break;
             }
@@ -69,29 +73,37 @@ impl fmt::Display for SPL {
 Grammar
  */
 
+#[derive(Debug)]
 pub struct SPL(Vec<Decl>);
 
+#[derive(Debug)]
 pub enum Decl {
     VarDecl(VarDecl),
     FunDecl(FunDecl),
 }
 
+#[derive(Debug)]
 pub struct VarDecl(VarType, Id, Exp);
 
+#[derive(Debug)]
 pub enum VarType {
     Var,
     Type(Type),
 }
 
+#[derive(Debug)]
 pub struct FunDecl(Id, Vec<Id>, Option<FunType>, Vec<VarDecl>, Vec<Stmt>);
 
+#[derive(Debug)]
 pub struct FunType(Vec<Type>, RetType);
 
+#[derive(Debug)]
 pub enum RetType {
     Type(Type),
     Void,
 }
 
+#[derive(Debug)]
 pub enum Type {
     BasicType(BasicType),
     Tuple(Box<Type>, Box<Type>),
@@ -99,12 +111,14 @@ pub enum Type {
     Generic(Id),
 }
 
+#[derive(Debug)]
 pub enum BasicType {
     Int,
     Bool,
     Char,
 }
 
+#[derive(Debug)]
 pub enum Stmt {
     If(Exp, Vec<Stmt>, Vec<Stmt>),
     While(Exp, Vec<Stmt>),
@@ -113,8 +127,9 @@ pub enum Stmt {
     Return(Option<Exp>),
 }
 
+#[derive(Debug)]
 pub enum Exp {
-    Identifier(String, Selector),
+    Identifier(Id, Selector),
     Op(Operator, Vec<Exp>),
     Number(i32),
     Character(char),
@@ -125,10 +140,13 @@ pub enum Exp {
     Tuple(Box<Exp>, Box<Exp>),
 }
 
+#[derive(Debug)]
 pub struct Selector(Vec<Field>);
 
+#[derive(Debug)]
 pub struct FunCall(Id, Vec<Exp>);
 
+#[derive(Debug)]
 pub struct Id(String);
 
 /*
@@ -185,6 +203,7 @@ impl Parsable for FunDecl {
         munch(tokens, &Token::CloseParen)?;
 
         let fun_type = if tokens.peek() == Some(&Token::HasType) {
+            munch(tokens, &Token::HasType)?;
             Some(FunType::parse(tokens)?)
         } else {
             None
@@ -246,7 +265,7 @@ impl Parsable for Type {
                 munch(tokens, &Token::OpenArr)?;
                 let t = Type::parse(tokens)?;
                 munch(tokens, &Token::CloseArr)?;
-                t
+                Type::Array(Box::new(t))
             }
             Token::Identifier(_) => Type::Generic(Id::parse(tokens)?),
             _ => Type::BasicType(BasicType::parse(tokens)?)
@@ -271,64 +290,84 @@ impl Parsable for BasicType {
 
 impl Parsable for Stmt {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self, ParseError> {
-        match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
+        let t = match tokens.next().ok_or(String::from("Unexpected EOF"))? {
             Token::If => {
-                munch(tokens, &Token::If)?;
                 munch(tokens, &Token::OpenParen)?;
                 let condition = Exp::parse(tokens)?;
                 munch(tokens, &Token::CloseParen)?;
                 munch(tokens, &Token::OpenBracket)?;
                 let then = Stmt::parse_many(tokens);
                 munch(tokens, &Token::CloseBracket)?;
-                let mut otherwise = Vec::new();
-                if tokens.peek() == Some(&Token::Else) {
+                let otherwise = if tokens.peek() == Some(&Token::Else) {
                     munch(tokens, &Token::Else)?;
                     munch(tokens, &Token::OpenBracket)?;
-                    otherwise = Stmt::parse_many(tokens);
+                    let result = Stmt::parse_many(tokens);
                     munch(tokens, &Token::CloseBracket)?;
-                }
-                Ok(Stmt::If(condition, then, otherwise))
+                    result
+                } else {
+                    Vec::new()
+                };
+
+                Stmt::If(condition, then, otherwise)
             }
             Token::While => {
-                munch(tokens, &Token::While)?;
                 munch(tokens, &Token::OpenParen)?;
                 let condition = Exp::parse(tokens)?;
                 munch(tokens, &Token::CloseParen)?;
                 munch(tokens, &Token::OpenBracket)?;
                 let repeat = Stmt::parse_many(tokens);
                 munch(tokens, &Token::CloseBracket)?;
-                Ok(Stmt::While(condition, repeat))
+
+                Stmt::While(condition, repeat)
             }
             Token::Return => {
-                munch(tokens, &Token::Return)?;
                 let value = if tokens.peek() == Some(&Token::Semicolon) {
                     None
                 } else {
                     Some(Exp::parse(tokens)?)
                 };
                 munch(tokens, &Token::Semicolon)?;
-                Ok(Stmt::Return(value))
+
+                Stmt::Return(value)
             }
-            _ => {
-                if let Ok(f) = FunCall::try_parse(tokens) {
-                    Ok(Stmt::FunCall(f))
+            Token::Identifier(s) => {
+                let id = Id(s);
+                if tokens.peek() == Some(&Token::OpenParen) {
+                    munch(tokens, &Token::OpenParen)?;
+                    let args = Exp::parse_many_sep(tokens, &Token::Comma)?;
+                    munch(tokens, &Token::CloseParen)?;
+
+                    Stmt::FunCall(FunCall(id, args))
                 } else {
-                    let id = Id::parse(tokens)?;
                     let selector = Selector::parse(tokens)?;
                     munch(tokens, &Token::Assign)?;
                     let exp = Exp::parse(tokens)?;
                     munch(tokens, &Token::Semicolon)?;
-                    Ok(Stmt::Assignment(id, selector, exp))
+
+                    Stmt::Assignment(id, selector, exp)
                 }
             }
-        }
+            t => return Err(format!("Bad token: expected Int, Bool, or Char, found {:?}", t))
+        };
+
+        Ok(t)
     }
 }
 
 impl Exp {
     fn parse_exp(tokens: &mut Peekable<Lexer>, min_bp: u8) -> Result<Self> {
         let mut lhs = match tokens.next().ok_or(String::from("Unexpected EOF"))? {
-            Token::Identifier(id) => Exp::Identifier(id, Selector::parse(tokens)?),
+            Token::Identifier(s) => {
+                let id = Id(s);
+                if tokens.peek() == Some(&Token::OpenParen) {
+                    munch(tokens, &Token::OpenParen)?;
+                    let fun_call = Exp::FunCall(FunCall(id, Exp::parse_many_sep(tokens, &Token::Comma)?));
+                    munch(tokens, &Token::CloseParen)?;
+                    fun_call
+                } else {
+                    Exp::Identifier(id, Selector::parse(tokens)?)
+                }
+            }
             Token::Operator(op) => {
                 let r_bp = op.prefix_binding_power()?;
                 let rhs = Self::parse_exp(tokens, r_bp)?;
@@ -340,8 +379,15 @@ impl Exp {
             Token::True => Exp::True,
             Token::OpenParen => {
                 let lhs = Self::parse_exp(tokens, 0)?;
-                munch(tokens, &Token::CloseParen)?;
-                lhs
+                if tokens.peek() == Some(&Token::CloseParen) {
+                    munch(tokens, &Token::CloseParen)?;
+                    lhs
+                } else {
+                    munch(tokens, &Token::Comma)?;
+                    let rhs = Self::parse_exp(tokens, 0)?;
+                    munch(tokens, &Token::CloseParen)?;
+                    Exp::Tuple(Box::new(lhs), Box::new(rhs))
+                }
             }
             Token::Nil => Exp::Nil,
             t => return Err(format!("Bad token: {:?}", t)),
@@ -416,17 +462,6 @@ impl Parsable for Selector {
         }
 
         Ok(Selector(fields))
-    }
-}
-
-impl Parsable for FunCall {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self, ParseError> {
-        let id = Id::parse(tokens)?;
-        munch(tokens, &Token::OpenParen)?;
-        let args = Exp::parse_many_sep(tokens, Token::Comma)?;
-        munch(tokens, &Token::CloseParen)?;
-
-        Ok(FunCall(id, args))
     }
 }
 
