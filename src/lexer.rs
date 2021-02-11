@@ -22,10 +22,18 @@ pub enum Operator {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Field {
+    Head, // hd
+    Tail, // tl
+    First, // fst
+    Second, // snd
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token {
     Var, // var
     Assign, // =
-    Terminal, // ;
+    Semicolon, // ;
     OpenParen, // (
     CloseParen, // )
     HasType, // ::
@@ -33,7 +41,7 @@ pub enum Token {
     CloseBracket, // }
     Void, // Void
     To, // ->
-    Separator, // ,
+    Comma, // ,
     OpenArr, // [
     CloseArr, // ]
 
@@ -51,10 +59,7 @@ pub enum Token {
     Nil, // []
 
     Dot, // .
-    Head, // hd
-    Tail, // tl
-    First, // fst
-    Second, // snd
+    Field(Field),
 
     Operator(Operator),
 
@@ -181,12 +186,12 @@ impl Iterator for Lexer<'_> {
                 '%' => Token::Operator(Operator::Modulo),
                 ']' => Token::CloseArr,
                 '.' => Token::Dot,
-                ';' => Token::Terminal,
+                ';' => Token::Semicolon,
                 '(' => Token::OpenParen,
                 ')' => Token::CloseParen,
                 '{' => Token::OpenBracket,
                 '}' => Token::CloseBracket,
-                ',' => Token::Separator,
+                ',' => Token::Comma,
                 '/' => if self.followed_by('/') {
                     while let Some(c) = self.chars.next() {
                         if c == '\n' {
@@ -226,10 +231,10 @@ impl Iterator for Lexer<'_> {
                         "Bool" => Token::Bool,
                         "Char" => Token::Char,
                         "Void" => Token::Void,
-                        "hd" => Token::Head,
-                        "tl" => Token::Tail,
-                        "fst" => Token::First,
-                        "snd" => Token::Second,
+                        "hd" => Token::Field(Field::Head),
+                        "tl" => Token::Field(Field::Tail),
+                        "fst" => Token::Field(Field::First),
+                        "snd" => Token::Field(Field::Second),
                         "if" => Token::If,
                         "else" => Token::Else,
                         "while" => Token::While,
@@ -276,7 +281,7 @@ mod tests {
             Token::OpenBracket,
             Token::Return,
             Token::Number(1),
-            Token::Terminal,
+            Token::Semicolon,
             Token::CloseBracket,
             Token::Else,
             Token::OpenBracket,
@@ -289,7 +294,7 @@ mod tests {
             Token::Operator(Operator::Minus),
             Token::Number(1),
             Token::CloseParen,
-            Token::Terminal,
+            Token::Semicolon,
             Token::CloseBracket,
             Token::CloseBracket,
         ];

@@ -1,17 +1,21 @@
 use std::fmt;
 use std::iter::Peekable;
 
-use crate::lexer::{Lexer, Operator, Token};
+use crate::lexer::{Lexer, Operator, Token, Field};
 
 pub type Result<T, E = ParseError> = std::result::Result<T, E>;
 type ParseError = String;
 
 trait Parsable: Sized {
+    /**
+    Parses this parsable. This consumes the necessary tokens from the iterator,
+    hence this should only be used when no alternative parsables are valid.
+    **/
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self>;
 
     /**
     Tries to parse this parsable. If it succeeds, this returns the same value as parse,
-    but if it fails, this function won't advance the iterator (at the cost of performance)
+    but if it fails, this function won't advance the iterator (at the cost of performance).
     **/
     fn try_parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let mut copy = (*tokens).clone();
@@ -20,6 +24,9 @@ trait Parsable: Sized {
         Ok(parsed)
     }
 
+    /**
+    Parses as many instances of this parsable after each other as possible.
+    **/
     fn parse_many(tokens: &mut Peekable<Lexer>) -> Vec<Self> {
         let mut parsed = Vec::new();
         while let Ok(p) = Self::try_parse(tokens) {
@@ -27,40 +34,25 @@ trait Parsable: Sized {
         }
         parsed
     }
-}
 
-impl Operator {
-    fn prefix_binding_power(&self) -> Result<u8> {
-        let bp = match self {
-            Operator::Minus => 17,
-            Operator::Not => 7,
-            o => return Err(format!("{:?} is not a prefix operator", o))
-        };
-
-        Ok(bp)
-    }
-
-    fn infix_binding_power(&self) -> Result<(u8, u8)> {
-        let bp = match self {
-            Operator::Times | Operator::Divide | Operator::Modulo => (15, 16),
-            Operator::Plus | Operator::Minus => (13, 14),
-            Operator::Smaller | Operator::Greater |
-            Operator::SmallerEqual | Operator::GreaterEqual => (11, 12),
-            Operator::Equals | Operator::NotEqual => (9, 10),
-            Operator::And => (6, 5),
-            Operator::Or => (4, 3),
-            Operator::Cons => (2, 1),
-            o => return Err(format!("{:?} is not an infix operator", o))
-        };
-
-        Ok(bp)
+    fn parse_many_sep(tokens: &mut Peekable<Lexer>, separator: Token) -> Result<Vec<Self>> {
+        let mut parsed = Vec::new();
+        while let Ok(p) = Self::try_parse(tokens) {
+            parsed.push(p);
+            if tokens.peek() == Some(&separator) {
+                munch(tokens, &separator)?;
+            } else {
+                break;
+            }
+        }
+        Ok(parsed)
     }
 }
 
-pub fn munch(tokens: &mut Peekable<Lexer>, expected: Token) -> Result<()> {
+pub fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
     let found = tokens.next().ok_or(String::from("Unexpected EOF"))?;
 
-    if found == expected {
+    if found == *expected {
         Ok(())
     } else {
         Err(format!("Bad token: expected {:?} found {:?}", expected, found))
@@ -88,7 +80,7 @@ pub struct VarDecl(VarType, Id, Exp);
 
 pub enum VarType {
     Var,
-    Type(Type)
+    Type(Type),
 }
 
 pub struct FunDecl(Id, Vec<Id>, Option<FunType>, Vec<VarDecl>, Vec<Stmt>);
@@ -116,13 +108,13 @@ pub enum BasicType {
 pub enum Stmt {
     If(Exp, Vec<Stmt>, Vec<Stmt>),
     While(Exp, Vec<Stmt>),
-    Assignment(Id, Field, Exp),
+    Assignment(Id, Selector, Exp),
     FunCall(FunCall),
     Return(Option<Exp>),
 }
 
 pub enum Exp {
-    Identifier(String, Field),
+    Identifier(String, Selector),
     Op(Operator, Vec<Exp>),
     Number(i32),
     Character(char),
@@ -133,9 +125,9 @@ pub enum Exp {
     Tuple(Box<Exp>, Box<Exp>),
 }
 
-pub struct Field;
+pub struct Selector(Vec<Field>);
 
-pub struct FunCall(String, Vec<Exp>);
+pub struct FunCall(Id, Vec<Exp>);
 
 pub struct Id(String);
 
@@ -177,9 +169,9 @@ impl Parsable for VarDecl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let var_type = VarType::parse(tokens)?;
         let id = Id::parse(tokens)?;
-        munch(tokens, Token::Assign)?;
+        munch(tokens, &Token::Assign)?;
         let exp = Exp::parse(tokens)?;
-        munch(tokens, Token::Terminal)?;
+        munch(tokens, &Token::Semicolon)?;
 
         Ok(VarDecl(var_type, id, exp))
     }
@@ -188,9 +180,9 @@ impl Parsable for VarDecl {
 impl Parsable for FunDecl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let id = Id::parse(tokens)?;
-        munch(tokens, Token::OpenParen)?;
+        munch(tokens, &Token::OpenParen)?;
         let params = Id::parse_many(tokens);
-        munch(tokens, Token::CloseParen)?;
+        munch(tokens, &Token::CloseParen)?;
 
         let fun_type = if tokens.peek() == Some(&Token::HasType) {
             Some(FunType::parse(tokens)?)
@@ -198,10 +190,10 @@ impl Parsable for FunDecl {
             None
         };
 
-        munch(tokens, Token::OpenBracket)?;
+        munch(tokens, &Token::OpenBracket)?;
         let var_decls = VarDecl::parse_many(tokens);
         let stmts = Stmt::parse_many(tokens);
-        munch(tokens, Token::CloseBracket)?;
+        munch(tokens, &Token::CloseBracket)?;
 
         Ok(FunDecl(id, params, fun_type, var_decls, stmts))
     }
@@ -233,7 +225,7 @@ impl Parsable for RetType {
 impl Parsable for FunType {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let args = Type::parse_many(tokens);
-        munch(tokens, Token::To)?;
+        munch(tokens, &Token::To)?;
         let ret = RetType::parse(tokens)?;
         Ok(FunType(args, ret))
     }
@@ -243,17 +235,17 @@ impl Parsable for Type {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let t = match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
             Token::OpenParen => {
-                munch(tokens, Token::OpenParen)?;
+                munch(tokens, &Token::OpenParen)?;
                 let l = Type::parse(tokens)?;
-                munch(tokens, Token::Separator)?;
+                munch(tokens, &Token::Comma)?;
                 let r = Type::parse(tokens)?;
-                munch(tokens, Token::CloseArr)?;
+                munch(tokens, &Token::CloseArr)?;
                 Type::Tuple(Box::new(l), Box::new(r))
             }
             Token::OpenArr => {
-                munch(tokens, Token::OpenArr)?;
+                munch(tokens, &Token::OpenArr)?;
                 let t = Type::parse(tokens)?;
-                munch(tokens, Token::CloseArr)?;
+                munch(tokens, &Token::CloseArr)?;
                 t
             }
             Token::Identifier(_) => Type::Generic(Id::parse(tokens)?),
@@ -281,40 +273,40 @@ impl Parsable for Stmt {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self, ParseError> {
         match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
             Token::If => {
-                munch(tokens, Token::If)?;
-                munch(tokens, Token::OpenParen)?;
+                munch(tokens, &Token::If)?;
+                munch(tokens, &Token::OpenParen)?;
                 let condition = Exp::parse(tokens)?;
-                munch(tokens, Token::CloseParen)?;
-                munch(tokens, Token::OpenBracket)?;
+                munch(tokens, &Token::CloseParen)?;
+                munch(tokens, &Token::OpenBracket)?;
                 let then = Stmt::parse_many(tokens);
-                munch(tokens, Token::CloseBracket)?;
+                munch(tokens, &Token::CloseBracket)?;
                 let mut otherwise = Vec::new();
                 if tokens.peek() == Some(&Token::Else) {
-                    munch(tokens, Token::Else)?;
-                    munch(tokens, Token::OpenBracket)?;
+                    munch(tokens, &Token::Else)?;
+                    munch(tokens, &Token::OpenBracket)?;
                     otherwise = Stmt::parse_many(tokens);
-                    munch(tokens, Token::CloseBracket)?;
+                    munch(tokens, &Token::CloseBracket)?;
                 }
                 Ok(Stmt::If(condition, then, otherwise))
             }
             Token::While => {
-                munch(tokens, Token::While)?;
-                munch(tokens, Token::OpenParen)?;
+                munch(tokens, &Token::While)?;
+                munch(tokens, &Token::OpenParen)?;
                 let condition = Exp::parse(tokens)?;
-                munch(tokens, Token::CloseParen)?;
-                munch(tokens, Token::OpenBracket)?;
+                munch(tokens, &Token::CloseParen)?;
+                munch(tokens, &Token::OpenBracket)?;
                 let repeat = Stmt::parse_many(tokens);
-                munch(tokens, Token::CloseBracket)?;
+                munch(tokens, &Token::CloseBracket)?;
                 Ok(Stmt::While(condition, repeat))
             }
             Token::Return => {
-                munch(tokens, Token::Return)?;
-                let value = if tokens.peek() == Some(&Token::Terminal) {
+                munch(tokens, &Token::Return)?;
+                let value = if tokens.peek() == Some(&Token::Semicolon) {
                     None
                 } else {
                     Some(Exp::parse(tokens)?)
                 };
-                munch(tokens, Token::Terminal)?;
+                munch(tokens, &Token::Semicolon)?;
                 Ok(Stmt::Return(value))
             }
             _ => {
@@ -322,11 +314,11 @@ impl Parsable for Stmt {
                     Ok(Stmt::FunCall(f))
                 } else {
                     let id = Id::parse(tokens)?;
-                    let field = Field::parse(tokens)?;
-                    munch(tokens, Token::Assign)?;
+                    let selector = Selector::parse(tokens)?;
+                    munch(tokens, &Token::Assign)?;
                     let exp = Exp::parse(tokens)?;
-                    munch(tokens, Token::Terminal)?;
-                    Ok(Stmt::Assignment(id, field, exp))
+                    munch(tokens, &Token::Semicolon)?;
+                    Ok(Stmt::Assignment(id, selector, exp))
                 }
             }
         }
@@ -336,7 +328,7 @@ impl Parsable for Stmt {
 impl Exp {
     fn parse_exp(tokens: &mut Peekable<Lexer>, min_bp: u8) -> Result<Self> {
         let mut lhs = match tokens.next().ok_or(String::from("Unexpected EOF"))? {
-            Token::Identifier(id) => Exp::Identifier(id, Field::parse(tokens)?),
+            Token::Identifier(id) => Exp::Identifier(id, Selector::parse(tokens)?),
             Token::Operator(op) => {
                 let r_bp = op.prefix_binding_power()?;
                 let rhs = Self::parse_exp(tokens, r_bp)?;
@@ -348,9 +340,7 @@ impl Exp {
             Token::True => Exp::True,
             Token::OpenParen => {
                 let lhs = Self::parse_exp(tokens, 0)?;
-                if tokens.next() != Some(Token::CloseParen) {
-                    return Err(String::from("Missing closing parentheses"));
-                }
+                munch(tokens, &Token::CloseParen)?;
                 lhs
             }
             Token::Nil => Exp::Nil,
@@ -359,10 +349,8 @@ impl Exp {
 
         loop {
             let op = match tokens.peek() {
-                None => break,
-                Some(Token::CloseParen) => break,
                 Some(Token::Operator(op)) => op.clone(),
-                t => return Err(format!("Bad token: {:?}", t)),
+                _ => break,
             };
 
             let (l_bp, r_bp) = op.infix_binding_power()?;
@@ -381,29 +369,64 @@ impl Exp {
     }
 }
 
-impl Parsable for Exp {
-    fn parse(lexer: &mut Peekable<Lexer>) -> Result<Self> {
-        let exp = Self::parse_exp(lexer, 0)?;
+impl Operator {
+    fn prefix_binding_power(&self) -> Result<u8> {
+        let bp = match self {
+            Operator::Minus => 17,
+            Operator::Not => 7,
+            o => return Err(format!("{:?} is not a prefix operator", o))
+        };
 
-        match lexer.peek() {
-            None => Ok(exp),
-            Some(t) => match t {
-                Token::CloseParen => Err(String::from("Too many closing parentheses")),
-                _ => Err(String::from("Could not parse entire input"))
-            }
-        }
+        Ok(bp)
+    }
+
+    fn infix_binding_power(&self) -> Result<(u8, u8)> {
+        let bp = match self {
+            Operator::Times | Operator::Divide | Operator::Modulo => (15, 16),
+            Operator::Plus | Operator::Minus => (13, 14),
+            Operator::Smaller | Operator::Greater |
+            Operator::SmallerEqual | Operator::GreaterEqual => (11, 12),
+            Operator::Equals | Operator::NotEqual => (9, 10),
+            Operator::And => (6, 5),
+            Operator::Or => (4, 3),
+            Operator::Cons => (2, 1),
+            o => return Err(format!("{:?} is not an infix operator", o))
+        };
+
+        Ok(bp)
     }
 }
 
-impl Parsable for Field {
+impl Parsable for Exp {
+    fn parse(lexer: &mut Peekable<Lexer>) -> Result<Self> {
+        Self::parse_exp(lexer, 0)
+    }
+}
+
+impl Parsable for Selector {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self, ParseError> {
-        unimplemented!()
+        let mut fields = Vec::new();
+
+        while let Some(Token::Dot) = tokens.peek() {
+            munch(tokens, &Token::Dot)?;
+            match tokens.next().ok_or(String::from("Unexpected EOF"))? {
+                Token::Field(f) => fields.push(f),
+                t => return Err(format!("Bad token: expected field, found {:?}", t))
+            }
+        }
+
+        Ok(Selector(fields))
     }
 }
 
 impl Parsable for FunCall {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self, ParseError> {
-        unimplemented!()
+        let id = Id::parse(tokens)?;
+        munch(tokens, &Token::OpenParen)?;
+        let args = Exp::parse_many_sep(tokens, Token::Comma)?;
+        munch(tokens, &Token::CloseParen)?;
+
+        Ok(FunCall(id, args))
     }
 }
 
