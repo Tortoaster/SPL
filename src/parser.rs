@@ -200,7 +200,7 @@ impl Parsable for FunDecl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let id = Id::parse(tokens)?;
         munch(tokens, &Token::OpenParen)?;
-        let params = Id::parse_many(tokens);
+        let params = Id::parse_many_sep(tokens, &Token::Comma)?;
         munch(tokens, &Token::CloseParen)?;
 
         let fun_type = if tokens.peek() == Some(&Token::HasType) {
