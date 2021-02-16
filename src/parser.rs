@@ -232,7 +232,7 @@ impl Parsable for RetType {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let ret_type = match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
             Token::Void => {
-                tokens.next();
+                munch(tokens, &Token::Void)?;
                 RetType::Void
             }
             _ => RetType::Type(Type::parse(tokens)?)
@@ -259,7 +259,7 @@ impl Parsable for Type {
                 let l = Type::parse(tokens)?;
                 munch(tokens, &Token::Comma)?;
                 let r = Type::parse(tokens)?;
-                munch(tokens, &Token::CloseArr)?;
+                munch(tokens, &Token::CloseParen)?;
                 Type::Tuple(Box::new(l), Box::new(r))
             }
             Token::OpenArr => {
