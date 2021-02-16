@@ -66,7 +66,7 @@ fn empty() {
 
 #[test]
 fn example() {
-    let code = fs::read_to_string(RES_DIR.to_owned() + "example.spl").expect("File inaccessible");
+    let code = fs::read_to_string(RES_DIR.to_owned() + "Example.spl").expect("File inaccessible");
     SPL::new(code.as_str()).unwrap();
 }
 
