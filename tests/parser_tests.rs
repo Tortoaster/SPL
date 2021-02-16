@@ -21,3 +21,9 @@ fn three_d() {
     let code = fs::read_to_string(RES_DIR.to_owned() + "3D.spl").expect("File inaccessible");
     SPL::new(code.as_str()).unwrap();
 }
+
+#[test]
+fn a_bit_of_everything() {
+    let code = fs::read_to_string(RES_DIR.to_owned() + "a_bit_of_everything.spl").expect("File inaccessible");
+    SPL::new(code.as_str()).unwrap();
+}

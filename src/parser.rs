@@ -221,10 +221,15 @@ impl Parsable for FunDecl {
 
 impl Parsable for VarType {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
-            Token::Var => Ok(VarType::Var),
-            _ => Ok(VarType::Type(Type::parse(tokens)?))
-        }
+        let var_type = match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
+            Token::Var => {
+                munch(tokens, &Token::Var)?;
+                VarType::Var
+            },
+            _ => VarType::Type(Type::parse(tokens)?)
+        };
+
+        Ok(var_type)
     }
 }
 
