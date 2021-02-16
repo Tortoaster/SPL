@@ -342,6 +342,7 @@ impl Parsable for Stmt {
                     munch(tokens, &Token::OpenParen)?;
                     let args = Exp::parse_many_sep(tokens, &Token::Comma)?;
                     munch(tokens, &Token::CloseParen)?;
+                    munch(tokens, &Token::Semicolon)?;
 
                     Stmt::FunCall(FunCall(id, args))
                 } else {
@@ -367,9 +368,9 @@ impl Exp {
                 let id = Id(s);
                 if tokens.peek() == Some(&Token::OpenParen) {
                     munch(tokens, &Token::OpenParen)?;
-                    let fun_call = Exp::FunCall(FunCall(id, Exp::parse_many_sep(tokens, &Token::Comma)?));
+                    let fun_call = FunCall(id, Exp::parse_many_sep(tokens, &Token::Comma)?);
                     munch(tokens, &Token::CloseParen)?;
-                    fun_call
+                    Exp::FunCall(fun_call)
                 } else {
                     Exp::Identifier(id, Selector::parse(tokens)?)
                 }
