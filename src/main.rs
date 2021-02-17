@@ -17,7 +17,7 @@ fn main() -> Result<()> {
 
     let ast = SPL::new(code.as_str())?;
 
-    println!("{:?}", ast);
+    println!("{}", ast);
 
     Ok(())
 }

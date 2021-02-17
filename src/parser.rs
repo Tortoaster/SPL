@@ -1,8 +1,7 @@
 use std::fmt;
 use std::iter::Peekable;
 
-use crate::lexer::{Lexer, Operator, Token, Field};
-use std::fmt::Debug;
+use crate::lexer::{Field, Lexer, Operator, Token};
 
 pub type Result<T, E = ParseError> = std::result::Result<T, E>;
 type ParseError = String;
@@ -63,47 +62,33 @@ pub fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
     }
 }
 
-impl fmt::Display for SPL {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SPL")
-    }
-}
-
 /*
 Grammar
  */
 
-#[derive(Debug)]
 pub struct SPL(Vec<Decl>);
 
-#[derive(Debug)]
 pub enum Decl {
     VarDecl(VarDecl),
     FunDecl(FunDecl),
 }
 
-#[derive(Debug)]
 pub struct VarDecl(VarType, Id, Exp);
 
-#[derive(Debug)]
 pub enum VarType {
     Var,
     Type(Type),
 }
 
-#[derive(Debug)]
 pub struct FunDecl(Id, Vec<Id>, Option<FunType>, Vec<VarDecl>, Vec<Stmt>);
 
-#[derive(Debug)]
 pub struct FunType(Vec<Type>, RetType);
 
-#[derive(Debug)]
 pub enum RetType {
     Type(Type),
     Void,
 }
 
-#[derive(Debug)]
 pub enum Type {
     BasicType(BasicType),
     Tuple(Box<Type>, Box<Type>),
@@ -111,14 +96,12 @@ pub enum Type {
     Generic(Id),
 }
 
-#[derive(Debug)]
 pub enum BasicType {
     Int,
     Bool,
     Char,
 }
 
-#[derive(Debug)]
 pub enum Stmt {
     If(Exp, Vec<Stmt>, Vec<Stmt>),
     While(Exp, Vec<Stmt>),
@@ -127,10 +110,10 @@ pub enum Stmt {
     Return(Option<Exp>),
 }
 
-#[derive(Debug)]
 pub enum Exp {
     Identifier(Id, Selector),
-    Op(Operator, Vec<Exp>),
+    BinaryOp(Operator, Box<Exp>, Box<Exp>),
+    UnaryOp(Operator, Box<Exp>),
     Number(i32),
     Character(char),
     False,
@@ -140,13 +123,10 @@ pub enum Exp {
     Tuple(Box<Exp>, Box<Exp>),
 }
 
-#[derive(Debug)]
 pub struct Selector(Vec<Field>);
 
-#[derive(Debug)]
 pub struct FunCall(Id, Vec<Exp>);
 
-#[derive(Debug)]
 pub struct Id(String);
 
 /*
@@ -378,7 +358,7 @@ impl Exp {
             Token::Operator(op) => {
                 let r_bp = op.prefix_binding_power()?;
                 let rhs = Self::parse_exp(tokens, r_bp)?;
-                Exp::Op(op.clone(), vec![rhs])
+                Exp::UnaryOp(op.clone(), Box::new(rhs))
             }
             Token::Number(n) => Exp::Number(n),
             Token::Character(c) => Exp::Character(c),
@@ -415,7 +395,7 @@ impl Exp {
             tokens.next();
             let rhs = Self::parse_exp(tokens, r_bp)?;
 
-            lhs = Exp::Op(op, vec![lhs, rhs]);
+            lhs = Exp::BinaryOp(op, Box::new(lhs), Box::new(rhs));
         }
 
         Ok(lhs)
@@ -478,5 +458,180 @@ impl Parsable for Id {
             Token::Identifier(s) => Ok(Id(s)),
             t => return Err(format!("Bad token: expected identifier, found {:?}", t))
         }
+    }
+}
+
+/*
+Pretty printer
+ */
+
+impl fmt::Display for SPL {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for decl in &self.0 {
+            writeln!(f, "{}", decl)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Decl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Decl::VarDecl(var) => write!(f, "{}", var),
+            Decl::FunDecl(fun) => write!(f, "{}", fun),
+        }
+    }
+}
+
+impl fmt::Display for VarDecl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {} = {};", self.0, self.1, self.2)
+    }
+}
+
+impl fmt::Display for VarType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            VarType::Var => write!(f, "var"),
+            VarType::Type(t) => write!(f, "{}", t),
+        }
+    }
+}
+
+impl fmt::Display for FunDecl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}(", self.0)?;
+        for id in &self.1 {
+            write!(f, "{}, ", id)?;
+        }
+        write!(f, ") ")?;
+        if let Some(fun_type) = &self.2 {
+            write!(f, "{} ", fun_type)?;
+        }
+        writeln!(f, "{{")?;
+        for var in &self.3 {
+            writeln!(f, "\t{}", var)?;
+        }
+        for stmt in &self.4 {
+            writeln!(f, "\t{}", stmt)?;
+        }
+        write!(f, "}}")
+    }
+}
+
+impl fmt::Display for FunType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, ":: ")?;
+        for t in &self.0 {
+            write!(f, "{} ", t)?;
+        }
+        write!(f, "-> {}", self.1)
+    }
+}
+
+impl fmt::Display for RetType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RetType::Type(t) => write!(f, "{}", t),
+            RetType::Void => write!(f, "Void"),
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::BasicType(t) => write!(f, "{}", t),
+            Type::Tuple(l, r) => write!(f, "({}, {})", l, r),
+            Type::Array(t) => write!(f, "[{}]", t),
+            Type::Generic(t) => write!(f, "{}", t),
+        }
+    }
+}
+
+impl fmt::Display for BasicType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BasicType::Int => write!(f, "Int"),
+            BasicType::Bool => write!(f, "Bool"),
+            BasicType::Char => write!(f, "Char"),
+        }
+    }
+}
+
+impl fmt::Display for Stmt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Stmt::If(condition, then, otherwise) => {
+                writeln!(f, "if ({}) {{", condition)?;
+                for stmt in then {
+                    writeln!(f, "\t{}", stmt)?;
+                }
+                if otherwise.is_empty() {
+                    writeln!(f, "}}")
+                } else {
+                    writeln!(f, "}} else {{")?;
+                    for stmt in otherwise {
+                        writeln!(f, "\t{}", stmt)?;
+                    }
+                    write!(f, "}}")
+                }
+            }
+            Stmt::While(condition, body) => {
+                writeln!(f, "while ({}) {{", condition)?;
+                for stmt in body {
+                    writeln!(f, "\t{}", stmt)?;
+                }
+                write!(f, "}}")
+            },
+            Stmt::Assignment(id, field, value) => write!(f, "{}{} = {};", id, field, value),
+            Stmt::FunCall(fun_call) => write!(f, "{};", fun_call),
+            Stmt::Return(value) => match value {
+                None => write!(f, "return;"),
+                Some(ret) => write!(f, "return {};", ret),
+            }
+        }
+    }
+}
+
+impl fmt::Display for Exp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Exp::Identifier(id, selector) => write!(f, "{}{}", id, selector),
+            Exp::BinaryOp(op, lhs, rhs) => write!(f, "{} {} {}", lhs, op, rhs),
+            Exp::UnaryOp(op, lhs) => write!(f, "{}{}", op, lhs),
+            Exp::Number(n) => write!(f, "{}", n),
+            Exp::Character(c) => write!(f, "{}", c),
+            Exp::False => write!(f, "False"),
+            Exp::True => write!(f, "True"),
+            Exp::FunCall(fun_call) => write!(f, "{}", fun_call),
+            Exp::Nil => write!(f, "[]"),
+            Exp::Tuple(l, r) => write!(f, "({}, {})", l, r),
+        }
+    }
+}
+
+impl fmt::Display for Selector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for field in &self.0 {
+            write!(f, ".{}", field)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for FunCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}(", self.0)?;
+        for exp in &self.1 {
+            write!(f, "{}, ", exp)?;
+        }
+        write!(f, ")")
+    }
+}
+
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }

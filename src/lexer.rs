@@ -1,5 +1,6 @@
 use std::str::Chars;
 use std::iter::Peekable;
+use std::fmt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operator {
@@ -21,12 +22,45 @@ pub enum Operator {
     Cons, // :
 }
 
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Operator::Not => write!(f, "!"),
+            Operator::Plus => write!(f, "+"),
+            Operator::Minus => write!(f, "-"),
+            Operator::Times => write!(f, "*"),
+            Operator::Divide => write!(f, "/"),
+            Operator::Modulo => write!(f, "%"),
+            Operator::Equals => write!(f, "=="),
+            Operator::Smaller => write!(f, "<"),
+            Operator::Greater => write!(f, ">"),
+            Operator::SmallerEqual => write!(f, "<="),
+            Operator::GreaterEqual => write!(f, ">="),
+            Operator::NotEqual => write!(f, "!="),
+            Operator::And => write!(f, "&&"),
+            Operator::Or => write!(f, "||"),
+            Operator::Cons => write!(f, ":"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Field {
     Head, // hd
     Tail, // tl
     First, // fst
     Second, // snd
+}
+
+impl fmt::Display for Field {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Field::Head => write!(f, "hd"),
+            Field::Tail => write!(f, "tl"),
+            Field::First => write!(f, "fst"),
+            Field::Second => write!(f, "snd"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
