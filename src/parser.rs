@@ -66,29 +66,37 @@ pub fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
 Grammar
  */
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct SPL(Vec<Decl>);
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum Decl {
     VarDecl(VarDecl),
     FunDecl(FunDecl),
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct VarDecl(VarType, Id, Exp);
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum VarType {
     Var,
     Type(Type),
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct FunDecl(Id, Vec<Id>, Option<FunType>, Vec<VarDecl>, Vec<Stmt>);
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct FunType(Vec<Type>, RetType);
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum RetType {
     Type(Type),
     Void,
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum Type {
     BasicType(BasicType),
     Tuple(Box<Type>, Box<Type>),
@@ -96,12 +104,14 @@ pub enum Type {
     Generic(Id),
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum BasicType {
     Int,
     Bool,
     Char,
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum Stmt {
     If(Exp, Vec<Stmt>, Vec<Stmt>),
     While(Exp, Vec<Stmt>),
@@ -110,6 +120,7 @@ pub enum Stmt {
     Return(Option<Exp>),
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum Exp {
     Identifier(Id, Selector),
     BinaryOp(Operator, Box<Exp>, Box<Exp>),
@@ -123,10 +134,13 @@ pub enum Exp {
     Tuple(Box<Exp>, Box<Exp>),
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct Selector(Vec<Field>);
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct FunCall(Id, Vec<Exp>);
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct Id(String);
 
 /*
@@ -205,7 +219,7 @@ impl Parsable for VarType {
             Token::Var => {
                 munch(tokens, &Token::Var)?;
                 VarType::Var
-            },
+            }
             _ => VarType::Type(Type::parse(tokens)?)
         };
 
@@ -465,173 +479,190 @@ impl Parsable for Id {
 Pretty printer
  */
 
+const TAB_SIZE: usize = 4;
+
+trait PrettyPrintable {
+    fn fmt_pretty(&self, indent: usize) -> String;
+}
+
 impl fmt::Display for SPL {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for decl in &self.0 {
-            writeln!(f, "{}", decl)?;
-        }
-        Ok(())
+        write!(f, "{}", self.fmt_pretty(0))
     }
 }
 
-impl fmt::Display for Decl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PrettyPrintable for SPL {
+    fn fmt_pretty(&self, indent: usize) -> String {
+        self.0.iter().map(|decl| decl.fmt_pretty(indent)).collect::<Vec<String>>().join("\n")
+    }
+}
+
+impl PrettyPrintable for Decl {
+    fn fmt_pretty(&self, indent: usize) -> String {
         match self {
-            Decl::VarDecl(var) => write!(f, "{}", var),
-            Decl::FunDecl(fun) => write!(f, "{}", fun),
+            Decl::VarDecl(var) => var.fmt_pretty(indent),
+            Decl::FunDecl(fun) => fun.fmt_pretty(indent),
         }
     }
 }
 
-impl fmt::Display for VarDecl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {} = {};", self.0, self.1, self.2)
+impl PrettyPrintable for VarDecl {
+    fn fmt_pretty(&self, indent: usize) -> String {
+        format!("{:indent$}{} {} = {};\n",
+                "",
+                self.0.fmt_pretty(indent),
+                self.1.fmt_pretty(indent),
+                self.2.fmt_pretty(indent),
+                indent = indent * TAB_SIZE
+        )
     }
 }
 
-impl fmt::Display for VarType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PrettyPrintable for VarType {
+    fn fmt_pretty(&self, indent: usize) -> String {
         match self {
-            VarType::Var => write!(f, "var"),
-            VarType::Type(t) => write!(f, "{}", t),
+            VarType::Var => String::from("var"),
+            VarType::Type(t) => t.fmt_pretty(indent),
         }
     }
 }
 
-impl fmt::Display for FunDecl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}(", self.0)?;
-        for id in &self.1 {
-            write!(f, "{}, ", id)?;
-        }
-        write!(f, ") ")?;
+impl PrettyPrintable for FunDecl {
+    fn fmt_pretty(&self, indent: usize) -> String {
+        let mut f = format!("{:indent$}{}({}) ",
+               "",
+               self.0.fmt_pretty(indent),
+               self.1.iter().map(|id| id.fmt_pretty(indent)).collect::<Vec<String>>().join(", "),
+               indent = indent * TAB_SIZE
+        );
         if let Some(fun_type) = &self.2 {
-            write!(f, "{} ", fun_type)?;
+            f += fun_type.fmt_pretty(indent).as_str();
         }
-        writeln!(f, "{{")?;
-        for var in &self.3 {
-            writeln!(f, "\t{}", var)?;
-        }
-        for stmt in &self.4 {
-            writeln!(f, "\t{}", stmt)?;
-        }
-        write!(f, "}}")
+        f += format!("{{\n").as_str();
+        f += self.3.iter().map(|var| var.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+        f += self.4.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+        f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
     }
 }
 
-impl fmt::Display for FunType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ":: ")?;
-        for t in &self.0 {
-            write!(f, "{} ", t)?;
-        }
-        write!(f, "-> {}", self.1)
+impl PrettyPrintable for FunType {
+    fn fmt_pretty(&self, indent: usize) -> String {
+        format!(":: {}-> {} ",
+               self.0.iter().map(|t| t.fmt_pretty(indent) + " ").collect::<Vec<String>>().join(""),
+               self.1.fmt_pretty(indent)
+        )
     }
 }
 
-impl fmt::Display for RetType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PrettyPrintable for RetType {
+    fn fmt_pretty(&self, indent: usize) -> String {
         match self {
-            RetType::Type(t) => write!(f, "{}", t),
-            RetType::Void => write!(f, "Void"),
+            RetType::Type(t) => t.fmt_pretty(indent),
+            RetType::Void => String::from("Void"),
         }
     }
 }
 
-impl fmt::Display for Type {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PrettyPrintable for Type {
+    fn fmt_pretty(&self, indent: usize) -> String {
         match self {
-            Type::BasicType(t) => write!(f, "{}", t),
-            Type::Tuple(l, r) => write!(f, "({}, {})", l, r),
-            Type::Array(t) => write!(f, "[{}]", t),
-            Type::Generic(t) => write!(f, "{}", t),
+            Type::BasicType(t) => t.fmt_pretty(indent),
+            Type::Tuple(l, r) => format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
+            Type::Array(t) => format!("[{}]", t.fmt_pretty(indent)),
+            Type::Generic(t) => t.fmt_pretty(indent),
         }
     }
 }
 
-impl fmt::Display for BasicType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PrettyPrintable for BasicType {
+    fn fmt_pretty(&self, _: usize) -> String {
         match self {
-            BasicType::Int => write!(f, "Int"),
-            BasicType::Bool => write!(f, "Bool"),
-            BasicType::Char => write!(f, "Char"),
+            BasicType::Int => String::from("Int"),
+            BasicType::Bool => String::from("Bool"),
+            BasicType::Char => String::from("Char"),
         }
     }
 }
 
-impl fmt::Display for Stmt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PrettyPrintable for Stmt {
+    fn fmt_pretty(&self, indent: usize) -> String {
         match self {
             Stmt::If(condition, then, otherwise) => {
-                writeln!(f, "if ({}) {{", condition)?;
-                for stmt in then {
-                    writeln!(f, "\t{}", stmt)?;
+                let mut f = format!("{:indent$}if ({}) {{\n",
+                         "",
+                         condition.fmt_pretty(indent),
+                         indent = indent * TAB_SIZE
+                );
+                f += then.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+                if !otherwise.is_empty() {
+                    f += format!("{:indent$}}} else {{\n", "", indent = indent * TAB_SIZE).as_str();
+                    f += otherwise.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
                 }
-                if otherwise.is_empty() {
-                    writeln!(f, "}}")
-                } else {
-                    writeln!(f, "}} else {{")?;
-                    for stmt in otherwise {
-                        writeln!(f, "\t{}", stmt)?;
-                    }
-                    write!(f, "}}")
-                }
+                f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
             }
             Stmt::While(condition, body) => {
-                writeln!(f, "while ({}) {{", condition)?;
-                for stmt in body {
-                    writeln!(f, "\t{}", stmt)?;
-                }
-                write!(f, "}}")
-            },
-            Stmt::Assignment(id, field, value) => write!(f, "{}{} = {};", id, field, value),
-            Stmt::FunCall(fun_call) => write!(f, "{};", fun_call),
+                let mut f = format!("{:indent$}while ({}) {{\n",
+                         "",
+                         condition.fmt_pretty(indent),
+                         indent = indent * TAB_SIZE
+                );
+                f += body.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+                f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
+            }
+            Stmt::Assignment(id, field, value) => format!("{:indent$}{}{} = {};\n",
+                                                         "",
+                                                         id.fmt_pretty(indent),
+                                                         field.fmt_pretty(indent),
+                                                         value.fmt_pretty(indent),
+                                                         indent = indent * TAB_SIZE
+            ),
+            Stmt::FunCall(fun_call) => format!("{:indent$}{};\n",
+                                              "",
+                                              fun_call.fmt_pretty(indent),
+                                              indent = indent * TAB_SIZE
+            ),
             Stmt::Return(value) => match value {
-                None => write!(f, "return;"),
-                Some(ret) => write!(f, "return {};", ret),
+                None => format!("{:indent$}return;\n", "", indent = indent * TAB_SIZE),
+                Some(ret) => format!("{:indent$}return {};\n", "", ret.fmt_pretty(indent), indent = indent * TAB_SIZE),
             }
         }
     }
 }
 
-impl fmt::Display for Exp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PrettyPrintable for Exp {
+    fn fmt_pretty(&self, indent: usize) -> String {
         match self {
-            Exp::Identifier(id, selector) => write!(f, "{}{}", id, selector),
-            Exp::BinaryOp(op, lhs, rhs) => write!(f, "{} {} {}", lhs, op, rhs),
-            Exp::UnaryOp(op, lhs) => write!(f, "{}{}", op, lhs),
-            Exp::Number(n) => write!(f, "{}", n),
-            Exp::Character(c) => write!(f, "{}", c),
-            Exp::False => write!(f, "False"),
-            Exp::True => write!(f, "True"),
-            Exp::FunCall(fun_call) => write!(f, "{}", fun_call),
-            Exp::Nil => write!(f, "[]"),
-            Exp::Tuple(l, r) => write!(f, "({}, {})", l, r),
+            Exp::Identifier(id, selector) => format!("{}{}", id.fmt_pretty(indent), selector.fmt_pretty(indent)),
+            Exp::BinaryOp(op, lhs, rhs) => format!("({} {} {})", lhs.fmt_pretty(indent), op, rhs.fmt_pretty(indent)),
+            Exp::UnaryOp(op, lhs) => format!("({}{})", op, lhs.fmt_pretty(indent)),
+            Exp::Number(n) => format!("{}", n),
+            Exp::Character(c) => format!("'{}'", c),
+            Exp::False => format!("False"),
+            Exp::True => format!("True"),
+            Exp::FunCall(fun_call) => format!("{}", fun_call.fmt_pretty(indent)),
+            Exp::Nil => format!("[]"),
+            Exp::Tuple(l, r) => format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
         }
     }
 }
 
-impl fmt::Display for Selector {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for field in &self.0 {
-            write!(f, ".{}", field)?;
-        }
-        Ok(())
+impl PrettyPrintable for Selector {
+    fn fmt_pretty(&self, _: usize) -> String {
+        self.0.iter().map(|field| ".".to_owned() + format!("{}", field).as_str()).collect::<Vec<String>>().join("")
     }
 }
 
-impl fmt::Display for FunCall {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}(", self.0)?;
-        for exp in &self.1 {
-            write!(f, "{}, ", exp)?;
-        }
-        write!(f, ")")
+impl PrettyPrintable for FunCall {
+    fn fmt_pretty(&self, indent: usize) -> String {
+        format!("{}({})",
+               self.0.fmt_pretty(indent),
+               self.1.iter().map(|exp| exp.fmt_pretty(indent)).collect::<Vec<String>>().join(", ")
+        )
     }
 }
 
-impl fmt::Display for Id {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+impl PrettyPrintable for Id {
+    fn fmt_pretty(&self, _: usize) -> String {
+        self.0.clone()
     }
 }
