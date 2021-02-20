@@ -394,19 +394,17 @@ impl Exp {
             t => return Err(format!("Bad token: {:?}", t)),
         };
 
-        loop {
-            let op = match tokens.peek() {
-                Some(Token::Operator(op)) => op.clone(),
-                _ => break,
-            };
-
+        while let Some(Token::Operator(op)) = tokens.peek() {
             let (l_bp, r_bp) = op.infix_binding_power()?;
 
             if l_bp < min_bp {
                 break;
             }
 
-            tokens.next();
+            let op = match tokens.next() {
+                Some(Token::Operator(op)) => op,
+                _ => panic!("Impossible"),
+            };
             let rhs = Self::parse_exp(tokens, r_bp)?;
 
             lhs = Exp::BinaryOp(op, Box::new(lhs), Box::new(rhs));
