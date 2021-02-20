@@ -52,7 +52,7 @@ trait Parsable: Sized {
     }
 }
 
-pub fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
+fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
     let found = tokens.next().ok_or(String::from("Unexpected EOF"))?;
 
     if found == *expected {
