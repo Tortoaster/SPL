@@ -1,5 +1,5 @@
-use std::str::Chars;
-use std::iter::Peekable;
+use std::str::{Chars, Lines};
+use std::iter::{Peekable, FlatMap, Enumerate, Map, Zip, Repeat};
 use std::fmt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -102,10 +102,22 @@ pub enum Token {
     Identifier(String),
 }
 
+type RowColIterator<'a> = Peekable<FlatMap<Enumerate<Lines<'a>>, Map<Zip<Enumerate<Chars<'a>>, Repeat<usize>>, Lol>, Lolol>>;
+type Lolol = fn((usize, &str)) -> Map<Zip<Enumerate<Chars>, Repeat<usize>>, Lol>;
+type Lol = fn(((usize, char), usize)) -> ((usize, usize), char);
+
+fn keep_position((row, l): (usize, &str)) -> Map<Zip<Enumerate<Chars>, Repeat<usize>>, fn(((usize, char), usize)) -> ((usize, usize), char)> {
+    l.chars().enumerate().zip(std::iter::repeat(row)).map(reorder)
+}
+
+fn reorder(((col, c), row): ((usize, char), usize)) -> ((usize, usize), char) {
+    ((row, col), c)
+}
+
 #[derive(Clone)]
 pub struct Lexer<'a> {
     code: &'a str,
-    chars: Peekable<Chars<'a>>,
+    chars: RowColIterator<'a>,
 }
 
 impl<'a> Lexer<'a> {
@@ -113,14 +125,14 @@ impl<'a> Lexer<'a> {
         let code = code;
         Lexer {
             code,
-            chars: code.chars().peekable(),
+            chars: code.lines().enumerate().flat_map(keep_position as Lolol).peekable(),
         }
     }
 
     fn followed_by(&mut self, c: char) -> bool {
         match self.chars.peek() {
             None => false,
-            Some(d) => if c == *d {
+            Some((_, d)) => if c == *d {
                 self.chars.next();
                 true
             } else {
@@ -132,9 +144,9 @@ impl<'a> Lexer<'a> {
     fn read_number(&mut self, start: char) -> i32 {
         let mut digits: Vec<char> = vec![start];
 
-        while let Some(c) = self.chars.peek() {
+        while let Some((_, c)) = self.chars.peek() {
             if c.is_ascii_digit() {
-                digits.push(self.chars.next().unwrap())
+                digits.push(self.chars.next().unwrap().1)
             } else {
                 break;
             }
@@ -146,9 +158,9 @@ impl<'a> Lexer<'a> {
     fn read_word(&mut self, start: char) -> String {
         let mut chars = vec![start];
 
-        while let Some(c) = self.chars.peek() {
+        while let Some((_, c)) = self.chars.peek() {
             if c.is_alphanumeric() || *c == '_' {
-                chars.push(self.chars.next().unwrap())
+                chars.push(self.chars.next().unwrap().1)
             } else {
                 break;
             }
@@ -157,8 +169,12 @@ impl<'a> Lexer<'a> {
         chars.into_iter().collect()
     }
 
-    fn abort(&mut self) -> Token {
-        panic!("Unexpected character '{:?}' at {}:{}:\n{}", self.chars.peek(), 0, 0, self.code)
+    fn abort(&mut self, expected: Vec<char>) -> Token {
+        if let Some(((row, col), c)) = self.chars.peek() {
+            panic!("Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {:?}", c, row, col, self.code.lines().nth(*row).unwrap(), "^", expected, indent = col + 1)
+        } else {
+            panic!("Unexpected EOF\nExpected: {:?}", expected)
+        }
     }
 }
 
@@ -166,7 +182,7 @@ impl Iterator for Lexer<'_> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Token> {
-        let current = self.chars.next()?;
+        let ((row, col), current) = self.chars.next()?;
 
         Some(
             match current {
@@ -193,12 +209,12 @@ impl Iterator for Lexer<'_> {
                 '&' => if self.followed_by('&') {
                     Token::Operator(Operator::And)
                 } else {
-                    self.abort()
+                    self.abort(vec!['&'])
                 }
                 '|' => if self.followed_by('|') {
                     Token::Operator(Operator::Or)
                 } else {
-                    self.abort()
+                    self.abort(vec!['|'])
                 }
                 ':' => if self.followed_by(':') {
                     Token::HasType
@@ -227,7 +243,7 @@ impl Iterator for Lexer<'_> {
                 '}' => Token::CloseBracket,
                 ',' => Token::Comma,
                 '/' => if self.followed_by('/') {
-                    while let Some(c) = self.chars.next() {
+                    while let Some((_, c)) = self.chars.next() {
                         if c == '\n' {
                             break;
                         }
@@ -235,7 +251,7 @@ impl Iterator for Lexer<'_> {
                     return self.next();
                 } else if self.followed_by('*') {
                     loop {
-                        while let Some(c) = self.chars.next() {
+                        while let Some((_, c)) = self.chars.next() {
                             if c == '*' {
                                 break;
                             }
@@ -248,15 +264,15 @@ impl Iterator for Lexer<'_> {
                     Token::Operator(Operator::Divide)
                 },
                 '\'' => {
-                    if let Some(c) = self.chars.next() {
-                        if let Some('\'') = self.chars.peek() {
+                    if let Some((_, c)) = self.chars.next() {
+                        if let Some((_, '\'')) = self.chars.peek() {
                             self.chars.next();
                             Token::Character(c)
                         } else {
-                            self.abort()
+                            self.abort(vec!['\''])
                         }
                     } else {
-                        self.abort()
+                        self.abort(vec!['c'])
                     }
                 }
                 'a'..='z' | 'A'..='Z' => {
@@ -281,7 +297,7 @@ impl Iterator for Lexer<'_> {
                 },
                 '0'..='9' => Token::Number(self.read_number(current)),
                 ' ' | '\r' | '\n' | '\t' => return self.next(),
-                _ => panic!("Invalid character '{:?}' at {}:{}:\n{}", current, 0, 0, self.code)
+                _ => panic!("Invalid character '{}' at {}:{}:\n{}\n{: >indent$}", current, row, col, self.code.lines().nth(row).unwrap(), "^", indent = col + 1)
             }
         )
     }
