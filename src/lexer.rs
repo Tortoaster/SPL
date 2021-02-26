@@ -1,6 +1,7 @@
 use std::str::{Chars, Lines};
 use std::iter::{Peekable, FlatMap, Enumerate, Map, Zip, Repeat};
 use std::fmt;
+use std::fmt::Display;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operator {
@@ -102,11 +103,11 @@ pub enum Token {
     Identifier(String),
 }
 
-type RowColIterator<'a> = Peekable<FlatMap<Enumerate<Lines<'a>>, Map<Zip<Enumerate<Chars<'a>>, Repeat<usize>>, Lol>, Lolol>>;
-type Lolol = fn((usize, &str)) -> Map<Zip<Enumerate<Chars>, Repeat<usize>>, Lol>;
-type Lol = fn(((usize, char), usize)) -> ((usize, usize), char);
+type PositionIterator<'a> = Peekable<FlatMap<Enumerate<Lines<'a>>, Map<Zip<Enumerate<Chars<'a>>, Repeat<usize>>, Reorder>, Position>>;
+type Position = fn((usize, &str)) -> Map<Zip<Enumerate<Chars>, Repeat<usize>>, Reorder>;
+type Reorder = fn(((usize, char), usize)) -> ((usize, usize), char);
 
-fn keep_position((row, l): (usize, &str)) -> Map<Zip<Enumerate<Chars>, Repeat<usize>>, fn(((usize, char), usize)) -> ((usize, usize), char)> {
+fn position((row, l): (usize, &str)) -> Map<Zip<Enumerate<Chars>, Repeat<usize>>, fn(((usize, char), usize)) -> ((usize, usize), char)> {
     l.chars().enumerate().zip(std::iter::repeat(row)).map(reorder)
 }
 
@@ -117,7 +118,7 @@ fn reorder(((col, c), row): ((usize, char), usize)) -> ((usize, usize), char) {
 #[derive(Clone)]
 pub struct Lexer<'a> {
     code: &'a str,
-    chars: RowColIterator<'a>,
+    chars: PositionIterator<'a>,
 }
 
 impl<'a> Lexer<'a> {
@@ -125,7 +126,7 @@ impl<'a> Lexer<'a> {
         let code = code;
         Lexer {
             code,
-            chars: code.lines().enumerate().flat_map(keep_position as Lolol).peekable(),
+            chars: code.lines().enumerate().flat_map(position as Position).peekable(),
         }
     }
 
@@ -169,11 +170,11 @@ impl<'a> Lexer<'a> {
         chars.into_iter().collect()
     }
 
-    fn abort(&mut self, expected: Vec<char>) -> Token {
+    fn abort(&mut self, expected: impl Display) {
         if let Some(((row, col), c)) = self.chars.peek() {
-            panic!("Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {:?}", c, row, col, self.code.lines().nth(*row).unwrap(), "^", expected, indent = col + 1)
+            eprintln!("Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {}", c, row, col, self.code.lines().nth(*row).unwrap(), "^", expected, indent = col + 1)
         } else {
-            panic!("Unexpected EOF\nExpected: {:?}", expected)
+            eprintln!("Unexpected EOF\nExpected: {}", expected)
         }
     }
 }
@@ -209,12 +210,14 @@ impl Iterator for Lexer<'_> {
                 '&' => if self.followed_by('&') {
                     Token::Operator(Operator::And)
                 } else {
-                    self.abort(vec!['&'])
+                    self.abort('&');
+                    Token::Operator(Operator::And)
                 }
                 '|' => if self.followed_by('|') {
                     Token::Operator(Operator::Or)
                 } else {
-                    self.abort(vec!['|'])
+                    self.abort('|');
+                    Token::Operator(Operator::Or)
                 }
                 ':' => if self.followed_by(':') {
                     Token::HasType
@@ -264,15 +267,17 @@ impl Iterator for Lexer<'_> {
                     Token::Operator(Operator::Divide)
                 },
                 '\'' => {
-                    if let Some((_, c)) = self.chars.next() {
-                        if let Some((_, '\'')) = self.chars.peek() {
-                            self.chars.next();
+                    match self.chars.next() {
+                        Some((_, c)) => if self.followed_by('\'') {
                             Token::Character(c)
                         } else {
-                            self.abort(vec!['\''])
+                            self.abort('\'');
+                            Token::Character(c)
                         }
-                    } else {
-                        self.abort(vec!['c'])
+                        None => {
+                            self.abort("character");
+                            Token::Character('c')
+                        }
                     }
                 }
                 'a'..='z' | 'A'..='Z' => {
@@ -297,7 +302,10 @@ impl Iterator for Lexer<'_> {
                 },
                 '0'..='9' => Token::Number(self.read_number(current)),
                 ' ' | '\r' | '\n' | '\t' => return self.next(),
-                _ => panic!("Invalid character '{}' at {}:{}:\n{}\n{: >indent$}", current, row, col, self.code.lines().nth(row).unwrap(), "^", indent = col + 1)
+                _ => {
+                    eprintln!("Invalid character '{}' at {}:{}:\n{}\n{: >indent$}", current, row, col, self.code.lines().nth(row).unwrap(), "^", indent = col + 1);
+                    return None;
+                }
             }
         )
     }
