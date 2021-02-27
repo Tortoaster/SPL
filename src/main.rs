@@ -3,6 +3,7 @@ use std::fs;
 use crate::parser::SPL;
 use crate::parser::Result;
 
+mod char_iterator;
 mod lexer;
 mod parser;
 
