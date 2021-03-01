@@ -289,7 +289,7 @@ impl Iterator for Lexer<'_> {
                     }
                 },
                 '0'..='9' => Token::Number(self.read_number(current)),
-                ' ' | '\n' | '\t' => return self.next(),
+                ' ' | '\r' | '\n' | '\t' => return self.next(),
                 _ => {
                     eprintln!("Invalid character '{}' at {}:{}:\n{}\n{: >indent$}", current, row, col, self.code.lines().nth(row).unwrap(), "^", indent = col + 1);
                     return None;
