@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fmt;
-use std::fmt::Display;
+use std::fmt::{Display, Debug};
 use std::iter::Peekable;
 
 use crate::char_iterator::{CharIterable, CharIterator};
@@ -105,13 +105,13 @@ pub enum Token {
     Identifier(String),
 }
 
-#[derive(Clone, Debug)]
-pub enum LexError<'a> {
+#[derive(Clone)]
+pub enum LexError {
     Unexpected {
         found: char,
         row: usize,
         col: usize,
-        code: &'a str,
+        code: String,
         expected: String,
     },
     EOF { expected: String },
@@ -119,11 +119,11 @@ pub enum LexError<'a> {
         found: char,
         row: usize,
         col: usize,
-        code: &'a str,
+        code: String,
     }
 }
 
-impl fmt::Display for LexError<'_> {
+impl fmt::Display for LexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LexError::Unexpected { found, row, col, code, expected} => write!(
@@ -132,10 +132,10 @@ impl fmt::Display for LexError<'_> {
                 found,
                 row,
                 col,
-                code.lines().nth(*row).unwrap(),
+                code.lines().nth(*row - 1).unwrap(),
                 "^",
                 expected,
-                indent = col + 1
+                indent = col - 1
             ),
             LexError::EOF { expected } => write!(f, "Unexpected EOF\nExpected: {}", expected),
             LexError::Invalid { found, row, col, code } => write!(
@@ -144,15 +144,21 @@ impl fmt::Display for LexError<'_> {
                 found,
                 row,
                 col,
-                code.lines().nth(*row).unwrap(),
+                code.lines().nth(*row - 1).unwrap(),
                 "^",
-                indent = col + 1
+                indent = col - 1
             )
         }
     }
 }
 
-impl Error for LexError<'_> {}
+impl Debug for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl Error for LexError {}
 
 pub trait Lexable<'a> {
     fn tokenize(self) -> Lexer<'a>;
@@ -172,7 +178,7 @@ impl<'a> Lexable<'a> for &'a str {
 pub struct Lexer<'a> {
     code: &'a str,
     chars: Peekable<CharIterator<'a>>,
-    pub errors: Vec<LexError<'a>>
+    pub errors: Vec<LexError>
 }
 
 impl<'a> Lexer<'a> {
@@ -222,7 +228,7 @@ impl<'a> Lexer<'a> {
                 found: *c,
                 row: *row,
                 col: *col,
-                code: self.code,
+                code: self.code.to_owned(),
                 expected: expected.to_string()
             })
         } else {
@@ -361,7 +367,7 @@ impl Iterator for Lexer<'_> {
                         found: current,
                         row,
                         col,
-                        code: self.code,
+                        code: self.code.to_owned(),
                     });
                     return None;
                 }
