@@ -109,15 +109,20 @@ pub struct Lexer<'a> {
     chars: Peekable<CharIterator<'a>>,
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(code: &'a str) -> Self {
-        let code = code;
+pub trait Lexable<'a> {
+    fn tokenize(self) -> Lexer<'a>;
+}
+
+impl<'a> Lexable<'a> for &'a str {
+    fn tokenize(self) -> Lexer<'a> {
         Lexer {
-            code,
-            chars: code.iter_char().peekable()
+            code: self,
+            chars: self.iter_char().peekable()
         }
     }
+}
 
+impl<'a> Lexer<'a> {
     fn followed_by(&mut self, c: char) -> bool {
         match self.chars.peek() {
             None => false,

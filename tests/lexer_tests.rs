@@ -1,13 +1,13 @@
 use std::fs;
 
-use spl::lexer::{Lexer, Operator, Token};
+use spl::lexer::{Operator, Token, Lexable};
 
 const RES_DIR: &str = "tests/res/";
 
 #[test]
 fn fac() {
     let code = fs::read_to_string(RES_DIR.to_owned() + "fac.spl").expect("File inaccessible");
-    let tokens: Vec<Token> = Lexer::new(&code[..]).collect();
+    let tokens: Vec<Token> = code.as_str().tokenize().collect();
     let expected = vec![
         Token::Identifier("fac".into()),
         Token::OpenParen,

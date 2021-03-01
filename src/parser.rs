@@ -1,7 +1,7 @@
 use std::fmt;
 use std::iter::Peekable;
 
-use crate::lexer::{Field, Lexer, Operator, Token};
+use crate::lexer::{Field, Lexer, Operator, Token, Lexable};
 
 pub type Result<T, E = ParseError> = std::result::Result<T, E>;
 type ParseError = String;
@@ -149,7 +149,7 @@ Parser
 
 impl SPL {
     pub fn new(input: &str) -> Result<Self> {
-        let mut lexer = Lexer::new(input).peekable();
+        let mut lexer = input.tokenize().peekable();
         Self::parse(&mut lexer)
     }
 }
