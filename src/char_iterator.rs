@@ -33,7 +33,7 @@ impl<'a> LineTerminatable<'a> for &'a str {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TerminatedLines<'a> {
     input: &'a str,
 }

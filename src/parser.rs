@@ -3,8 +3,8 @@ use std::iter::Peekable;
 
 use crate::lexer::{Field, Lexer, Operator, Token, Lexable};
 
-pub type Result<T, E = ParseError> = std::result::Result<T, E>;
-type ParseError = String;
+type Result<T, E = ParseError> = std::result::Result<T, E>;
+pub type ParseError = String;
 
 trait Parsable: Sized {
     /**

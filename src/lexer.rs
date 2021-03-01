@@ -1,7 +1,9 @@
+use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
-use crate::char_iterator::{CharIterator, CharIterable};
 use std::iter::Peekable;
+
+use crate::char_iterator::{CharIterable, CharIterator};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operator {
@@ -103,11 +105,54 @@ pub enum Token {
     Identifier(String),
 }
 
-#[derive(Clone)]
-pub struct Lexer<'a> {
-    code: &'a str,
-    chars: Peekable<CharIterator<'a>>,
+#[derive(Clone, Debug)]
+pub enum LexError<'a> {
+    Unexpected {
+        found: char,
+        row: usize,
+        col: usize,
+        code: &'a str,
+        expected: String,
+    },
+    EOF { expected: String },
+    Invalid {
+        found: char,
+        row: usize,
+        col: usize,
+        code: &'a str,
+    }
 }
+
+impl fmt::Display for LexError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LexError::Unexpected { found, row, col, code, expected} => write!(
+                f,
+                "Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
+                found,
+                row,
+                col,
+                code.lines().nth(*row).unwrap(),
+                "^",
+                expected,
+                indent = col + 1
+            ),
+            LexError::EOF { expected } => write!(f, "Unexpected EOF\nExpected: {}", expected),
+            LexError::Invalid { found, row, col, code } => write!(
+                f,
+                "Invalid character '{}' at {}:{}:\n{}\n{: >indent$}",
+                found,
+                row,
+                col,
+                code.lines().nth(*row).unwrap(),
+                "^",
+                indent = col + 1
+            )
+        }
+    }
+}
+
+impl Error for LexError<'_> {}
 
 pub trait Lexable<'a> {
     fn tokenize(self) -> Lexer<'a>;
@@ -117,9 +162,17 @@ impl<'a> Lexable<'a> for &'a str {
     fn tokenize(self) -> Lexer<'a> {
         Lexer {
             code: self,
-            chars: self.iter_char().peekable()
+            chars: self.iter_char().peekable(),
+            errors: Vec::new()
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct Lexer<'a> {
+    code: &'a str,
+    chars: Peekable<CharIterator<'a>>,
+    pub errors: Vec<LexError<'a>>
 }
 
 impl<'a> Lexer<'a> {
@@ -165,9 +218,17 @@ impl<'a> Lexer<'a> {
 
     fn expected(&mut self, expected: impl Display) {
         if let Some(((row, col), c)) = self.chars.peek() {
-            eprintln!("Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {}", c, row, col, self.code.lines().nth(*row).unwrap(), "^", expected, indent = col + 1)
+            self.errors.push(LexError::Unexpected {
+                found: *c,
+                row: *row,
+                col: *col,
+                code: self.code,
+                expected: expected.to_string()
+            })
         } else {
-            eprintln!("Unexpected EOF\nExpected: {}", expected)
+            self.errors.push(LexError::EOF {
+                expected: expected.to_string()
+            })
         }
     }
 }
@@ -296,7 +357,12 @@ impl Iterator for Lexer<'_> {
                 '0'..='9' => Token::Number(self.read_number(current)),
                 ' ' | '\r' | '\n' | '\t' => return self.next(),
                 _ => {
-                    eprintln!("Invalid character '{}' at {}:{}:\n{}\n{: >indent$}", current, row, col, self.code.lines().nth(row).unwrap(), "^", indent = col + 1);
+                    self.errors.push(LexError::Invalid {
+                        found: current,
+                        row,
+                        col,
+                        code: self.code,
+                    });
                     return None;
                 }
             }
