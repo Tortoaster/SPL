@@ -105,71 +105,26 @@ pub enum Token {
     Identifier(String),
 }
 
-#[derive(Clone)]
-pub enum LexError {
-    Unexpected {
-        found: char,
-        row: usize,
-        col: usize,
-        code: String,
-        expected: String,
-    },
-    EOF { expected: String },
-    Invalid {
-        found: char,
-        row: usize,
-        col: usize,
-        code: String,
-    }
-}
-
-impl fmt::Display for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LexError::Unexpected { found, row, col, code, expected} => write!(
-                f,
-                "Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
-                found,
-                row,
-                col,
-                code.lines().nth(*row - 1).unwrap(),
-                "^",
-                expected,
-                indent = col - 1
-            ),
-            LexError::EOF { expected } => write!(f, "Unexpected EOF\nExpected: {}", expected),
-            LexError::Invalid { found, row, col, code } => write!(
-                f,
-                "Invalid character '{}' at {}:{}:\n{}\n{: >indent$}",
-                found,
-                row,
-                col,
-                code.lines().nth(*row - 1).unwrap(),
-                "^",
-                indent = col - 1
-            )
-        }
-    }
-}
-
-impl Debug for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-impl Error for LexError {}
-
 pub trait Lexable<'a> {
-    fn tokenize(self) -> Lexer<'a>;
+    fn tokenize(self) -> Result<Lexer<'a>>;
 }
 
 impl<'a> Lexable<'a> for &'a str {
-    fn tokenize(self) -> Lexer<'a> {
-        Lexer {
+    fn tokenize(self) -> Result<Lexer<'a>> {
+        let mut lexer = Lexer {
             code: self,
             chars: self.iter_char().peekable(),
             errors: Vec::new()
+        };
+        while let Some(_) = lexer.next() {}
+        if lexer.errors.is_empty() {
+            Ok(Lexer {
+                code: self,
+                chars: self.iter_char().peekable(),
+                errors: Vec::new()
+            })
+        } else {
+            return Err(lexer.errors);
         }
     }
 }
@@ -375,3 +330,60 @@ impl Iterator for Lexer<'_> {
         )
     }
 }
+
+type Result<T, E = Vec<LexError>> = std::result::Result<T, E>;
+
+#[derive(Clone)]
+pub enum LexError {
+    Unexpected {
+        found: char,
+        row: usize,
+        col: usize,
+        code: String,
+        expected: String,
+    },
+    EOF { expected: String },
+    Invalid {
+        found: char,
+        row: usize,
+        col: usize,
+        code: String,
+    }
+}
+
+impl fmt::Display for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LexError::Unexpected { found, row, col, code, expected} => write!(
+                f,
+                "Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
+                found,
+                row,
+                col,
+                code.lines().nth(*row - 1).unwrap(),
+                "^",
+                expected,
+                indent = col - 1
+            ),
+            LexError::EOF { expected } => write!(f, "Unexpected EOF\nExpected: {}", expected),
+            LexError::Invalid { found, row, col, code } => write!(
+                f,
+                "Invalid character '{}' at {}:{}:\n{}\n{: >indent$}",
+                found,
+                row,
+                col,
+                code.lines().nth(*row - 1).unwrap(),
+                "^",
+                indent = col - 1
+            )
+        }
+    }
+}
+
+impl Debug for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl Error for LexError {}

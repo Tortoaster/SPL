@@ -3,9 +3,6 @@ use std::iter::Peekable;
 
 use crate::lexer::{Field, Lexer, Operator, Token, Lexable};
 
-type Result<T, E = ParseError> = std::result::Result<T, E>;
-pub type ParseError = String;
-
 trait Parsable: Sized {
     /**
     Parses this parsable. This consumes the necessary tokens from the iterator,
@@ -61,10 +58,6 @@ fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
         Err(format!("Bad token: expected {:?} found {:?}", expected, found))
     }
 }
-
-/*
-Grammar
- */
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL(Vec<Decl>);
@@ -143,13 +136,8 @@ pub struct FunCall(Id, Vec<Exp>);
 #[derive(Debug, Eq, PartialEq)]
 pub struct Id(String);
 
-/*
-Parser
- */
-
 impl SPL {
-    pub fn new(input: &str) -> Result<Self> {
-        let mut lexer = input.tokenize().peekable();
+    pub fn new(mut lexer: Peekable<Lexer>) -> Result<Self> {
         Self::parse(&mut lexer)
     }
 }
@@ -473,10 +461,6 @@ impl Parsable for Id {
     }
 }
 
-/*
-Pretty printer
- */
-
 const TAB_SIZE: usize = 4;
 
 trait PrettyPrintable {
@@ -664,3 +648,6 @@ impl PrettyPrintable for Id {
         self.0.clone()
     }
 }
+
+type Result<T, E = ParseError> = std::result::Result<T, E>;
+pub type ParseError = String;

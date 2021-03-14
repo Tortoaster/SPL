@@ -3,8 +3,7 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::fs;
 
-use spl::lexer::{Lexable, LexError};
-
+use crate::lexer::{Lexable, LexError};
 use crate::parser::ParseError;
 use crate::parser::SPL;
 
@@ -13,6 +12,23 @@ mod lexer;
 mod parser;
 mod binder;
 mod typer;
+
+fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 2 {
+        return Err(CompileError::InsufficientArguments);
+    }
+
+    let code = fs::read_to_string(&args[1]).expect("File inaccessible");
+
+    let lexer = code.as_str().tokenize()?;
+    let ast = SPL::new(lexer.peekable())?;
+
+    println!("{}", ast);
+
+    Ok(())
+}
 
 type Result<T, E = CompileError> = std::result::Result<T, E>;
 
@@ -38,6 +54,12 @@ impl Debug for CompileError {
     }
 }
 
+impl From<Vec<LexError>> for CompileError {
+    fn from(e: Vec<LexError>) -> Self {
+        CompileError::LexError(e)
+    }
+}
+
 impl From<ParseError> for CompileError {
     fn from(e: ParseError) -> Self {
         CompileError::ParseError(e)
@@ -45,25 +67,3 @@ impl From<ParseError> for CompileError {
 }
 
 impl Error for CompileError {}
-
-fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 {
-        return Err(CompileError::InsufficientArguments);
-    }
-
-    let code = fs::read_to_string(&args[1]).expect("File inaccessible");
-
-    let mut lexer = code.as_str().tokenize();
-    while let Some(_) = lexer.next() {}
-    if !lexer.errors.is_empty() {
-        return Err(CompileError::LexError(lexer.errors));
-    }
-
-    let ast = SPL::new(code.as_str())?;
-
-    println!("{}", ast);
-
-    Ok(())
-}
