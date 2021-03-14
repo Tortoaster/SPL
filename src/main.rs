@@ -1,23 +1,25 @@
 use std::{env, fmt};
 use std::error::Error;
+use std::fmt::Debug;
 use std::fs;
 
 use spl::lexer::{Lexable, LexError};
 
 use crate::parser::ParseError;
 use crate::parser::SPL;
-use std::fmt::Debug;
 
 mod char_iterator;
 mod lexer;
 mod parser;
+mod binder;
+mod typer;
 
 type Result<T, E = CompileError> = std::result::Result<T, E>;
 
 enum CompileError {
     LexError(Vec<LexError>),
     ParseError(ParseError),
-    InsufficientArguments
+    InsufficientArguments,
 }
 
 impl fmt::Display for CompileError {
