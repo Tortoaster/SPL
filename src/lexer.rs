@@ -1,9 +1,50 @@
-use std::error::Error;
 use std::fmt;
-use std::fmt::{Display, Debug};
+use std::fmt::{Debug, Display};
 use std::iter::Peekable;
 
+use error::Result;
+
 use crate::char_iterator::{CharIterable, CharIterator};
+use crate::lexer::error::LexError;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Token {
+    Var, // var
+    Assign, // =
+    Semicolon, // ;
+    OpenParen, // (
+    CloseParen, // )
+    HasType, // ::
+    OpenBracket, // {
+    CloseBracket, // }
+    Void, // Void
+    To, // ->
+    Comma, // ,
+    OpenArr, // [
+    CloseArr, // ]
+
+    Int, // Int
+    Bool, // Bool
+    Char, // Char
+
+    If, // if
+    Else, // else
+    While, // while
+    Return, // return
+
+    False, // False,
+    True, // True,
+    Nil, // []
+
+    Dot, // .
+    Field(Field),
+
+    Operator(Operator),
+
+    Number(i32),
+    Character(char),
+    Identifier(String),
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operator {
@@ -66,45 +107,6 @@ impl fmt::Display for Field {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Token {
-    Var, // var
-    Assign, // =
-    Semicolon, // ;
-    OpenParen, // (
-    CloseParen, // )
-    HasType, // ::
-    OpenBracket, // {
-    CloseBracket, // }
-    Void, // Void
-    To, // ->
-    Comma, // ,
-    OpenArr, // [
-    CloseArr, // ]
-
-    Int, // Int
-    Bool, // Bool
-    Char, // Char
-
-    If, // if
-    Else, // else
-    While, // while
-    Return, // return
-
-    False, // False,
-    True, // True,
-    Nil, // []
-
-    Dot, // .
-    Field(Field),
-
-    Operator(Operator),
-
-    Number(i32),
-    Character(char),
-    Identifier(String),
-}
-
 pub trait Lexable<'a> {
     fn tokenize(self) -> Result<Lexer<'a>>;
 }
@@ -133,7 +135,7 @@ impl<'a> Lexable<'a> for &'a str {
 pub struct Lexer<'a> {
     code: &'a str,
     chars: Peekable<CharIterator<'a>>,
-    pub errors: Vec<LexError>
+    errors: Vec<LexError>
 }
 
 impl<'a> Lexer<'a> {
@@ -178,19 +180,19 @@ impl<'a> Lexer<'a> {
     }
 
     fn expected(&mut self, expected: impl Display) {
-        if let Some(((row, col), c)) = self.chars.peek() {
-            self.errors.push(LexError::Unexpected {
+        self.errors.push(if let Some(((row, col), c)) = self.chars.peek() {
+            LexError::Unexpected {
                 found: *c,
                 row: *row,
                 col: *col,
                 code: self.code.to_owned(),
                 expected: expected.to_string()
-            })
+            }
         } else {
-            self.errors.push(LexError::EOF {
+            LexError::EOF {
                 expected: expected.to_string()
-            })
-        }
+            }
+        });
     }
 }
 
@@ -331,59 +333,65 @@ impl Iterator for Lexer<'_> {
     }
 }
 
-type Result<T, E = Vec<LexError>> = std::result::Result<T, E>;
+pub mod error {
+    use std::error::Error;
+    use std::fmt;
+    use std::fmt::Debug;
 
-#[derive(Clone)]
-pub enum LexError {
-    Unexpected {
-        found: char,
-        row: usize,
-        col: usize,
-        code: String,
-        expected: String,
-    },
-    EOF { expected: String },
-    Invalid {
-        found: char,
-        row: usize,
-        col: usize,
-        code: String,
-    }
-}
+    pub type Result<T, E = Vec<LexError>> = std::result::Result<T, E>;
 
-impl fmt::Display for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LexError::Unexpected { found, row, col, code, expected} => write!(
-                f,
-                "Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
-                found,
-                row,
-                col,
-                code.lines().nth(*row - 1).unwrap(),
-                "^",
-                expected,
-                indent = col - 1
-            ),
-            LexError::EOF { expected } => write!(f, "Unexpected EOF\nExpected: {}", expected),
-            LexError::Invalid { found, row, col, code } => write!(
-                f,
-                "Invalid character '{}' at {}:{}:\n{}\n{: >indent$}",
-                found,
-                row,
-                col,
-                code.lines().nth(*row - 1).unwrap(),
-                "^",
-                indent = col - 1
-            )
+    #[derive(Clone)]
+    pub enum LexError {
+        Unexpected {
+            found: char,
+            row: usize,
+            col: usize,
+            code: String,
+            expected: String,
+        },
+        EOF { expected: String },
+        Invalid {
+            found: char,
+            row: usize,
+            col: usize,
+            code: String,
         }
     }
-}
 
-impl Debug for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+    impl fmt::Display for LexError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                LexError::Unexpected { found, row, col, code, expected } => write!(
+                    f,
+                    "Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
+                    found,
+                    row,
+                    col,
+                    code.lines().nth(*row - 1).unwrap(),
+                    "^",
+                    expected,
+                    indent = col - 1
+                ),
+                LexError::EOF { expected } => write!(f, "Unexpected EOF\nExpected: {}", expected),
+                LexError::Invalid { found, row, col, code } => write!(
+                    f,
+                    "Invalid character '{}' at {}:{}:\n{}\n{: >indent$}",
+                    found,
+                    row,
+                    col,
+                    code.lines().nth(*row - 1).unwrap(),
+                    "^",
+                    indent = col - 1
+                )
+            }
+        }
     }
-}
 
-impl Error for LexError {}
+    impl Debug for LexError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self)
+        }
+    }
+
+    impl Error for LexError {}
+}

@@ -1,7 +1,6 @@
-use std::fmt;
 use std::iter::Peekable;
 
-use crate::lexer::{Field, Lexer, Operator, Token, Lexable};
+use crate::lexer::{Field, Lexer, Operator, Token};
 
 trait Parsable: Sized {
     /**

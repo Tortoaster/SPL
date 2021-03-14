@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::fs;
 
-use crate::lexer::{Lexable, LexError};
+use crate::lexer::{error::LexError, Lexable};
 use crate::parser::ParseError;
 use crate::parser::SPL;
 

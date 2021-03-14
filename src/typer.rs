@@ -1,9 +1,8 @@
 use std::fmt;
 use std::error::Error;
 use std::fmt::Debug;
-use crate::parser::Exp;
 
-type Result<T, E = TypeError> = std::result::Result<T, E>;
+// type Result<T, E = TypeError> = std::result::Result<T, E>;
 
 enum TypeError {
     TypeMismatch
