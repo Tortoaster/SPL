@@ -11,9 +11,9 @@ pub trait Bindable<'a> {
 impl<'a> Bindable<'a> for SPL<'a> {
     fn bind(&'a self, scope: &mut Scope<'a>) -> Result<()> {
         scope.open();
-        self.0.iter().flat_map(|decl| if let Decl::FunDecl(d) = decl { Some(d) } else { None }).for_each(|d| scope.put_fun(d.0.clone(), d));
-        self.0.iter().flat_map(|decl| if let Decl::VarDecl(d) = decl { Some(d) } else { None }).for_each(|d| scope.put_var(d.1.clone(), d));
-        let errors: Vec<BindError> = self.0.iter().flat_map(|decl| decl.bind(scope).err()).flatten().collect();
+        self.decls.iter().flat_map(|decl| if let Decl::FunDecl(d) = decl { Some(d) } else { None }).for_each(|d| scope.put_fun(d.id.clone(), d));
+        self.decls.iter().flat_map(|decl| if let Decl::VarDecl(d) = decl { Some(d) } else { None }).for_each(|d| scope.put_var(d.id.clone(), d));
+        let errors: Vec<BindError> = self.decls.iter().flat_map(|decl| decl.bind(scope).err()).flatten().collect();
         scope.close();
         if errors.is_empty() {
             Ok(())

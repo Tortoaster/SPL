@@ -75,7 +75,7 @@ impl Parsable for SPL<'_> {
             decls.push(d);
         }
 
-        Ok(SPL(decls))
+        Ok(SPL { decls })
     }
 }
 
@@ -98,7 +98,7 @@ impl Parsable for VarDecl<'_> {
         let exp = Exp::parse(tokens)?;
         munch(tokens, &Token::Semicolon)?;
 
-        Ok(VarDecl(var_type, id, exp))
+        Ok(VarDecl { var_type, id, exp })
     }
 }
 
@@ -106,7 +106,7 @@ impl Parsable for FunDecl<'_> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let id = Id::parse(tokens)?;
         munch(tokens, &Token::OpenParen)?;
-        let params = Id::parse_many_sep(tokens, &Token::Comma)?;
+        let args = Id::parse_many_sep(tokens, &Token::Comma)?;
         munch(tokens, &Token::CloseParen)?;
 
         let fun_type = if tokens.peek() == Some(&Token::HasType) {
@@ -121,7 +121,7 @@ impl Parsable for FunDecl<'_> {
         let stmts = Stmt::parse_many(tokens);
         munch(tokens, &Token::CloseBracket)?;
 
-        Ok(FunDecl(id, params, fun_type, var_decls, stmts))
+        Ok(FunDecl { id, args, fun_type, var_decls, stmts })
     }
 }
 
@@ -155,10 +155,10 @@ impl Parsable for RetType {
 
 impl Parsable for FunType {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let args = Type::parse_many(tokens);
+        let arg_types = Type::parse_many(tokens);
         munch(tokens, &Token::To)?;
-        let ret = RetType::parse(tokens)?;
-        Ok(FunType(args, ret))
+        let ret_type = RetType::parse(tokens)?;
+        Ok(FunType { arg_types, ret_type })
     }
 }
 
@@ -250,7 +250,7 @@ impl Parsable for Stmt<'_> {
                     munch(tokens, &Token::CloseParen)?;
                     munch(tokens, &Token::Semicolon)?;
 
-                    Stmt::FunCall(FunCall(id, args))
+                    Stmt::FunCall(FunCall { id, args })
                 } else {
                     let selector = Selector::parse(tokens)?;
                     munch(tokens, &Token::Assign)?;
@@ -274,7 +274,7 @@ impl Exp<'_> {
                 let id = Id(s);
                 if tokens.peek() == Some(&Token::OpenParen) {
                     munch(tokens, &Token::OpenParen)?;
-                    let fun_call = FunCall(id, Exp::parse_many_sep(tokens, &Token::Comma)?);
+                    let fun_call = FunCall { id, args: Exp::parse_many_sep(tokens, &Token::Comma)? };
                     munch(tokens, &Token::CloseParen)?;
                     Exp::FunCall(fun_call, RefCell::new(None))
                 } else {
@@ -372,7 +372,7 @@ impl Parsable for Selector {
             }
         }
 
-        Ok(Selector(fields))
+        Ok(Selector { fields })
     }
 }
 

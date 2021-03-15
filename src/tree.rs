@@ -2,7 +2,9 @@ use crate::lexer::{Field, Operator};
 use std::cell::RefCell;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct SPL<'a>(pub Vec<Decl<'a>>);
+pub struct SPL<'a> {
+    pub decls: Vec<Decl<'a>>
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Decl<'a> {
@@ -11,7 +13,11 @@ pub enum Decl<'a> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct VarDecl<'a>(pub VarType, pub Id, pub Exp<'a>);
+pub struct VarDecl<'a> {
+    pub var_type: VarType,
+    pub id: Id,
+    pub exp: Exp<'a>
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum VarType {
@@ -20,10 +26,19 @@ pub enum VarType {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct FunDecl<'a>(pub Id, pub Vec<Id>, pub Option<FunType>, pub Vec<VarDecl<'a>>, pub Vec<Stmt<'a>>);
+pub struct FunDecl<'a> {
+    pub id: Id,
+    pub args: Vec<Id>,
+    pub fun_type: Option<FunType>,
+    pub var_decls: Vec<VarDecl<'a>>,
+    pub stmts: Vec<Stmt<'a>>
+}
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct FunType(pub Vec<Type>, pub RetType);
+pub struct FunType {
+    pub arg_types: Vec<Type>,
+    pub ret_type: RetType
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum RetType {
@@ -70,10 +85,15 @@ pub enum Exp<'a> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Selector(pub Vec<Field>);
+pub struct Selector {
+    pub fields: Vec<Field>
+}
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct FunCall<'a>(pub Id, pub Vec<Exp<'a>>);
+pub struct FunCall<'a> {
+    pub id: Id,
+    pub args: Vec<Exp<'a>>
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Id(pub String);
@@ -103,7 +123,7 @@ mod printer {
 
     impl PrettyPrintable for SPL<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
-            self.0.iter().map(|decl| decl.fmt_pretty(indent)).collect::<Vec<String>>().join("\n")
+            self.decls.iter().map(|decl| decl.fmt_pretty(indent)).collect::<Vec<String>>().join("\n")
         }
     }
 
@@ -120,9 +140,9 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!("{:indent$}{} {} = {};\n",
                     "",
-                    self.0.fmt_pretty(indent),
-                    self.1.fmt_pretty(indent),
-                    self.2.fmt_pretty(indent),
+                    self.var_type.fmt_pretty(indent),
+                    self.id.fmt_pretty(indent),
+                    self.exp.fmt_pretty(indent),
                     indent = indent * TAB_SIZE
             )
         }
@@ -141,16 +161,16 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String {
             let mut f = format!("{:indent$}{}({}) ",
                                 "",
-                                self.0.fmt_pretty(indent),
-                                self.1.iter().map(|id| id.fmt_pretty(indent)).collect::<Vec<String>>().join(", "),
+                                self.id.fmt_pretty(indent),
+                                self.args.iter().map(|id| id.fmt_pretty(indent)).collect::<Vec<String>>().join(", "),
                                 indent = indent * TAB_SIZE
             );
-            if let Some(fun_type) = &self.2 {
+            if let Some(fun_type) = &self.fun_type {
                 f += fun_type.fmt_pretty(indent).as_str();
             }
             f += format!("{{\n").as_str();
-            f += self.3.iter().map(|var| var.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
-            f += self.4.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+            f += self.var_decls.iter().map(|var| var.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+            f += self.stmts.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
             f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
         }
     }
@@ -158,8 +178,8 @@ mod printer {
     impl PrettyPrintable for FunType {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!(":: {}-> {} ",
-                    self.0.iter().map(|t| t.fmt_pretty(indent) + " ").collect::<Vec<String>>().join(""),
-                    self.1.fmt_pretty(indent)
+                    self.arg_types.iter().map(|t| t.fmt_pretty(indent) + " ").collect::<Vec<String>>().join(""),
+                    self.ret_type.fmt_pretty(indent)
             )
         }
     }
@@ -258,15 +278,15 @@ mod printer {
 
     impl PrettyPrintable for Selector {
         fn fmt_pretty(&self, _: usize) -> String {
-            self.0.iter().map(|field| ".".to_owned() + format!("{}", field).as_str()).collect::<Vec<String>>().join("")
+            self.fields.iter().map(|field| ".".to_owned() + format!("{}", field).as_str()).collect::<Vec<String>>().join("")
         }
     }
 
     impl PrettyPrintable for FunCall<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!("{}({})",
-                    self.0.fmt_pretty(indent),
-                    self.1.iter().map(|exp| exp.fmt_pretty(indent)).collect::<Vec<String>>().join(", ")
+                    self.id.fmt_pretty(indent),
+                    self.args.iter().map(|exp| exp.fmt_pretty(indent)).collect::<Vec<String>>().join(", ")
             )
         }
     }
