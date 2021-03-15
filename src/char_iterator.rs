@@ -4,7 +4,7 @@ use std::str::Chars;
 pub struct CharIterator<'a> {
     chars: Chars<'a>,
     row: usize,
-    col: usize
+    col: usize,
 }
 
 pub trait CharIterable<'a> {
@@ -16,7 +16,7 @@ impl<'a> CharIterable<'a> for &'a str {
         CharIterator {
             chars: self.chars(),
             row: 1,
-            col: 1
+            col: 1,
         }
     }
 }

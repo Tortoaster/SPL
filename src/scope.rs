@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::binder::error::BindError;
 use crate::binder::error::Result;
-use crate::parser::{FunDecl, VarDecl};
+use crate::tree::{FunDecl, VarDecl};
 
 pub struct Scope<'a> {
     variables: Vec<HashMap<String, &'a VarDecl<'a>>>,

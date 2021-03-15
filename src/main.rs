@@ -1,14 +1,10 @@
-use std::{env, fmt};
-use std::error::Error;
-use std::fmt::Debug;
-use std::fs;
+use std::{env, fs};
 
 use error::Result;
 
-use crate::binder::Bindable;
 use crate::error::CompileError;
 use crate::lexer::Lexable;
-use crate::parser::SPL;
+use crate::tree::SPL;
 
 mod char_iterator;
 mod lexer;
@@ -16,6 +12,7 @@ mod parser;
 mod binder;
 mod typer;
 mod scope;
+mod tree;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();

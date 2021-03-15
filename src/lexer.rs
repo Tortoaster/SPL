@@ -9,34 +9,34 @@ use crate::lexer::error::LexError;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token {
-    Var, // var
-    Assign, // =
-    Semicolon, // ;
-    OpenParen, // (
-    CloseParen, // )
-    HasType, // ::
-    OpenBracket, // {
-    CloseBracket, // }
-    Void, // Void
-    To, // ->
-    Comma, // ,
-    OpenArr, // [
-    CloseArr, // ]
+    Var,
+    Assign,
+    Semicolon,
+    OpenParen,
+    CloseParen,
+    HasType,
+    OpenBracket,
+    CloseBracket,
+    Void,
+    To,
+    Comma,
+    OpenArr,
+    CloseArr,
 
-    Int, // Int
-    Bool, // Bool
-    Char, // Char
+    Int,
+    Bool,
+    Char,
 
-    If, // if
-    Else, // else
-    While, // while
-    Return, // return
+    If,
+    Else,
+    While,
+    Return,
 
-    False, // False,
-    True, // True,
-    Nil, // []
+    False,
+    True,
+    Nil,
 
-    Dot, // .
+    Dot,
     Field(Field),
 
     Operator(Operator),
@@ -48,22 +48,22 @@ pub enum Token {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operator {
-    Not, // !
+    Not,
 
-    Plus, // +
-    Minus, // -
-    Times, // *
-    Divide, // /
-    Modulo, // %
-    Equals, // ==
-    Smaller, // <
-    Greater, // >
-    SmallerEqual, // <=
-    GreaterEqual, // >=
-    NotEqual, // !=
-    And, // &&
-    Or, // ||
-    Cons, // :
+    Plus,
+    Minus,
+    Times,
+    Divide,
+    Modulo,
+    Equals,
+    Smaller,
+    Greater,
+    SmallerEqual,
+    GreaterEqual,
+    NotEqual,
+    And,
+    Or,
+    Cons,
 }
 
 impl fmt::Display for Operator {
@@ -90,10 +90,10 @@ impl fmt::Display for Operator {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Field {
-    Head, // hd
-    Tail, // tl
-    First, // fst
-    Second, // snd
+    Head,
+    Tail,
+    First,
+    Second,
 }
 
 impl fmt::Display for Field {
@@ -116,14 +116,14 @@ impl<'a> Lexable<'a> for &'a str {
         let mut lexer = Lexer {
             code: self,
             chars: self.iter_char().peekable(),
-            errors: Vec::new()
+            errors: Vec::new(),
         };
         while let Some(_) = lexer.next() {}
         if lexer.errors.is_empty() {
             Ok(Lexer {
                 code: self,
                 chars: self.iter_char().peekable(),
-                errors: Vec::new()
+                errors: Vec::new(),
             })
         } else {
             return Err(lexer.errors);
@@ -135,7 +135,7 @@ impl<'a> Lexable<'a> for &'a str {
 pub struct Lexer<'a> {
     code: &'a str,
     chars: Peekable<CharIterator<'a>>,
-    errors: Vec<LexError>
+    errors: Vec<LexError>,
 }
 
 impl<'a> Lexer<'a> {
@@ -186,7 +186,7 @@ impl<'a> Lexer<'a> {
                 row: *row,
                 col: *col,
                 code: self.code.to_owned(),
-                expected: expected.to_string()
+                expected: expected.to_string(),
             }
         } else {
             LexError::EOF {
@@ -316,7 +316,7 @@ impl Iterator for Lexer<'_> {
                         "var" => Token::Var,
                         id => Token::Identifier(String::from(id))
                     }
-                },
+                }
                 '0'..='9' => Token::Number(self.read_number(current)),
                 ' ' | '\r' | '\n' | '\t' => return self.next(),
                 _ => {
@@ -355,7 +355,7 @@ pub mod error {
             row: usize,
             col: usize,
             code: String,
-        }
+        },
     }
 
     impl fmt::Display for LexError {

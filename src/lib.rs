@@ -1,3 +1,4 @@
+pub mod tree;
 pub mod lexer;
 pub mod parser;
 pub mod binder;

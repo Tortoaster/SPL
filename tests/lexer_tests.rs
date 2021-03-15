@@ -1,6 +1,6 @@
 use std::fs;
 
-use spl::lexer::{Operator, Token, Lexable};
+use spl::lexer::{Lexable, Operator, Token};
 
 const RES_DIR: &str = "tests/res/";
 

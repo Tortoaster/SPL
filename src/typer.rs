@@ -1,5 +1,5 @@
-use std::fmt;
 use std::error::Error;
+use std::fmt;
 use std::fmt::Debug;
 
 // type Result<T, E = TypeError> = std::result::Result<T, E>;
@@ -30,7 +30,7 @@ enum Type {
     Char,
     Tuple(Box<Type>, Box<Type>),
     Array(Box<Type>),
-    Polymorphic(String)
+    Polymorphic(String),
 }
 
 trait Inferrable {
