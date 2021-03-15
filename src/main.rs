@@ -5,6 +5,7 @@ use std::fs;
 
 use error::Result;
 
+use crate::binder::Bindable;
 use crate::error::CompileError;
 use crate::lexer::Lexable;
 use crate::parser::SPL;
@@ -26,6 +27,7 @@ fn main() -> Result<()> {
 
     let lexer = code.as_str().tokenize()?;
     let ast = SPL::new(lexer.peekable())?;
+    let _ = ast.bind()?;
 
     println!("{}", ast);
 
@@ -37,6 +39,7 @@ mod error {
     use std::fmt;
     use std::fmt::Debug;
 
+    use crate::binder::error::BindError;
     use crate::lexer::error::LexError;
     use crate::parser::ParseError;
 
@@ -45,6 +48,7 @@ mod error {
     pub enum CompileError {
         LexError(Vec<LexError>),
         ParseError(ParseError),
+        BindError(BindError),
         InsufficientArguments,
     }
 
@@ -53,6 +57,7 @@ mod error {
             match self {
                 CompileError::LexError(e) => write!(f, "Lexer error:\n{}", e.iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n")),
                 CompileError::ParseError(e) => write!(f, "Parse error:\n{}", e),
+                CompileError::BindError(e) => write!(f, "Bind error:\n{}", e),
                 CompileError::InsufficientArguments => write!(f, "Not enough arguments")
             }
         }
@@ -73,6 +78,12 @@ mod error {
     impl From<ParseError> for CompileError {
         fn from(e: ParseError) -> Self {
             CompileError::ParseError(e)
+        }
+    }
+
+    impl From<BindError> for CompileError {
+        fn from(e: BindError) -> Self {
+            CompileError::BindError(e)
         }
     }
 
