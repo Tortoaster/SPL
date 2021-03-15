@@ -59,16 +59,16 @@ fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct SPL(Vec<Decl>);
+pub struct SPL<'a>(pub Vec<Decl<'a>>);
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Decl {
-    VarDecl(VarDecl),
-    FunDecl(FunDecl),
+pub enum Decl<'a> {
+    VarDecl(VarDecl<'a>),
+    FunDecl(FunDecl<'a>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct VarDecl(VarType, Id, Exp);
+pub struct VarDecl<'a>(VarType, pub Id, Exp<'a>);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum VarType {
@@ -77,7 +77,7 @@ pub enum VarType {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct FunDecl(Id, Vec<Id>, Option<FunType>, Vec<VarDecl>, Vec<Stmt>);
+pub struct FunDecl<'a>(pub Id, Vec<Id>, Option<FunType>, Vec<VarDecl<'a>>, Vec<Stmt<'a>>);
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FunType(Vec<Type>, RetType);
@@ -104,44 +104,44 @@ pub enum BasicType {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Stmt {
-    If(Exp, Vec<Stmt>, Vec<Stmt>),
-    While(Exp, Vec<Stmt>),
-    Assignment(Id, Selector, Exp),
-    FunCall(FunCall),
-    Return(Option<Exp>),
+pub enum Stmt<'a> {
+    If(Exp<'a>, Vec<Stmt<'a>>, Vec<Stmt<'a>>),
+    While(Exp<'a>, Vec<Stmt<'a>>),
+    Assignment(Id, Selector, Exp<'a>),
+    FunCall(FunCall<'a>),
+    Return(Option<Exp<'a>>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Exp {
-    Identifier(Id, Selector),
-    BinaryOp(Operator, Box<Exp>, Box<Exp>),
-    UnaryOp(Operator, Box<Exp>),
+pub enum Exp<'a> {
+    Variable(Id, Selector, Option<&'a VarDecl<'a>>),
+    BinaryOp(Operator, Box<Exp<'a>>, Box<Exp<'a>>),
+    UnaryOp(Operator, Box<Exp<'a>>),
     Number(i32),
     Character(char),
     False,
     True,
-    FunCall(FunCall),
+    FunCall(FunCall<'a>, Option<&'a FunDecl<'a>>),
     Nil,
-    Tuple(Box<Exp>, Box<Exp>),
+    Tuple(Box<Exp<'a>>, Box<Exp<'a>>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Selector(Vec<Field>);
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct FunCall(Id, Vec<Exp>);
+pub struct FunCall<'a>(Id, Vec<Exp<'a>>);
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Id(String);
+pub struct Id(pub String);
 
-impl SPL {
+impl SPL<'_> {
     pub fn new(mut lexer: Peekable<Lexer>) -> Result<Self> {
         Self::parse(&mut lexer)
     }
 }
 
-impl Parsable for SPL {
+impl Parsable for SPL<'_> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let mut decls = Vec::new();
 
@@ -154,7 +154,7 @@ impl Parsable for SPL {
     }
 }
 
-impl Parsable for Decl {
+impl Parsable for Decl<'_> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let decl = match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
             Token::Identifier(_) => Decl::FunDecl(FunDecl::parse(tokens)?),
@@ -165,7 +165,7 @@ impl Parsable for Decl {
     }
 }
 
-impl Parsable for VarDecl {
+impl Parsable for VarDecl<'_> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let var_type = VarType::parse(tokens)?;
         let id = Id::parse(tokens)?;
@@ -177,7 +177,7 @@ impl Parsable for VarDecl {
     }
 }
 
-impl Parsable for FunDecl {
+impl Parsable for FunDecl<'_> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let id = Id::parse(tokens)?;
         munch(tokens, &Token::OpenParen)?;
@@ -275,7 +275,7 @@ impl Parsable for BasicType {
     }
 }
 
-impl Parsable for Stmt {
+impl Parsable for Stmt<'_> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self, ParseError> {
         let t = match tokens.next().ok_or(String::from("Unexpected EOF"))? {
             Token::If => {
@@ -342,7 +342,7 @@ impl Parsable for Stmt {
     }
 }
 
-impl Exp {
+impl Exp<'_> {
     fn parse_exp(tokens: &mut Peekable<Lexer>, min_bp: u8) -> Result<Self> {
         let mut lhs = match tokens.next().ok_or(String::from("Unexpected EOF"))? {
             Token::Identifier(s) => {
@@ -351,9 +351,9 @@ impl Exp {
                     munch(tokens, &Token::OpenParen)?;
                     let fun_call = FunCall(id, Exp::parse_many_sep(tokens, &Token::Comma)?);
                     munch(tokens, &Token::CloseParen)?;
-                    Exp::FunCall(fun_call)
+                    Exp::FunCall(fun_call, None)
                 } else {
-                    Exp::Identifier(id, Selector::parse(tokens)?)
+                    Exp::Variable(id, Selector::parse(tokens)?, None)
                 }
             }
             Token::Operator(op) => {
@@ -429,7 +429,7 @@ impl Operator {
     }
 }
 
-impl Parsable for Exp {
+impl Parsable for Exp<'_> {
     fn parse(lexer: &mut Peekable<Lexer>) -> Result<Self> {
         Self::parse_exp(lexer, 0)
     }
@@ -474,19 +474,19 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String;
     }
 
-    impl fmt::Display for SPL {
+    impl fmt::Display for SPL<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "{}", self.fmt_pretty(0))
         }
     }
 
-    impl PrettyPrintable for SPL {
+    impl PrettyPrintable for SPL<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
             self.0.iter().map(|decl| decl.fmt_pretty(indent)).collect::<Vec<String>>().join("\n")
         }
     }
 
-    impl PrettyPrintable for Decl {
+    impl PrettyPrintable for Decl<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
                 Decl::VarDecl(var) => var.fmt_pretty(indent),
@@ -495,7 +495,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for VarDecl {
+    impl PrettyPrintable for VarDecl<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!("{:indent$}{} {} = {};\n",
                     "",
@@ -516,7 +516,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for FunDecl {
+    impl PrettyPrintable for FunDecl<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
             let mut f = format!("{:indent$}{}({}) ",
                                 "",
@@ -573,7 +573,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for Stmt {
+    impl PrettyPrintable for Stmt<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
                 Stmt::If(condition, then, otherwise) => {
@@ -618,17 +618,17 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for Exp {
+    impl PrettyPrintable for Exp<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
-                Exp::Identifier(id, selector) => format!("{}{}", id.fmt_pretty(indent), selector.fmt_pretty(indent)),
+                Exp::Variable(id, selector, _) => format!("{}{}", id.fmt_pretty(indent), selector.fmt_pretty(indent)),
                 Exp::BinaryOp(op, lhs, rhs) => format!("({} {} {})", lhs.fmt_pretty(indent), op, rhs.fmt_pretty(indent)),
                 Exp::UnaryOp(op, lhs) => format!("({}{})", op, lhs.fmt_pretty(indent)),
                 Exp::Number(n) => format!("{}", n),
                 Exp::Character(c) => format!("'{}'", c),
                 Exp::False => format!("False"),
                 Exp::True => format!("True"),
-                Exp::FunCall(fun_call) => format!("{}", fun_call.fmt_pretty(indent)),
+                Exp::FunCall(fun_call, _) => format!("{}", fun_call.fmt_pretty(indent)),
                 Exp::Nil => format!("[]"),
                 Exp::Tuple(l, r) => format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
             }
@@ -641,7 +641,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for FunCall {
+    impl PrettyPrintable for FunCall<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!("{}({})",
                     self.0.fmt_pretty(indent),

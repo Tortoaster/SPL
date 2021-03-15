@@ -4,3 +4,4 @@ pub mod binder;
 
 mod char_iterator;
 mod typer;
+mod scope;

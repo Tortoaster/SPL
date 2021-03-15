@@ -15,6 +15,7 @@ mod lexer;
 mod parser;
 mod binder;
 mod typer;
+mod scope;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -27,7 +28,7 @@ fn main() -> Result<()> {
 
     let lexer = code.as_str().tokenize()?;
     let ast = SPL::new(lexer.peekable())?;
-    let _ = ast.bind()?;
+    // let _ = ast.bind()?;
 
     println!("{}", ast);
 

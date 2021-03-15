@@ -1,15 +1,18 @@
 use error::Result;
 
-use crate::parser::SPL;
-use crate::binder::error::BindError;
+use crate::parser::{SPL, Decl};
+use crate::scope::Scope;
 
-pub trait Bindable {
-    fn bind(&self) -> Result<()>;
+pub trait Bindable<'a> {
+    fn bind(&'a mut self, scope: Scope<'a>) -> Result<()>;
 }
 
-impl Bindable for SPL {
-    fn bind(&self) -> Result<()> {
-        Err(BindError::Todo)
+impl<'a> Bindable<'a> for SPL<'a> {
+    fn bind(&'a mut self, mut scope: Scope<'a>) -> Result<()> {
+        scope.open();
+        self.0.iter().flat_map(|decl| if let Decl::FunDecl(d) = decl { Some(d) } else { None }).for_each(|d| scope.put_fun(d.0.0.clone(), d));
+        self.0.iter().flat_map(|decl| if let Decl::VarDecl(d) = decl { Some(d) } else { None }).for_each(|d| scope.put_var(d.1.0.clone(), d));
+        unimplemented!()
     }
 }
 
@@ -21,12 +24,14 @@ pub mod error {
     pub type Result<T, E = BindError> = std::result::Result<T, E>;
 
     pub enum BindError {
-        Todo
+        UnresolvedReference(String)
     }
 
     impl fmt::Display for BindError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "todo")
+            match self {
+                BindError::UnresolvedReference(r) => write!(f, "Unresolved reference: {}", r)
+            }
         }
     }
 
