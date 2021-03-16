@@ -2,8 +2,10 @@ use std::{env, fs};
 
 use error::Result;
 
+use crate::binder::Bindable;
 use crate::error::CompileError;
 use crate::lexer::Lexable;
+use crate::scope::Scope;
 use crate::tree::SPL;
 
 mod char_iterator;
@@ -24,8 +26,9 @@ fn main() -> Result<()> {
     let code = fs::read_to_string(&args[1]).expect("File inaccessible");
 
     let lexer = code.as_str().tokenize()?;
+
     let ast = SPL::new(lexer.peekable())?;
-    // let _ = ast.bind()?;
+    ast.bind(&mut Scope::new())?;
 
     println!("{}", ast);
 
@@ -46,7 +49,7 @@ mod error {
     pub enum CompileError {
         LexError(Vec<LexError>),
         ParseError(ParseError),
-        BindError(BindError),
+        BindError(Vec<BindError>),
         InsufficientArguments,
     }
 
@@ -55,7 +58,7 @@ mod error {
             match self {
                 CompileError::LexError(e) => write!(f, "Lexer error:\n{}", e.iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n")),
                 CompileError::ParseError(e) => write!(f, "Parse error:\n{}", e),
-                CompileError::BindError(e) => write!(f, "Bind error:\n{}", e),
+                CompileError::BindError(e) => write!(f, "Bind error:\n{}", e.iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n")),
                 CompileError::InsufficientArguments => write!(f, "Not enough arguments")
             }
         }
@@ -79,8 +82,8 @@ mod error {
         }
     }
 
-    impl From<BindError> for CompileError {
-        fn from(e: BindError) -> Self {
+    impl From<Vec<BindError>> for CompileError {
+        fn from(e: Vec<BindError>) -> Self {
             CompileError::BindError(e)
         }
     }

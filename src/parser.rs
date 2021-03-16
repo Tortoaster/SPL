@@ -250,14 +250,14 @@ impl Parsable for Stmt<'_> {
                     munch(tokens, &Token::CloseParen)?;
                     munch(tokens, &Token::Semicolon)?;
 
-                    Stmt::FunCall(FunCall { id, args })
+                    Stmt::FunCall(FunCall { id, args }, RefCell::new(None))
                 } else {
                     let selector = Selector::parse(tokens)?;
                     munch(tokens, &Token::Assign)?;
                     let exp = Exp::parse(tokens)?;
                     munch(tokens, &Token::Semicolon)?;
 
-                    Stmt::Assignment(id, selector, exp)
+                    Stmt::Assignment(id, selector, exp, RefCell::new(None))
                 }
             }
             t => return Err(format!("Bad token: expected Int, Bool, or Char, found {:?}", t))
