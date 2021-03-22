@@ -2,7 +2,6 @@ use std::iter::Peekable;
 
 use crate::lexer::{Lexer, Operator, Token};
 use crate::tree::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Selector, SPL, Stmt, Type, VarDecl, VarType};
-use std::cell::RefCell;
 
 trait Parsable: Sized {
     /**
@@ -276,9 +275,9 @@ impl Exp<'_> {
                     munch(tokens, &Token::OpenParen)?;
                     let fun_call = FunCall { id, args: Exp::parse_many_sep(tokens, &Token::Comma)? };
                     munch(tokens, &Token::CloseParen)?;
-                    Exp::FunCall(fun_call, RefCell::new(None))
+                    Exp::FunCall(fun_call, None)
                 } else {
-                    Exp::Variable(id, Selector::parse(tokens)?, RefCell::new(None))
+                    Exp::Variable(id, Selector::parse(tokens)?, None)
                 }
             }
             Token::Operator(op) => {

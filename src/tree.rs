@@ -1,5 +1,4 @@
 use crate::lexer::{Field, Operator};
-use std::cell::RefCell;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL<'a> {
@@ -72,14 +71,14 @@ pub enum Stmt<'a> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Exp<'a> {
-    Variable(Id, Selector, RefCell<Option<&'a VarDecl<'a>>>),
+    Variable(Id, Selector, Option<&'a VarDecl<'a>>),
     BinaryOp(Operator, Box<Exp<'a>>, Box<Exp<'a>>),
     UnaryOp(Operator, Box<Exp<'a>>),
     Number(i32),
     Character(char),
     False,
     True,
-    FunCall(FunCall<'a>, RefCell<Option<&'a FunDecl<'a>>>),
+    FunCall(FunCall<'a>, Option<&'a FunDecl<'a>>),
     Nil,
     Tuple(Box<Exp<'a>>, Box<Exp<'a>>),
 }
@@ -95,7 +94,7 @@ pub struct FunCall<'a> {
     pub args: Vec<Exp<'a>>
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Id(pub String);
 
 mod printer {
@@ -110,12 +109,6 @@ mod printer {
     }
 
     impl fmt::Display for SPL<'_> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}", self.fmt_pretty(0))
-        }
-    }
-
-    impl fmt::Display for Id {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "{}", self.fmt_pretty(0))
         }
