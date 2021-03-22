@@ -11,7 +11,6 @@ mod lexer;
 mod parser;
 mod binder;
 mod typer;
-mod scope;
 mod tree;
 
 fn main() -> Result<()> {

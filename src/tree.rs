@@ -64,8 +64,8 @@ pub enum BasicType {
 pub enum Stmt<'a> {
     If(Exp<'a>, Vec<Stmt<'a>>, Vec<Stmt<'a>>),
     While(Exp<'a>, Vec<Stmt<'a>>),
-    Assignment(Id, Selector, Exp<'a>, RefCell<Option<&'a VarDecl<'a>>>),
-    FunCall(FunCall<'a>, RefCell<Option<&'a FunDecl<'a>>>),
+    Assignment(Id, Selector, Exp<'a>),
+    FunCall(FunCall<'a>),
     Return(Option<Exp<'a>>),
 }
 
@@ -232,7 +232,7 @@ mod printer {
                     f += body.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
                     f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
                 }
-                Stmt::Assignment(id, field, value, _) => format!("{:indent$}{}{} = {};\n",
+                Stmt::Assignment(id, field, value) => format!("{:indent$}{}{} = {};\n",
                                                               "",
                                                               id.fmt_pretty(indent),
                                                               field.fmt_pretty(indent),
