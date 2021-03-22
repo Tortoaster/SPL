@@ -246,7 +246,7 @@ mod printer {
                                                               value.fmt_pretty(indent),
                                                               indent = indent * TAB_SIZE
                 ),
-                Stmt::FunCall(fun_call, _) => format!("{:indent$}{};\n",
+                Stmt::FunCall(fun_call) => format!("{:indent$}{};\n",
                                                    "",
                                                    fun_call.fmt_pretty(indent),
                                                    indent = indent * TAB_SIZE
