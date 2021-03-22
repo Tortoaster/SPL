@@ -38,7 +38,7 @@ mod error {
 
     use crate::binder::error::BindError;
     use crate::lexer::error::LexError;
-    use crate::parser::ParseError;
+    use crate::parser::error::ParseError;
 
     pub type Result<T, E = CompileError> = std::result::Result<T, E>;
 

@@ -197,12 +197,12 @@ impl<'a> Lexer<'a> {
 }
 
 impl Iterator for Lexer<'_> {
-    type Item = Token;
+    type Item = ((usize, usize), Token);
 
-    fn next(&mut self) -> Option<Token> {
+    fn next(&mut self) -> Option<Self::Item> {
         let ((row, col), current) = self.chars.next()?;
 
-        Some(
+        Some(((row, col),
             match current {
                 '=' => if self.followed_by('=') {
                     Token::Operator(Operator::Equals)
@@ -329,7 +329,7 @@ impl Iterator for Lexer<'_> {
                     return None;
                 }
             }
-        )
+        ))
     }
 }
 
