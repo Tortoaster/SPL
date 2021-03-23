@@ -36,7 +36,6 @@ pub enum Token {
     True,
     Nil,
 
-    Dot,
     Field(Field),
 
     Operator(Operator),
@@ -255,7 +254,6 @@ impl Iterator for Lexer<'_> {
                 '*' => Token::Operator(Operator::Times),
                 '%' => Token::Operator(Operator::Modulo),
                 ']' => Token::CloseArr,
-                '.' => Token::Dot,
                 ';' => Token::Semicolon,
                 '(' => Token::OpenParen,
                 ')' => Token::CloseParen,
@@ -283,38 +281,45 @@ impl Iterator for Lexer<'_> {
                 } else {
                     Token::Operator(Operator::Divide)
                 },
-                '\'' => {
-                    match self.chars.next() {
-                        Some((_, c)) => if self.followed_by('\'') {
-                            Token::Character(c)
-                        } else {
-                            self.expected('\'');
-                            Token::Character(c)
-                        }
-                        None => {
-                            self.expected("character");
-                            Token::Character('c')
-                        }
+                '\'' => match self.chars.next() {
+                    Some((_, c)) => if self.followed_by('\'') {
+                        Token::Character(c)
+                    } else {
+                        self.expected('\'');
+                        Token::Character(c)
+                    }
+                    None => {
+                        self.expected("character");
+                        Token::Character('c')
                     }
                 }
-                'a'..='z' | 'A'..='Z' => {
-                    match self.read_word(current).as_str() {
-                        "Int" => Token::Int,
-                        "Bool" => Token::Bool,
-                        "Char" => Token::Char,
-                        "Void" => Token::Void,
-                        "hd" => Token::Field(Field::Head),
-                        "tl" => Token::Field(Field::Tail),
-                        "fst" => Token::Field(Field::First),
-                        "snd" => Token::Field(Field::Second),
-                        "if" => Token::If,
-                        "else" => Token::Else,
-                        "while" => Token::While,
-                        "return" => Token::Return,
-                        "True" => Token::True,
-                        "False" => Token::False,
-                        "var" => Token::Var,
-                        id => Token::Identifier(String::from(id))
+                'a'..='z' | 'A'..='Z' => match self.read_word(current).as_str() {
+                    "Int" => Token::Int,
+                    "Bool" => Token::Bool,
+                    "Char" => Token::Char,
+                    "Void" => Token::Void,
+                    "if" => Token::If,
+                    "else" => Token::Else,
+                    "while" => Token::While,
+                    "return" => Token::Return,
+                    "True" => Token::True,
+                    "False" => Token::False,
+                    "var" => Token::Var,
+                    id => Token::Identifier(String::from(id))
+                }
+                '.' => match self.read_word(current).as_str() {
+                    ".hd" => Token::Field(Field::Head),
+                    ".tl" => Token::Field(Field::Tail),
+                    ".fst" => Token::Field(Field::First),
+                    ".snd" => Token::Field(Field::Second),
+                    f => {
+                        self.errors.push(LexError::Field {
+                            found: f.to_owned(),
+                            row,
+                            col,
+                            code: self.code.to_owned(),
+                        });
+                        return self.next();
                     }
                 }
                 '0'..='9' => Token::Number(self.read_number(current)),
@@ -326,7 +331,7 @@ impl Iterator for Lexer<'_> {
                         col,
                         code: self.code.to_owned(),
                     });
-                    return None;
+                    return self.next();
                 }
             }
         ))
@@ -356,6 +361,12 @@ pub mod error {
             col: usize,
             code: String,
         },
+        Field {
+            found: String,
+            row: usize,
+            col: usize,
+            code: String,
+        }
     }
 
     impl fmt::Display for LexError {
@@ -376,6 +387,16 @@ pub mod error {
                 LexError::Invalid { found, row, col, code } => write!(
                     f,
                     "Invalid character '{}' at {}:{}:\n{}\n{: >indent$}",
+                    found,
+                    row,
+                    col,
+                    code.lines().nth(*row - 1).unwrap(),
+                    "^",
+                    indent = col - 1
+                ),
+                LexError::Field { found, row, col, code } => write!(
+                    f,
+                    "Unexpected field '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: .hd, .tl, .fst, .snd",
                     found,
                     row,
                     col,

@@ -403,17 +403,10 @@ impl Parsable for Selector {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let mut fields = Vec::new();
 
-        while let Some(((_, _), Token::Dot)) = tokens.peek() {
-            munch(tokens, &Token::Dot)?;
-            match tokens.next().ok_or(ParseError::EOF { expected: "field".to_owned() })? {
-                ((_, _), Token::Field(f)) => fields.push(f),
-                ((row, col), found) => return Err(ParseError::BadToken {
-                    found,
-                    row,
-                    col,
-                    code: "TODO".to_string(),
-                    expected: "field".to_string()
-                })
+        while let Some(((_, _), Token::Field(_))) = tokens.peek() {
+            match tokens.next() {
+                Some(((_, _), Token::Field(field))) => fields.push(field),
+                _ => panic!("Impossible")
             }
         }
 
@@ -474,7 +467,8 @@ pub mod error {
                     found,
                     row,
                     col,
-                    code.lines().nth(*row - 1).unwrap(),
+                    "TODO",
+                    // code.lines().nth(*row - 1).unwrap(),
                     "^",
                     expected,
                     indent = col - 1
@@ -487,7 +481,8 @@ pub mod error {
                     if *prefix { "pre" } else { "in" },
                     row,
                     col,
-                    code.lines().nth(*row - 1).unwrap(),
+                    "TODO",
+                    // code.lines().nth(*row - 1).unwrap(),
                     "^",
                     indent = col - 1
                 ),

@@ -7,7 +7,7 @@ const RES_DIR: &str = "tests/res/";
 #[test]
 fn fac() {
     let code = fs::read_to_string(RES_DIR.to_owned() + "fac.spl").expect("File inaccessible");
-    let tokens: Vec<Token> = code.as_str().tokenize().expect("Failed to tokenize").collect();
+    let tokens: Vec<Token> = code.as_str().tokenize().expect("Failed to tokenize").map(|((_, _), t)| t).collect();
     let expected = vec![
         Token::Identifier("fac".into()),
         Token::OpenParen,
