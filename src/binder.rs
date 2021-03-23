@@ -1,14 +1,14 @@
 use error::Result;
 
 use crate::binder::error::BindError::UnresolvedReference;
-use crate::tree::{Decl, SPL};
+use crate::tree::SPL;
 
-pub trait Bindable<'a> {
-    fn bind(&'a mut self) -> Result<()>;
+pub trait Bindable {
+    fn bind(&mut self) -> Result<()>;
 }
 
-impl<'a> Bindable<'a> for SPL<'a> {
-    fn bind(&'a mut self) -> Result<()> {
+impl Bindable for SPL {
+    fn bind(&mut self) -> Result<()> {
         Err(UnresolvedReference("Todo".to_owned()))
     }
 }

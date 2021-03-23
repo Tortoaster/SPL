@@ -68,13 +68,13 @@ fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
     }
 }
 
-impl SPL<'_> {
+impl SPL {
     pub fn new(mut lexer: Peekable<Lexer>) -> Result<Self> {
         Self::parse(&mut lexer)
     }
 }
 
-impl Parsable for SPL<'_> {
+impl Parsable for SPL {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let mut decls = Vec::new();
 
@@ -87,7 +87,7 @@ impl Parsable for SPL<'_> {
     }
 }
 
-impl Parsable for Decl<'_> {
+impl Parsable for Decl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let decl = match tokens.peek().ok_or(ParseError::EOF { expected: "declaration".to_owned() })? {
             ((_, _), Token::Identifier(_)) => Decl::FunDecl(FunDecl::parse(tokens)?),
@@ -98,7 +98,7 @@ impl Parsable for Decl<'_> {
     }
 }
 
-impl Parsable for VarDecl<'_> {
+impl Parsable for VarDecl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let var_type = VarType::parse(tokens)?;
         let id = Id::parse(tokens)?;
@@ -110,7 +110,7 @@ impl Parsable for VarDecl<'_> {
     }
 }
 
-impl Parsable for FunDecl<'_> {
+impl Parsable for FunDecl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let id = Id::parse(tokens)?;
         munch(tokens, &Token::OpenParen)?;
@@ -214,7 +214,7 @@ impl Parsable for BasicType {
     }
 }
 
-impl Parsable for Stmt<'_> {
+impl Parsable for Stmt {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self, ParseError> {
         let t = match tokens.next().ok_or(ParseError::EOF { expected: "statement".to_owned() })? {
             ((_, _), Token::If) => {
@@ -287,7 +287,7 @@ impl Parsable for Stmt<'_> {
     }
 }
 
-impl Exp<'_> {
+impl Exp {
     fn parse_exp(tokens: &mut Peekable<Lexer>, min_bp: u8) -> Result<Self> {
         let mut lhs = match tokens.next().ok_or(ParseError::EOF { expected: "expression".to_owned() })? {
             ((_, _), Token::Identifier(s)) => {
@@ -296,9 +296,10 @@ impl Exp<'_> {
                     munch(tokens, &Token::OpenParen)?;
                     let fun_call = FunCall { id, args: Exp::parse_many_sep(tokens, &Token::Comma)? };
                     munch(tokens, &Token::CloseParen)?;
-                    Exp::FunCall(fun_call, None)
+                    Exp::FunCall(fun_call)
                 } else {
-                    Exp::Variable(id, Selector::parse(tokens)?, None)
+                    let selector = Selector::parse(tokens)?;
+                    selector.fields.into_iter().fold(Exp::Variable(id), |e, f| Exp::FunCall(FunCall { id: Id(format!("{}", f)), args: vec![e] }))
                 }
             }
             ((row, col), Token::Operator(op)) => {
@@ -392,7 +393,7 @@ impl Operator {
     }
 }
 
-impl Parsable for Exp<'_> {
+impl Parsable for Exp {
     fn parse(lexer: &mut Peekable<Lexer>) -> Result<Self> {
         Self::parse_exp(lexer, 0)
     }
@@ -465,7 +466,7 @@ pub mod error {
     }
 
     impl fmt::Display for ParseError {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
                 ParseError::BadToken { found, row, col, code, expected } => write!(
                     f,
@@ -495,7 +496,7 @@ pub mod error {
     }
 
     impl Debug for ParseError {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "{}", self)
         }
     }

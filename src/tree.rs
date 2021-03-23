@@ -1,21 +1,21 @@
 use crate::lexer::{Field, Operator};
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct SPL<'a> {
-    pub decls: Vec<Decl<'a>>
+pub struct SPL {
+    pub decls: Vec<Decl>
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Decl<'a> {
-    VarDecl(VarDecl<'a>),
-    FunDecl(FunDecl<'a>),
+pub enum Decl {
+    VarDecl(VarDecl),
+    FunDecl(FunDecl),
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct VarDecl<'a> {
+pub struct VarDecl {
     pub var_type: VarType,
     pub id: Id,
-    pub exp: Exp<'a>
+    pub exp: Exp
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -25,12 +25,12 @@ pub enum VarType {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct FunDecl<'a> {
+pub struct FunDecl {
     pub id: Id,
     pub args: Vec<Id>,
     pub fun_type: Option<FunType>,
-    pub var_decls: Vec<VarDecl<'a>>,
-    pub stmts: Vec<Stmt<'a>>
+    pub var_decls: Vec<VarDecl>,
+    pub stmts: Vec<Stmt>
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -61,26 +61,26 @@ pub enum BasicType {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Stmt<'a> {
-    If(Exp<'a>, Vec<Stmt<'a>>, Vec<Stmt<'a>>),
-    While(Exp<'a>, Vec<Stmt<'a>>),
-    Assignment(Id, Selector, Exp<'a>),
-    FunCall(FunCall<'a>),
-    Return(Option<Exp<'a>>),
+pub enum Stmt {
+    If(Exp, Vec<Stmt>, Vec<Stmt>),
+    While(Exp, Vec<Stmt>),
+    Assignment(Id, Selector, Exp),
+    FunCall(FunCall),
+    Return(Option<Exp>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Exp<'a> {
-    Variable(Id, Selector, Option<&'a VarDecl<'a>>),
-    BinaryOp(Operator, Box<Exp<'a>>, Box<Exp<'a>>),
-    UnaryOp(Operator, Box<Exp<'a>>),
+pub enum Exp {
+    Variable(Id),
+    BinaryOp(Operator, Box<Exp>, Box<Exp>),
+    UnaryOp(Operator, Box<Exp>),
     Number(i32),
     Character(char),
     False,
     True,
-    FunCall(FunCall<'a>, Option<&'a FunDecl<'a>>),
+    FunCall(FunCall),
     Nil,
-    Tuple(Box<Exp<'a>>, Box<Exp<'a>>),
+    Tuple(Box<Exp>, Box<Exp>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -89,9 +89,9 @@ pub struct Selector {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct FunCall<'a> {
+pub struct FunCall {
     pub id: Id,
-    pub args: Vec<Exp<'a>>
+    pub args: Vec<Exp>
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -108,19 +108,19 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String;
     }
 
-    impl fmt::Display for SPL<'_> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    impl fmt::Display for SPL {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "{}", self.fmt_pretty(0))
         }
     }
 
-    impl PrettyPrintable for SPL<'_> {
+    impl PrettyPrintable for SPL {
         fn fmt_pretty(&self, indent: usize) -> String {
             self.decls.iter().map(|decl| decl.fmt_pretty(indent)).collect::<Vec<String>>().join("\n")
         }
     }
 
-    impl PrettyPrintable for Decl<'_> {
+    impl PrettyPrintable for Decl {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
                 Decl::VarDecl(var) => var.fmt_pretty(indent),
@@ -129,7 +129,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for VarDecl<'_> {
+    impl PrettyPrintable for VarDecl {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!("{:indent$}{} {} = {};\n",
                     "",
@@ -150,7 +150,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for FunDecl<'_> {
+    impl PrettyPrintable for FunDecl {
         fn fmt_pretty(&self, indent: usize) -> String {
             let mut f = format!("{:indent$}{}({}) ",
                                 "",
@@ -207,7 +207,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for Stmt<'_> {
+    impl PrettyPrintable for Stmt {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
                 Stmt::If(condition, then, otherwise) => {
@@ -252,17 +252,17 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for Exp<'_> {
+    impl PrettyPrintable for Exp {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
-                Exp::Variable(id, selector, _) => format!("{}{}", id.fmt_pretty(indent), selector.fmt_pretty(indent)),
+                Exp::Variable(id) => id.fmt_pretty(indent),
                 Exp::BinaryOp(op, lhs, rhs) => format!("({} {} {})", lhs.fmt_pretty(indent), op, rhs.fmt_pretty(indent)),
                 Exp::UnaryOp(op, lhs) => format!("({}{})", op, lhs.fmt_pretty(indent)),
                 Exp::Number(n) => format!("{}", n),
                 Exp::Character(c) => format!("'{}'", c),
                 Exp::False => format!("False"),
                 Exp::True => format!("True"),
-                Exp::FunCall(fun_call, _) => format!("{}", fun_call.fmt_pretty(indent)),
+                Exp::FunCall(fun_call) => format!("{}", fun_call.fmt_pretty(indent)),
                 Exp::Nil => format!("[]"),
                 Exp::Tuple(l, r) => format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
             }
@@ -275,7 +275,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for FunCall<'_> {
+    impl PrettyPrintable for FunCall {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!("{}({})",
                     self.id.fmt_pretty(indent),
