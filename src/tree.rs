@@ -94,7 +94,7 @@ pub struct FunCall {
     pub args: Vec<Exp>
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Id(pub String);
 
 mod printer {
