@@ -37,13 +37,6 @@ impl<'a, K: Clone + Debug> DerefMut for Positioned<'a, K> {
 
 pub type CharIterator<'a> = Positioned<'a, Chars<'a>>;
 
-// #[derive(Clone, Debug)]
-// pub struct CharIterator<'a> {
-//     chars: Chars<'a>,
-//     row: usize,
-//     col: usize,
-// }
-
 pub trait CharIterable<'a> {
     fn iter_char(self) -> CharIterator<'a>;
 }
