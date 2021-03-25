@@ -66,18 +66,23 @@ impl Type {
 
 impl Typable for Type {
     fn free_variables(&self) -> HashSet<TypeVariable> {
-        // match self {
-        //     Type::Int | Type::Bool | Type::Char => HashSet::new(),
-        //     Type::Tuple(l, r) => {}
-        //     Type::Array(_) => {}
-        //     Type::Function(_, _) => {}
-        //     Type::Variable(t) => vec![t.clone()]
-        // }
-        unimplemented!()
+        match self {
+            Type::Int | Type::Bool | Type::Char => HashSet::new(),
+            Type::Tuple(l, r) => l.free_variables().union(&r.free_variables()).cloned().collect(),
+            Type::Array(a) => a.free_variables(),
+            Type::Function(a, b) => a.free_variables().union(&b.free_variables()).cloned().collect(),
+            Type::Variable(v) => Some(*v).into_iter().collect()
+        }
     }
 
     fn apply(&self, subst: &Substitution) -> Self {
-        unimplemented!()
+        match self {
+            Type::Int | Type::Bool | Type::Char => self.clone(),
+            Type::Tuple(l, r) => Type::Tuple(Box::new(l.apply(subst)), Box::new(r.apply(subst))),
+            Type::Array(a) => Type::Array(Box::new(a.apply(subst))),
+            Type::Function(a, b) => Type::Function(Box::new(a.apply(subst)), Box::new(b.apply(subst))),
+            Type::Variable(v) => subst.get(v).unwrap_or(self).clone()
+        }
     }
 }
 
@@ -186,7 +191,8 @@ impl Substitution {
     }
 
     fn compose(&self, other: &Self) -> Substitution {
-        Substitution(self.unite(&other.iter().map(|(k, v)| (k.clone(), v.apply(self))).collect()))
+        let done = other.iter().map(|(k, v)| (k.clone(), v.apply(self)));
+        Substitution(done.chain(self.iter().map(|(k, v)| (k.clone(), v.clone()))).collect())
     }
 }
 
@@ -221,21 +227,21 @@ impl Generator {
     }
 }
 
-trait Union {
-    fn unite(&self, other: &Self) -> Self;
-}
-
-impl<K: Clone + Eq + Hash, V: Clone> Union for HashMap<K, V> {
-    fn unite(&self, other: &Self) -> Self {
-        other.clone().into_iter().chain(self.clone()).collect()
-    }
-}
-
-impl<K: Clone + Eq + Hash> Union for HashSet<K> {
-    fn unite(&self, other: &Self) -> Self {
-        other.clone().into_iter().chain(self.clone()).collect()
-    }
-}
+// trait Union {
+//     fn unite(&self, other: &Self) -> Self;
+// }
+//
+// impl<K: Clone + Eq + Hash, V: Clone> Union for HashMap<K, V> {
+//     fn unite(&self, other: &Self) -> Self {
+//         other.clone().into_iter().chain(self.clone()).collect()
+//     }
+// }
+//
+// impl<K: Clone + Eq + Hash> Union for HashSet<K> {
+//     fn unite(&self, other: &Self) -> Self {
+//         other.clone().into_iter().chain(self.clone()).collect()
+//     }
+// }
 
 mod error {
     use std::error::Error;
