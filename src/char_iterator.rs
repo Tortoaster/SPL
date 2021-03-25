@@ -1,31 +1,69 @@
+use std::fmt::Debug;
+use std::ops::{Deref, DerefMut};
 use std::str::Chars;
 
 #[derive(Clone, Debug)]
-pub struct CharIterator<'a> {
-    chars: Chars<'a>,
-    row: usize,
-    col: usize,
+pub struct Positioned<'a, K: Clone + Debug> {
+    pub row: usize,
+    pub col: usize,
+    pub code: &'a str,
+    pub inner: K
 }
 
+impl<'a, K: Clone + Debug> Positioned<'a, K> {
+    pub fn transform<N: Clone + Debug>(&self, inner: N) -> Positioned<'a, N> {
+        Positioned {
+            row: self.row,
+            col: self.col,
+            code: self.code,
+            inner
+        }
+    }
+}
+
+impl<'a, K: Clone + Debug> Deref for Positioned<'a, K> {
+    type Target = K;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'a, K: Clone + Debug> DerefMut for Positioned<'a, K> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+pub type CharIterator<'a> = Positioned<'a, Chars<'a>>;
+
+// #[derive(Clone, Debug)]
+// pub struct CharIterator<'a> {
+//     chars: Chars<'a>,
+//     row: usize,
+//     col: usize,
+// }
+
 pub trait CharIterable<'a> {
-    fn iter_char(&self) -> CharIterator<'a>;
+    fn iter_char(self) -> CharIterator<'a>;
 }
 
 impl<'a> CharIterable<'a> for &'a str {
-    fn iter_char(&self) -> CharIterator<'a> {
-        CharIterator {
-            chars: self.chars(),
+    fn iter_char(self) -> CharIterator<'a> {
+        Positioned {
             row: 1,
             col: 1,
+            code: self,
+            inner: self.chars()
         }
     }
 }
 
 impl<'a> Iterator for CharIterator<'a> {
-    type Item = ((usize, usize), char);
+    type Item = Positioned<'a, char>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.chars.next()?;
+        let next = self.inner.next()?;
 
         match next {
             '\n' => {
@@ -35,6 +73,11 @@ impl<'a> Iterator for CharIterator<'a> {
             _ => self.col += 1
         }
 
-        Some(((self.row, self.col), next))
+        Some(Positioned {
+            row: self.row,
+            col: self.col,
+            code: self.code,
+            inner: next
+        })
     }
 }

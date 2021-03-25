@@ -1,7 +1,6 @@
-pub mod tree;
+pub mod char_iterator;
 pub mod lexer;
 pub mod parser;
+pub mod tree;
 pub mod binder;
-
-mod char_iterator;
-mod typer;
+pub mod typer;

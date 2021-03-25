@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::collections::hash_map::RandomState;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 
@@ -7,7 +6,6 @@ use error::Result;
 
 use crate::tree::{Exp, Id};
 use crate::typer::error::TypeError;
-use std::iter::FromIterator;
 
 trait Typable {
     fn free_variables(&self) -> HashSet<TypeVariable>;
