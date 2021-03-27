@@ -4,8 +4,11 @@ use std::ops::{Deref, DerefMut};
 
 use error::Result;
 
-use crate::tree::{Exp, Id};
+use crate::tree::{Exp, Id, SPL};
 use crate::typer::error::TypeError;
+use crate::lexer::Operator;
+use std::iter::FromIterator;
+use std::collections::hash_map::{RandomState, IntoIter};
 
 trait Typable {
     fn free_variables(&self) -> HashSet<TypeVariable>;
@@ -58,6 +61,17 @@ impl Type {
             }
             (Type::Variable(v), t) | (t, Type::Variable(v)) => v.bind(t),
             (t1, t2) => Err(TypeError::Unify(t1.clone(), t2.clone()))
+        }
+    }
+
+    fn unfold(&self) -> Vec<&Type> {
+        match self {
+            Type::Function(a, b) => {
+                let mut vec = vec![&**a];
+                vec.append(&mut b.unfold());
+                vec
+            },
+            _ => vec![self]
         }
     }
 }
@@ -125,35 +139,8 @@ impl Environment {
         }
     }
 
-    fn infer_type(&self, exp: &Exp, generator: &mut Generator) -> Result<(Substitution, Type)> {
-        // match exp {
-        //     Exp::Variable(id) => match self.get(id) {
-        //         None => Err(TypeError::Unbound(id.clone())),
-        //         Some(t) => Ok((Substitution::empty(), t.instantiate(generator)))
-        //     }
-        //     Exp::BinaryOp(_, _, _) => {}
-        //     Exp::UnaryOp(_, _) => {}
-        //     Exp::Number(_) => Ok((Substitution::empty(), Type::Int)),
-        //     Exp::Character(_) => Ok((Substitution::empty(), Type::Char)),
-        //     Exp::False | Exp::True => Ok((Substitution::empty(), Type::Bool)),
-        //     Exp::FunCall(fun_call) => {
-        //         for exp in fun_call.args {
-        //
-        //         }
-        //     }
-        //     Exp::Nil => {
-        //         let var = generator.fresh();
-        //         let t = Type::Variable(var);
-        //         let mut sub = Substitution::empty();
-        //         sub.insert(var, t.clone());
-        //         Ok((sub, Type::Array(Box::new(t))))
-        //     },
-        //     Exp::Tuple(l, r) => {
-        //         let (s, t) = self.infer_type(l.clone(), generator);
-        //         self.apply(s)
-        //     }
-        // }
-        unimplemented!()
+    fn type_check(&self, ast: &SPL, generator: &mut Generator) {
+        ast.infer_type(self, generator);
     }
 }
 
@@ -225,19 +212,162 @@ impl Generator {
     }
 }
 
-// trait Union {
-//     fn unite(&self, other: &Self) -> Self;
+trait Inferable {
+    fn infer_type(&self, environment: &Environment, generator: &mut Generator) -> Result<(Substitution, Type)>;
+}
+
+impl Inferable for SPL {
+    fn infer_type(&self, environment: &Environment, generator: &mut Generator) -> Result<(Substitution, Type), TypeError> {
+        unimplemented!()
+    }
+}
+
+impl Operator {
+    fn get_type(&self, generator: &mut Generator) -> PolyType {
+        match self {
+            Operator::Not => PolyType {
+                variables: Vec::new(),
+                inner: Type::Function(Box::new(Type::Bool), Box::new(Type::Bool))
+            },
+            Operator::Plus | Operator::Minus | Operator::Times | Operator::Divide | Operator::Modulo => PolyType {
+                variables: Vec::new(),
+                inner: Type::Function(Box::new(Type::Int), Box::new(Type::Function(Box::new(Type::Int), Box::new(Type::Int))))
+            },
+            Operator::Equals | Operator::NotEqual => {
+                let a = generator.fresh();
+                PolyType {
+                    variables: vec![a],
+                    inner: Type::Function(Box::new(Type::Variable(a)), Box::new(Type::Function(Box::new(Type::Variable(a)), Box::new(Type::Bool))))
+                }
+            }
+            Operator::Smaller | Operator::Greater | Operator::SmallerEqual | Operator::GreaterEqual => PolyType {
+                variables: Vec::new(),
+                inner: Type::Function(Box::new(Type::Int), Box::new(Type::Function(Box::new(Type::Int), Box::new(Type::Bool))))
+            },
+            Operator::And | Operator::Or => PolyType {
+                variables: Vec::new(),
+                inner: Type::Function(Box::new(Type::Bool), Box::new(Type::Function(Box::new(Type::Bool), Box::new(Type::Bool))))
+            },
+            Operator::Cons => {
+                let a = generator.fresh();
+                PolyType {
+                    variables: vec![a],
+                    inner: Type::Function(Box::new(Type::Variable(a)), Box::new(Type::Function(Box::new(Type::Array(Box::new(Type::Variable(a)))), Box::new(Type::Array(Box::new(Type::Variable(a)))))))
+                }
+            }
+        }
+    }
+}
+
+impl Inferable for Exp {
+    fn infer_type(&self, environment: &Environment, generator: &mut Generator) -> Result<(Substitution, Type), TypeError> {
+        match self {
+            Exp::Variable(id) => match environment.get(id) {
+                None => Err(TypeError::Unbound(id.clone())),
+                Some(t) => Ok((Substitution::new(), t.instantiate(generator)))
+            }
+            Exp::BinaryOp(op, lhs, rhs) => {
+                if let Type::Function(a, f) = op.get_type(generator).inner {
+                    if let Type::Function(b, c) = *f {
+                        let (s, t1) = lhs.infer_type(environment, generator)?;
+                        let mut subst = s.compose(&t1.most_general_unifier(&a)?);
+                        let (s, t2) = rhs.infer_type(&environment.apply(&subst), generator)?;
+                        subst = subst.compose(&s.compose(&t2.most_general_unifier(&b)?));
+                        Ok((subst, *c))
+                    } else {
+                        panic!("Impossible")
+                    }
+                } else {
+                    panic!("Impossible")
+                }
+            }
+            Exp::UnaryOp(op, rhs) => {
+                if let Type::Function(a, b) = op.get_type(generator).inner {
+                    let (s, t) = rhs.infer_type(environment, generator)?;
+                    let subst = s.compose(&t.most_general_unifier(&a)?);
+                    Ok((subst, *b))
+                } else {
+                    panic!("Impossible")
+                }
+            }
+            Exp::Number(_) => Ok((Substitution::new(), Type::Int)),
+            Exp::Character(_) => Ok((Substitution::new(), Type::Char)),
+            Exp::False | Exp::True => Ok((Substitution::new(), Type::Bool)),
+            Exp::FunCall(fun_call) => {
+                match environment.get(&fun_call.id) {
+                    None => Err(TypeError::Unbound(fun_call.id.clone())),
+                    Some(pt) => {
+                        let types = pt.inner.unfold();
+                        let mut environment = environment.apply(&Substitution::new());
+                        let subst: Result<Vec<Substitution>> = types.iter().copied().zip(&fun_call.args).map(|(t1, e)| {
+                            let (s, t2) = e.infer_type(&environment, generator)?;
+                            let subst = s.compose(&t1.most_general_unifier(&t2)?);
+                            environment = environment.apply(&subst);
+                            Ok(subst)
+                        }).collect();
+                        let subst = subst?.into_iter().flatten().collect();
+                        Ok((subst, (*types.last().unwrap()).clone()))
+                    }
+                }
+            }
+            Exp::Nil => {
+                let var = generator.fresh();
+                let t = Type::Variable(var);
+                let mut sub = Substitution::new();
+                sub.insert(var, t.clone());
+                Ok((sub, Type::Array(Box::new(t))))
+            },
+            Exp::Tuple(l, r) => {
+                let (s1, t1) = l.infer_type(environment, generator)?;
+                let (s2, t2) = r.infer_type(&environment.apply(&s1), generator)?;
+                Ok((s1.compose(&s2), Type::Tuple(Box::new(t1), Box::new(t2))))
+            }
+        }
+    }
+}
+
+impl FromIterator<(TypeVariable, Type)> for Substitution {
+    fn from_iter<T: IntoIterator<Item=(TypeVariable, Type)>>(iter: T) -> Self {
+        Substitution(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for Substitution {
+    type Item = (TypeVariable, Type);
+    type IntoIter = IntoIter<TypeVariable, Type>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.into_iter()
+    }
+}
+
+// trait Extractable<T, E> {
+//     fn extract<IT>(self) -> Result<IT, E> where
+//         IT: Iterator<Item=T>;
 // }
 //
-// impl<K: Clone + Eq + Hash, V: Clone> Union for HashMap<K, V> {
-//     fn unite(&self, other: &Self) -> Self {
-//         other.clone().into_iter().chain(self.clone()).collect()
+// impl<I, T, E> Extractable<T, E> for I where
+//     I: Iterator<Item=Result<T, E>>,
+//     E: Composable {
+//     fn extract<IT>(self) -> Result<IT, E> where
+//         IT: Iterator<Item=T> {
+//         let (ts, es): (Vec<T>, Vec<E>) = self.partition(Result::is_ok);
+//         if es.is_empty() {
+//             Ok(ts.into_iter())
+//         } else {
+//             Err(es.into_iter().fold_first(|a, e| a.compose(e)).unwrap())
+//         }
 //     }
 // }
 //
-// impl<K: Clone + Eq + Hash> Union for HashSet<K> {
-//     fn unite(&self, other: &Self) -> Self {
-//         other.clone().into_iter().chain(self.clone()).collect()
+// trait Composable: Sized {
+//     fn compose(self, other: Self) -> Self;
+// }
+//
+// impl Composable for Vec<TypeError> {
+//     fn compose(mut self, mut other: Self) -> Self {
+//         self.append(&mut other);
+//         self
 //     }
 // }
 
