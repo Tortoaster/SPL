@@ -341,36 +341,6 @@ impl IntoIterator for Substitution {
     }
 }
 
-// trait Extractable<T, E> {
-//     fn extract<IT>(self) -> Result<IT, E> where
-//         IT: Iterator<Item=T>;
-// }
-//
-// impl<I, T, E> Extractable<T, E> for I where
-//     I: Iterator<Item=Result<T, E>>,
-//     E: Composable {
-//     fn extract<IT>(self) -> Result<IT, E> where
-//         IT: Iterator<Item=T> {
-//         let (ts, es): (Vec<T>, Vec<E>) = self.partition(Result::is_ok);
-//         if es.is_empty() {
-//             Ok(ts.into_iter())
-//         } else {
-//             Err(es.into_iter().fold_first(|a, e| a.compose(e)).unwrap())
-//         }
-//     }
-// }
-//
-// trait Composable: Sized {
-//     fn compose(self, other: Self) -> Self;
-// }
-//
-// impl Composable for Vec<TypeError> {
-//     fn compose(mut self, mut other: Self) -> Self {
-//         self.append(&mut other);
-//         self
-//     }
-// }
-
 mod error {
     use std::error::Error;
     use std::fmt;
