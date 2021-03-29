@@ -5,6 +5,7 @@ use error::Result;
 use crate::error::CompileError;
 use crate::lexer::Lexable;
 use crate::tree::SPL;
+use crate::typer::{Environment, Generator, Inferable};
 
 mod char_iterator;
 mod lexer;
@@ -23,9 +24,13 @@ fn main() -> Result<()> {
 
     let lexer = code.as_str().tokenize()?;
     let ast = SPL::new(lexer.peekable())?;
-    // let _ = ast.bind()?;
 
-    println!("{}", ast);
+    let mut environment = Environment::new();
+    let mut generator = Generator::new();
+
+    ast.infer_type(&mut environment, &mut generator)?;
+
+    // println!("{}", ast);
 
     Ok(())
 }
@@ -37,12 +42,14 @@ mod error {
 
     use crate::lexer::error::LexError;
     use crate::parser::error::ParseError;
+    use crate::typer::error::TypeError;
 
     pub type Result<T, E = CompileError> = std::result::Result<T, E>;
 
     pub enum CompileError {
         LexError(Vec<LexError>),
         ParseError(ParseError),
+        TypeError(TypeError),
         InsufficientArguments,
     }
 
@@ -51,6 +58,7 @@ mod error {
             match self {
                 CompileError::LexError(e) => write!(f, "Lexer error:\n{}", e.iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n")),
                 CompileError::ParseError(e) => write!(f, "Parse error:\n{}", e),
+                CompileError::TypeError(e) => write!(f, "Type error:\n{}", e),
                 CompileError::InsufficientArguments => write!(f, "Not enough arguments")
             }
         }
@@ -71,6 +79,12 @@ mod error {
     impl From<ParseError> for CompileError {
         fn from(e: ParseError) -> Self {
             CompileError::ParseError(e)
+        }
+    }
+
+    impl From<TypeError> for CompileError {
+        fn from(e: TypeError) -> Self {
+            CompileError::TypeError(e)
         }
     }
 

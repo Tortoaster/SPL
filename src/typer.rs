@@ -7,7 +7,7 @@ use std::ops::{Deref, DerefMut};
 use error::Result;
 
 use crate::lexer::{Operator, Field};
-use crate::tree::{Exp, Id, SPL, Stmt};
+use crate::tree::{Exp, Id, SPL, Stmt, Decl, VarDecl, FunDecl, FunCall};
 use crate::typer::error::TypeError;
 
 trait Typable {
@@ -113,7 +113,7 @@ impl Typable for Type {
 }
 
 #[derive(Clone)]
-struct PolyType {
+pub struct PolyType {
     variables: Vec<TypeVariable>,
     inner: Type,
 }
@@ -144,10 +144,10 @@ impl Typable for PolyType {
     }
 }
 
-struct Environment(HashMap<Id, PolyType>);
+pub struct Environment(HashMap<Id, PolyType>);
 
 impl Environment {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Environment(HashMap::new())
     }
 
@@ -157,11 +157,6 @@ impl Environment {
             variables: instance.free_variables().into_iter().filter(|t| !free.contains(t)).collect(),
             inner: instance.clone(),
         }
-    }
-
-    fn type_check(&mut self, ast: &SPL, generator: &mut Generator) -> Result<()> {
-        ast.infer_type(self, generator)?;
-        Ok(())
     }
 }
 
@@ -218,12 +213,12 @@ impl DerefMut for Substitution {
     }
 }
 
-struct Generator {
+pub struct Generator {
     current: usize
 }
 
 impl Generator {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Generator {
             current: 0
         }
@@ -235,11 +230,33 @@ impl Generator {
     }
 }
 
-trait Inferable {
+pub trait Inferable {
     fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type>;
 }
 
 impl Inferable for SPL {
+    fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
+        self.decls.iter().map(|decl| decl.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
+        Ok(Type::Void)
+    }
+}
+
+impl Inferable for Decl {
+    fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
+        match self {
+            Decl::VarDecl(var_decl) => var_decl.infer_type(environment, generator),
+            Decl::FunDecl(fun_decl) => fun_decl.infer_type(environment, generator)
+        }
+    }
+}
+
+impl Inferable for VarDecl {
+    fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
+        unimplemented!()
+    }
+}
+
+impl Inferable for FunDecl {
     fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
         unimplemented!()
     }
@@ -313,7 +330,7 @@ impl Inferable for Stmt {
                 }
                 Ok(Type::Void)
             }
-            Stmt::FunCall(f) => Exp::FunCall(f.clone()).infer_type(environment, generator),
+            Stmt::FunCall(fun_call) => fun_call.infer_type(environment, generator),
             Stmt::Return(_) => Ok(Type::Void)
         }
     }
@@ -365,11 +382,14 @@ impl Inferable for Exp {
             }
             Exp::BinaryOp(op, lhs, rhs) => {
                 if let Type::Function(a, f) = op.get_type(generator).inner {
-                    if let Type::Function(b, c) = *f {
+                    if let Type::Function(b, mut c) = *f {
                         let t1 = lhs.infer_type(environment, generator)?;
-                        environment.apply(&t1.unify(&a)?);
+                        let subst_a = t1.unify(&a)?;
+                        environment.apply(&subst_a);
                         let t2 = rhs.infer_type(environment, generator)?;
-                        environment.apply(&t2.unify(&b)?);
+                        let subst_b = t2.unify(&b)?;
+                        environment.apply(&subst_b);
+                        c.apply(&subst_a.compose(subst_b));
                         Ok(*c)
                     } else {
                         panic!("Impossible")
@@ -379,9 +399,11 @@ impl Inferable for Exp {
                 }
             }
             Exp::UnaryOp(op, rhs) => {
-                if let Type::Function(a, b) = op.get_type(generator).inner {
+                if let Type::Function(a, mut b) = op.get_type(generator).inner {
                     let t = rhs.infer_type(environment, generator)?;
-                    environment.apply(&t.unify(&a)?);
+                    let subst = t.unify(&a)?;
+                    environment.apply(&subst);
+                    b.apply(&subst);
                     Ok(*b)
                 } else {
                     panic!("Impossible")
@@ -390,18 +412,7 @@ impl Inferable for Exp {
             Exp::Number(_) => Ok(Type::Int),
             Exp::Character(_) => Ok(Type::Char),
             Exp::False | Exp::True => Ok(Type::Bool),
-            Exp::FunCall(fun_call) => {
-                let types = match environment.get(&fun_call.id) {
-                    None => return Err(TypeError::Unbound(fun_call.id.clone())),
-                    Some(t) => t.clone()
-                }.inner.unfold();
-                fun_call.args.iter().zip(&types).map(|(e, t)| {
-                    let found = e.infer_type(environment, generator)?;
-                    environment.apply(&found.unify(&t)?);
-                    Ok(())
-                }).collect::<Result<()>>()?;
-                Ok(types.last().unwrap().to_owned())
-            }
+            Exp::FunCall(fun_call) => fun_call.infer_type(environment, generator),
             Exp::Nil => {
                 let v = generator.fresh();
                 let t = Type::Variable(v);
@@ -416,6 +427,21 @@ impl Inferable for Exp {
                 Ok(Type::Tuple(Box::new(t1), Box::new(t2)))
             }
         }
+    }
+}
+
+impl Inferable for FunCall {
+    fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type, TypeError> {
+        let types = match environment.get(&self.id) {
+            None => return Err(TypeError::Unbound(self.id.clone())),
+            Some(t) => t.clone()
+        }.inner.unfold();
+        self.args.iter().zip(&types).map(|(e, t)| {
+            let found = e.infer_type(environment, generator)?;
+            environment.apply(&found.unify(&t)?);
+            Ok(())
+        }).collect::<Result<()>>()?;
+        Ok(types.last().unwrap().to_owned())
     }
 }
 
@@ -435,7 +461,7 @@ impl IntoIterator for Substitution {
     }
 }
 
-mod error {
+pub mod error {
     use std::error::Error;
     use std::fmt;
     use std::fmt::Debug;
