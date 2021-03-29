@@ -69,7 +69,7 @@ pub enum Stmt {
     Return(Option<Exp>),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Exp {
     Variable(Id),
     BinaryOp(Operator, Box<Exp>, Box<Exp>),
@@ -88,7 +88,7 @@ pub struct Selector {
     pub fields: Vec<Field>
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunCall {
     pub id: Id,
     pub args: Vec<Exp>

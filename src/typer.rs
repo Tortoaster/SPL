@@ -6,8 +6,8 @@ use std::ops::{Deref, DerefMut};
 
 use error::Result;
 
-use crate::lexer::Operator;
-use crate::tree::{Exp, Id, SPL};
+use crate::lexer::{Operator, Field};
+use crate::tree::{Exp, Id, SPL, Stmt};
 use crate::typer::error::TypeError;
 
 trait Typable {
@@ -39,7 +39,7 @@ impl TypeVariable {
 
 #[derive(Clone, Debug)]
 pub enum Type {
-    // Void,
+    Void,
     Int,
     Bool,
     Char,
@@ -85,17 +85,17 @@ impl Type {
 impl Typable for Type {
     fn free_variables(&self) -> HashSet<TypeVariable> {
         match self {
-            Type::Int | Type::Bool | Type::Char => HashSet::new(),
+            Type::Void | Type::Int | Type::Bool | Type::Char => HashSet::new(),
             Type::Tuple(l, r) => l.free_variables().union(&r.free_variables()).cloned().collect(),
             Type::Array(a) => a.free_variables(),
             Type::Function(a, b) => a.free_variables().union(&b.free_variables()).cloned().collect(),
-            Type::Variable(v) => Some(*v).into_iter().collect()
+            Type::Variable(v) => Some(*v).into_iter().collect(),
         }
     }
 
     fn apply(&mut self, subst: &Substitution) {
         match self {
-            Type::Int | Type::Bool | Type::Char => (),
+            Type::Void | Type::Int | Type::Bool | Type::Char => (),
             Type::Tuple(l, r) => {
                 l.apply(subst);
                 r.apply(subst);
@@ -159,8 +159,9 @@ impl Environment {
         }
     }
 
-    fn type_check(&mut self, ast: &SPL, generator: &mut Generator) {
-        ast.infer_type(self, generator);
+    fn type_check(&mut self, ast: &SPL, generator: &mut Generator) -> Result<()> {
+        ast.infer_type(self, generator)?;
+        Ok(())
     }
 }
 
@@ -244,22 +245,79 @@ impl Inferable for SPL {
     }
 }
 
-// impl Inferable for Stmt {
-//     fn infer_type(&self, environment: &Environment, generator: &mut Generator) -> Result<(Substitution, Type), TypeError> {
-//         match self {
-//             Stmt::If(c, t, e) => {
-//                 let (s, t) = c.infer_type(environment, generator)?;
-//                 let mgu = t.most_general_unifier(&Type::Bool)?;
-//
-//                 Ok((s.compose(&mgu), Type::Void))
-//             }
-//             Stmt::While(_, _) => {}
-//             Stmt::Assignment(_, _, _) => {}
-//             Stmt::FunCall(_) => {}
-//             Stmt::Return(_) => {}
-//         }
-//     }
-// }
+impl Inferable for Stmt {
+    fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
+        match self {
+            Stmt::If(c, t, e) => {
+                let inferred = c.infer_type(environment, generator)?;
+                environment.apply(&inferred.most_general_unifier(&Type::Bool)?);
+                t.iter().map(|e| e.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
+                e.iter().map(|e| e.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
+                Ok(Type::Void)
+            }
+            Stmt::While(c, t) => {
+                let inferred = c.infer_type(environment, generator)?;
+                environment.apply(&inferred.most_general_unifier(&Type::Bool)?);
+                t.iter().map(|e| e.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
+                Ok(Type::Void)
+            }
+            Stmt::Assignment(x, s, e) => {
+                let mut inferred = e.infer_type(environment, generator)?;
+                let remembered = environment.get(x).ok_or(TypeError::Unbound(x.clone()))?;
+                let subst = inferred.most_general_unifier(&remembered.inner)?;
+                environment.apply(&subst);
+                inferred.apply(&subst);
+                for field in &s.fields {
+                    match field {
+                        Field::Head => {
+                            let mut list = Type::Array(Box::new(Type::Variable(generator.fresh())));
+                            let subst = inferred.most_general_unifier(&list)?;
+                            environment.apply(&subst);
+                            list.apply(&subst);
+                            if let Type::Array(t) = list {
+                                inferred = *t;
+                            } else {
+                                panic!("Impossible")
+                            }
+                        }
+                        Field::Tail => {
+                            let mut list = Type::Array(Box::new(Type::Variable(generator.fresh())));
+                            let subst = inferred.most_general_unifier(&list)?;
+                            environment.apply(&subst);
+                            list.apply(&subst);
+                            inferred = list;
+                        }
+                        Field::First => {
+                            let mut tuple = Type::Tuple(Box::new(Type::Variable(generator.fresh())), Box::new(Type::Variable(generator.fresh())));
+                            let subst = inferred.most_general_unifier(&tuple)?;
+                            environment.apply(&subst);
+                            tuple.apply(&subst);
+                            if let Type::Tuple(t, _) = tuple {
+                                inferred = *t;
+                            } else {
+                                panic!("Impossible")
+                            }
+                        }
+                        Field::Second => {
+                            let mut tuple = Type::Tuple(Box::new(Type::Variable(generator.fresh())), Box::new(Type::Variable(generator.fresh())));
+                            let subst = inferred.most_general_unifier(&tuple)?;
+                            environment.apply(&subst);
+                            tuple.apply(&subst);
+                            if let Type::Tuple(_, t) = tuple {
+                                inferred = *t;
+                            } else {
+                                panic!("Impossible")
+                            }
+                        }
+                    }
+                }
+                Ok(Type::Void)
+            }
+            Stmt::FunCall(f) => Exp::FunCall(f.clone()).infer_type(environment, generator),
+            Stmt::Return(_) => Ok(Type::Void)
+        }
+    }
+}
 
 impl Operator {
     fn get_type(&self, generator: &mut Generator) -> PolyType {
