@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use error::Result;
 
 use crate::lexer::{Lexer, Operator, Token};
-use crate::tree::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Selector, SPL, Stmt, Type, VarDecl, VarType};
+use crate::tree::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, Type, VarDecl, VarType};
 use crate::parser::error::ParseError;
 use crate::char_iterator::Positioned;
 
@@ -267,7 +267,7 @@ impl Parsable for Stmt {
 
                     Stmt::FunCall(FunCall { id, args })
                 } else {
-                    let selector = Selector::parse(tokens)?;
+                    let selector = Fields::parse(tokens)?;
                     munch(tokens, &Token::Assign)?;
                     let exp = Exp::parse(tokens)?;
                     munch(tokens, &Token::Semicolon)?;
@@ -299,7 +299,7 @@ impl Exp {
                     munch(tokens, &Token::CloseParen)?;
                     Exp::FunCall(fun_call)
                 } else {
-                    let selector = Selector::parse(tokens)?;
+                    let selector = Fields::parse(tokens)?;
                     selector.fields.into_iter().fold(Exp::Variable(id), |e, f| Exp::FunCall(FunCall { id: Id(format!("{}", f)), args: vec![e] }))
                 }
             }
@@ -400,7 +400,7 @@ impl Parsable for Exp {
     }
 }
 
-impl Parsable for Selector {
+impl Parsable for Fields {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let mut fields = Vec::new();
 
@@ -411,7 +411,7 @@ impl Parsable for Selector {
             }
         }
 
-        Ok(Selector { fields })
+        Ok(Fields { fields })
     }
 }
 

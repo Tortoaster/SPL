@@ -50,19 +50,19 @@ pub enum Type {
 }
 
 impl Type {
-    fn most_general_unifier(&self, other: &Type) -> Result<Substitution> {
+    fn unify(&self, other: &Type) -> Result<Substitution> {
         match (self, other) {
             (Type::Int, Type::Int) | (Type::Bool, Type::Bool) | (Type::Char, Type::Char) => Ok(Substitution::new()),
-            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => Ok(l1.most_general_unifier(l2)?.compose(r1.most_general_unifier(r2)?)),
-            (Type::Array(t1), Type::Array(t2)) => t1.most_general_unifier(t2),
+            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => Ok(l1.unify(l2)?.compose(r1.unify(r2)?)),
+            (Type::Array(t1), Type::Array(t2)) => t1.unify(t2),
             (Type::Function(a1, b1), Type::Function(a2, b2)) => {
-                let arg = a1.most_general_unifier(a2)?;
+                let arg = a1.unify(a2)?;
                 // Is applying necessary?
                 let mut b1 = b1.clone();
                 b1.apply(&arg);
                 let mut b2 = b2.clone();
                 b2.apply(&arg);
-                let res = b1.most_general_unifier(&b2)?;
+                let res = b1.unify(&b2)?;
                 Ok(arg.compose(res))
             }
             (Type::Variable(v), t) | (t, Type::Variable(v)) => v.bind(t),
@@ -250,28 +250,28 @@ impl Inferable for Stmt {
         match self {
             Stmt::If(c, t, e) => {
                 let inferred = c.infer_type(environment, generator)?;
-                environment.apply(&inferred.most_general_unifier(&Type::Bool)?);
+                environment.apply(&inferred.unify(&Type::Bool)?);
                 t.iter().map(|e| e.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
                 e.iter().map(|e| e.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
                 Ok(Type::Void)
             }
             Stmt::While(c, t) => {
                 let inferred = c.infer_type(environment, generator)?;
-                environment.apply(&inferred.most_general_unifier(&Type::Bool)?);
+                environment.apply(&inferred.unify(&Type::Bool)?);
                 t.iter().map(|e| e.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
                 Ok(Type::Void)
             }
             Stmt::Assignment(x, s, e) => {
                 let mut inferred = e.infer_type(environment, generator)?;
                 let remembered = environment.get(x).ok_or(TypeError::Unbound(x.clone()))?;
-                let subst = inferred.most_general_unifier(&remembered.inner)?;
+                let subst = inferred.unify(&remembered.inner)?;
                 environment.apply(&subst);
                 inferred.apply(&subst);
                 for field in &s.fields {
                     match field {
                         Field::Head => {
                             let mut list = Type::Array(Box::new(Type::Variable(generator.fresh())));
-                            let subst = inferred.most_general_unifier(&list)?;
+                            let subst = inferred.unify(&list)?;
                             environment.apply(&subst);
                             list.apply(&subst);
                             if let Type::Array(t) = list {
@@ -282,14 +282,14 @@ impl Inferable for Stmt {
                         }
                         Field::Tail => {
                             let mut list = Type::Array(Box::new(Type::Variable(generator.fresh())));
-                            let subst = inferred.most_general_unifier(&list)?;
+                            let subst = inferred.unify(&list)?;
                             environment.apply(&subst);
                             list.apply(&subst);
                             inferred = list;
                         }
                         Field::First => {
                             let mut tuple = Type::Tuple(Box::new(Type::Variable(generator.fresh())), Box::new(Type::Variable(generator.fresh())));
-                            let subst = inferred.most_general_unifier(&tuple)?;
+                            let subst = inferred.unify(&tuple)?;
                             environment.apply(&subst);
                             tuple.apply(&subst);
                             if let Type::Tuple(t, _) = tuple {
@@ -300,7 +300,7 @@ impl Inferable for Stmt {
                         }
                         Field::Second => {
                             let mut tuple = Type::Tuple(Box::new(Type::Variable(generator.fresh())), Box::new(Type::Variable(generator.fresh())));
-                            let subst = inferred.most_general_unifier(&tuple)?;
+                            let subst = inferred.unify(&tuple)?;
                             environment.apply(&subst);
                             tuple.apply(&subst);
                             if let Type::Tuple(_, t) = tuple {
@@ -367,9 +367,9 @@ impl Inferable for Exp {
                 if let Type::Function(a, f) = op.get_type(generator).inner {
                     if let Type::Function(b, c) = *f {
                         let t1 = lhs.infer_type(environment, generator)?;
-                        environment.apply(&t1.most_general_unifier(&a)?);
+                        environment.apply(&t1.unify(&a)?);
                         let t2 = rhs.infer_type(environment, generator)?;
-                        environment.apply(&t2.most_general_unifier(&b)?);
+                        environment.apply(&t2.unify(&b)?);
                         Ok(*c)
                     } else {
                         panic!("Impossible")
@@ -381,7 +381,7 @@ impl Inferable for Exp {
             Exp::UnaryOp(op, rhs) => {
                 if let Type::Function(a, b) = op.get_type(generator).inner {
                     let t = rhs.infer_type(environment, generator)?;
-                    environment.apply(&t.most_general_unifier(&a)?);
+                    environment.apply(&t.unify(&a)?);
                     Ok(*b)
                 } else {
                     panic!("Impossible")
@@ -397,7 +397,7 @@ impl Inferable for Exp {
                 }.inner.unfold();
                 fun_call.args.iter().zip(&types).map(|(e, t)| {
                     let found = e.infer_type(environment, generator)?;
-                    environment.apply(&found.most_general_unifier(&t)?);
+                    environment.apply(&found.unify(&t)?);
                     Ok(())
                 }).collect::<Result<()>>()?;
                 Ok(types.last().unwrap().to_owned())

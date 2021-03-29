@@ -64,7 +64,7 @@ pub enum BasicType {
 pub enum Stmt {
     If(Exp, Vec<Stmt>, Vec<Stmt>),
     While(Exp, Vec<Stmt>),
-    Assignment(Id, Selector, Exp),
+    Assignment(Id, Fields, Exp),
     FunCall(FunCall),
     Return(Option<Exp>),
 }
@@ -84,7 +84,7 @@ pub enum Exp {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Selector {
+pub struct Fields {
     pub fields: Vec<Field>
 }
 
@@ -100,7 +100,7 @@ pub struct Id(pub String);
 mod printer {
     use std::fmt;
 
-    use super::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Selector, SPL, Stmt, Type, VarDecl, VarType};
+    use super::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, Type, VarDecl, VarType};
 
     const TAB_SIZE: usize = 4;
 
@@ -269,7 +269,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for Selector {
+    impl PrettyPrintable for Fields {
         fn fmt_pretty(&self, _: usize) -> String {
             self.fields.iter().map(|field| ".".to_owned() + format!("{}", field).as_str()).collect::<Vec<String>>().join("")
         }
