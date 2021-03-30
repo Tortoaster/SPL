@@ -23,7 +23,7 @@ pub struct VarDecl {
 #[derive(Debug, Eq, PartialEq)]
 pub enum VarType {
     Var,
-    Type(Type),
+    Type(TypeAnnotation),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -37,22 +37,22 @@ pub struct FunDecl {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FunType {
-    pub arg_types: Vec<Type>,
+    pub arg_types: Vec<TypeAnnotation>,
     pub ret_type: RetType
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum RetType {
-    Type(Type),
+    Type(TypeAnnotation),
     Void,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Type {
+pub enum TypeAnnotation {
     BasicType(BasicType),
-    Tuple(Box<Type>, Box<Type>),
-    Array(Box<Type>),
-    Generic(Id),
+    Tuple(Box<TypeAnnotation>, Box<TypeAnnotation>),
+    Array(Box<TypeAnnotation>),
+    Polymorphic(Id),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -127,7 +127,7 @@ impl<'a> Iterator for StmtIterator<'a> {
 mod printer {
     use std::fmt;
 
-    use super::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, Type, VarDecl, VarType};
+    use super::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
 
     const TAB_SIZE: usize = 4;
 
@@ -213,13 +213,13 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for Type {
+    impl PrettyPrintable for TypeAnnotation {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
-                Type::BasicType(t) => t.fmt_pretty(indent),
-                Type::Tuple(l, r) => format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
-                Type::Array(t) => format!("[{}]", t.fmt_pretty(indent)),
-                Type::Generic(t) => t.fmt_pretty(indent),
+                TypeAnnotation::BasicType(t) => t.fmt_pretty(indent),
+                TypeAnnotation::Tuple(l, r) => format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
+                TypeAnnotation::Array(t) => format!("[{}]", t.fmt_pretty(indent)),
+                TypeAnnotation::Polymorphic(t) => t.fmt_pretty(indent),
             }
         }
     }

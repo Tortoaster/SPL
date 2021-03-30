@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use error::Result;
 
 use crate::lexer::{Lexer, Operator, Token};
-use crate::tree::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, Type, VarDecl, VarType};
+use crate::tree::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
 use crate::parser::error::ParseError;
 use crate::char_iterator::Positioned;
 
@@ -141,7 +141,7 @@ impl Parsable for VarType {
                 munch(tokens, &Token::Var)?;
                 VarType::Var
             }
-            _ => VarType::Type(Type::parse(tokens)?)
+            _ => VarType::Type(TypeAnnotation::parse(tokens)?)
         };
 
         Ok(var_type)
@@ -155,7 +155,7 @@ impl Parsable for RetType {
                 munch(tokens, &Token::Void)?;
                 RetType::Void
             }
-            _ => RetType::Type(Type::parse(tokens)?)
+            _ => RetType::Type(TypeAnnotation::parse(tokens)?)
         };
 
         Ok(ret_type)
@@ -164,32 +164,32 @@ impl Parsable for RetType {
 
 impl Parsable for FunType {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let arg_types = Type::parse_many(tokens);
+        let arg_types = TypeAnnotation::parse_many(tokens);
         munch(tokens, &Token::To)?;
         let ret_type = RetType::parse(tokens)?;
         Ok(FunType { arg_types, ret_type })
     }
 }
 
-impl Parsable for Type {
+impl Parsable for TypeAnnotation {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let t = match **tokens.peek().ok_or(ParseError::EOF { expected: "type".to_owned() })? {
             Token::OpenParen => {
                 munch(tokens, &Token::OpenParen)?;
-                let l = Type::parse(tokens)?;
+                let l = TypeAnnotation::parse(tokens)?;
                 munch(tokens, &Token::Comma)?;
-                let r = Type::parse(tokens)?;
+                let r = TypeAnnotation::parse(tokens)?;
                 munch(tokens, &Token::CloseParen)?;
-                Type::Tuple(Box::new(l), Box::new(r))
+                TypeAnnotation::Tuple(Box::new(l), Box::new(r))
             }
             Token::OpenArr => {
                 munch(tokens, &Token::OpenArr)?;
-                let t = Type::parse(tokens)?;
+                let t = TypeAnnotation::parse(tokens)?;
                 munch(tokens, &Token::CloseArr)?;
-                Type::Array(Box::new(t))
+                TypeAnnotation::Array(Box::new(t))
             }
-            Token::Identifier(_) => Type::Generic(Id::parse(tokens)?),
-            _ => Type::BasicType(BasicType::parse(tokens)?)
+            Token::Identifier(_) => TypeAnnotation::Polymorphic(Id::parse(tokens)?),
+            _ => TypeAnnotation::BasicType(BasicType::parse(tokens)?)
         };
 
         Ok(t)

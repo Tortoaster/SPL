@@ -7,7 +7,7 @@ use std::ops::{Deref, DerefMut};
 use error::Result;
 
 use crate::lexer::{Operator, Field};
-use crate::tree::{Exp, Id, SPL, Stmt, Decl, VarDecl, FunDecl, FunCall, FunType};
+use crate::tree::{Exp, Id, SPL, Stmt, Decl, VarDecl, FunDecl, FunCall, TypeAnnotation, BasicType, RetType};
 use crate::typer::error::TypeError;
 
 trait Typable {
@@ -21,7 +21,7 @@ pub struct TypeVariable(usize);
 
 impl TypeVariable {
     fn bind(&self, to: &Type) -> Result<Substitution> {
-        if let Type::Variable(v) = to {
+        if let Type::Polymorphic(v) = to {
             if *self == *v {
                 return Ok(Substitution::new());
             }
@@ -46,7 +46,40 @@ pub enum Type {
     Tuple(Box<Type>, Box<Type>),
     Array(Box<Type>),
     Function(Box<Type>, Box<Type>),
-    Variable(TypeVariable),
+    Polymorphic(TypeVariable),
+}
+
+impl RetType {
+    fn instantiate(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Type {
+        match self {
+            RetType::Type(t) => t.instantiate(generator, poly_names),
+            RetType::Void => Type::Void
+        }
+    }
+}
+
+impl TypeAnnotation {
+    fn instantiate(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Type {
+        match self {
+            TypeAnnotation::BasicType(BasicType::Int) => Type::Int,
+            TypeAnnotation::BasicType(BasicType::Bool) => Type::Bool,
+            TypeAnnotation::BasicType(BasicType::Char) => Type::Char,
+            TypeAnnotation::Tuple(l, r) => Type::Tuple(Box::new(l.instantiate(generator, poly_names)), Box::new(r.instantiate(generator, poly_names))),
+            TypeAnnotation::Array(a) => Type::Array(Box::new(a.instantiate(generator, poly_names))),
+            TypeAnnotation::Polymorphic(id) => {
+                match poly_names.get(id) {
+                    None => {
+                        let v = generator.fresh();
+                        poly_names.insert(id.clone(), v);
+                        Type::Polymorphic(v)
+                    }
+                    Some(v) => {
+                        Type::Polymorphic(*v)
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Type {
@@ -65,7 +98,7 @@ impl Type {
                 let res = b1.unify(&b2)?;
                 Ok(arg.compose(res))
             }
-            (Type::Variable(v), t) | (t, Type::Variable(v)) => v.bind(t),
+            (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
             (t1, t2) => Err(TypeError::Unify(t1.clone(), t2.clone()))
         }
     }
@@ -89,7 +122,7 @@ impl Typable for Type {
             Type::Tuple(l, r) => l.free_variables().union(&r.free_variables()).cloned().collect(),
             Type::Array(a) => a.free_variables(),
             Type::Function(a, b) => a.free_variables().union(&b.free_variables()).cloned().collect(),
-            Type::Variable(v) => Some(*v).into_iter().collect(),
+            Type::Polymorphic(v) => Some(*v).into_iter().collect(),
         }
     }
 
@@ -105,7 +138,7 @@ impl Typable for Type {
                 a.apply(subst);
                 b.apply(subst);
             }
-            Type::Variable(v) => if let Some(t) = subst.get(v) {
+            Type::Polymorphic(v) => if let Some(t) = subst.get(v) {
                 *self = t.clone();
             }
         }
@@ -120,7 +153,7 @@ pub struct PolyType {
 
 impl PolyType {
     fn instantiate(mut self, generator: &mut Generator) -> Type {
-        let fresh = std::iter::repeat_with(|| Type::Variable(generator.fresh()));
+        let fresh = std::iter::repeat_with(|| Type::Polymorphic(generator.fresh()));
         let subst = Substitution(self.variables.into_iter().zip(fresh).collect());
         self.inner.apply(&subst);
         self.inner
@@ -265,19 +298,19 @@ impl Inferable for FunDecl {
     fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
         // Create local scope
         let mut local = environment.clone();
+        let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
 
         // Add arguments to local scope
         self.args.iter().zip(match &self.fun_type {
-            None => std::iter::repeat(None).take(self.args.len()).collect::<Vec<Option<&Type>>>(),
-            Some(t) => t.arg_types.iter().map(|t| Some(t)).collect::<Vec<Option<&Type>>>()
+            None => std::iter::repeat(None).take(self.args.len()).collect::<Vec<Option<Type>>>(),
+            Some(t) => t.arg_types.iter().map(|t| Some(t.instantiate(generator, &mut poly_names))).collect::<Vec<Option<Type>>>()
         }).for_each(|(arg, annotation)| {
             let t = match annotation {
                 None => {
                     let v = generator.fresh();
-                    PolyType { variables: vec![v], inner: Type::Variable(v) }
+                    PolyType { variables: vec![v], inner: Type::Polymorphic(v) }
                 }
-                // Use generalize?
-                Some(t) => local.generalize(t)
+                Some(t) => local.generalize(&t)
             };
             local.insert(arg.clone(), t);
         });
@@ -298,7 +331,7 @@ impl Inferable for FunDecl {
         }).collect::<Result<Vec<Type>>>()?;
         returns.into_iter()
             .fold(
-                Ok((Substitution::new(), self.fun_type.map_or(Type::Variable(generator.fresh()), |t| t.ret_type))),
+                Ok((Substitution::new(), self.fun_type.as_ref().map_or(Type::Polymorphic(generator.fresh()), |t| t.ret_type.instantiate(generator, &mut poly_names)))),
                 |r, mut t2| {
                     let (s, t1) = r?;
                     let subst = t1.unify(&t2)?;
@@ -336,7 +369,7 @@ impl Inferable for Stmt {
                 for field in &s.fields {
                     match field {
                         Field::Head => {
-                            let mut list = Type::Array(Box::new(Type::Variable(generator.fresh())));
+                            let mut list = Type::Array(Box::new(Type::Polymorphic(generator.fresh())));
                             let subst = inferred.unify(&list)?;
                             environment.apply(&subst);
                             list.apply(&subst);
@@ -347,14 +380,14 @@ impl Inferable for Stmt {
                             }
                         }
                         Field::Tail => {
-                            let mut list = Type::Array(Box::new(Type::Variable(generator.fresh())));
+                            let mut list = Type::Array(Box::new(Type::Polymorphic(generator.fresh())));
                             let subst = inferred.unify(&list)?;
                             environment.apply(&subst);
                             list.apply(&subst);
                             inferred = list;
                         }
                         Field::First => {
-                            let mut tuple = Type::Tuple(Box::new(Type::Variable(generator.fresh())), Box::new(Type::Variable(generator.fresh())));
+                            let mut tuple = Type::Tuple(Box::new(Type::Polymorphic(generator.fresh())), Box::new(Type::Polymorphic(generator.fresh())));
                             let subst = inferred.unify(&tuple)?;
                             environment.apply(&subst);
                             tuple.apply(&subst);
@@ -365,7 +398,7 @@ impl Inferable for Stmt {
                             }
                         }
                         Field::Second => {
-                            let mut tuple = Type::Tuple(Box::new(Type::Variable(generator.fresh())), Box::new(Type::Variable(generator.fresh())));
+                            let mut tuple = Type::Tuple(Box::new(Type::Polymorphic(generator.fresh())), Box::new(Type::Polymorphic(generator.fresh())));
                             let subst = inferred.unify(&tuple)?;
                             environment.apply(&subst);
                             tuple.apply(&subst);
@@ -400,7 +433,7 @@ impl Operator {
                 let a = generator.fresh();
                 PolyType {
                     variables: vec![a],
-                    inner: Type::Function(Box::new(Type::Variable(a)), Box::new(Type::Function(Box::new(Type::Variable(a)), Box::new(Type::Bool)))),
+                    inner: Type::Function(Box::new(Type::Polymorphic(a)), Box::new(Type::Function(Box::new(Type::Polymorphic(a)), Box::new(Type::Bool)))),
                 }
             }
             Operator::Smaller | Operator::Greater | Operator::SmallerEqual | Operator::GreaterEqual => PolyType {
@@ -415,7 +448,7 @@ impl Operator {
                 let a = generator.fresh();
                 PolyType {
                     variables: vec![a],
-                    inner: Type::Function(Box::new(Type::Variable(a)), Box::new(Type::Function(Box::new(Type::Array(Box::new(Type::Variable(a)))), Box::new(Type::Array(Box::new(Type::Variable(a))))))),
+                    inner: Type::Function(Box::new(Type::Polymorphic(a)), Box::new(Type::Function(Box::new(Type::Array(Box::new(Type::Polymorphic(a)))), Box::new(Type::Array(Box::new(Type::Polymorphic(a))))))),
                 }
             }
         }
@@ -462,7 +495,7 @@ impl Inferable for Exp {
             Exp::Character(_) => Ok(Type::Char),
             Exp::False | Exp::True => Ok(Type::Bool),
             Exp::FunCall(fun_call) => fun_call.infer_type(environment, generator),
-            Exp::Nil => Ok(Type::Array(Box::new(Type::Variable(generator.fresh())))),
+            Exp::Nil => Ok(Type::Array(Box::new(Type::Polymorphic(generator.fresh())))),
             Exp::Tuple(l, r) => {
                 let t1 = l.infer_type(environment, generator)?;
                 let t2 = r.infer_type(environment, generator)?;
