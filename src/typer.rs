@@ -7,7 +7,7 @@ use std::ops::{Deref, DerefMut};
 use error::Result;
 
 use crate::lexer::{Operator, Field};
-use crate::tree::{Exp, Id, SPL, Stmt, Decl, VarDecl, FunDecl, FunCall};
+use crate::tree::{Exp, Id, SPL, Stmt, Decl, VarDecl, FunDecl, FunCall, FunType};
 use crate::typer::error::TypeError;
 
 trait Typable {
@@ -144,6 +144,7 @@ impl Typable for PolyType {
     }
 }
 
+#[derive(Clone)]
 pub struct Environment(HashMap<Id, PolyType>);
 
 impl Environment {
@@ -236,6 +237,7 @@ pub trait Inferable {
 
 impl Inferable for SPL {
     fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
+        // TODO: Find all global functions and variables
         self.decls.iter().map(|decl| decl.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
         Ok(Type::Void)
     }
@@ -252,13 +254,60 @@ impl Inferable for Decl {
 
 impl Inferable for VarDecl {
     fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
-        unimplemented!()
+        let t = self.exp.infer_type(environment, generator)?;
+        // TODO: Check type annotation
+        environment.insert(self.id.clone(), PolyType { variables: Vec::new(), inner: t });
+        Ok(Type::Void)
     }
 }
 
 impl Inferable for FunDecl {
     fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
-        unimplemented!()
+        // Create local scope
+        let mut local = environment.clone();
+
+        // Add arguments to local scope
+        self.args.iter().zip(match &self.fun_type {
+            None => std::iter::repeat(None).take(self.args.len()).collect::<Vec<Option<&Type>>>(),
+            Some(t) => t.arg_types.iter().map(|t| Some(t)).collect::<Vec<Option<&Type>>>()
+        }).for_each(|(arg, annotation)| {
+            let t = match annotation {
+                None => {
+                    let v = generator.fresh();
+                    PolyType { variables: vec![v], inner: Type::Variable(v) }
+                }
+                // Use generalize?
+                Some(t) => local.generalize(t)
+            };
+            local.insert(arg.clone(), t);
+        });
+
+        // Add variable declarations to local scope
+        self.var_decls.iter().map(|decl| decl.infer_type(&mut local, generator)).collect::<Result<Vec<Type>>>()?;
+
+        // Infer types in inner statements
+        self.stmts.iter().map(|decl| decl.infer_type(&mut local, generator)).collect::<Result<Vec<Type>>>()?;
+
+        // Check return type
+        let returns = self.stmts.iter().flat_map(|stmt| stmt.iter()).flat_map(|ret| {
+            if let Stmt::Return(exp) = ret {
+                Some(exp.as_ref().map_or(Ok(Type::Void), |e| e.infer_type(environment, generator)))
+            } else {
+                None
+            }
+        }).collect::<Result<Vec<Type>>>()?;
+        returns.into_iter()
+            .fold(
+                Ok((Substitution::new(), self.fun_type.map_or(Type::Variable(generator.fresh()), |t| t.ret_type))),
+                |r, mut t2| {
+                    let (s, t1) = r?;
+                    let subst = t1.unify(&t2)?;
+                    t2.apply(&subst);
+                    Ok((s.compose(subst), t2))
+                }
+            )?;
+        // TODO: Delete local scope
+        Ok(Type::Void)
     }
 }
 
@@ -413,17 +462,11 @@ impl Inferable for Exp {
             Exp::Character(_) => Ok(Type::Char),
             Exp::False | Exp::True => Ok(Type::Bool),
             Exp::FunCall(fun_call) => fun_call.infer_type(environment, generator),
-            Exp::Nil => {
-                let v = generator.fresh();
-                let t = Type::Variable(v);
-                let mut sub = Substitution::new();
-                sub.insert(v, t.clone());
-                environment.apply(&sub);
-                Ok(Type::Array(Box::new(t)))
-            }
+            Exp::Nil => Ok(Type::Array(Box::new(Type::Variable(generator.fresh())))),
             Exp::Tuple(l, r) => {
                 let t1 = l.infer_type(environment, generator)?;
                 let t2 = r.infer_type(environment, generator)?;
+                // TODO: apply substitutions to all returns
                 Ok(Type::Tuple(Box::new(t1), Box::new(t2)))
             }
         }
