@@ -1,6 +1,8 @@
 use crate::lexer::{Field, Operator};
 use std::iter::{FlatMap, Chain};
 use std::vec::IntoIter;
+use crate::typer::{Type, Generator, TypeVariable};
+use std::collections::HashMap;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL {
@@ -98,6 +100,48 @@ pub struct FunCall {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Id(pub String);
+
+impl VarType {
+    pub fn transform(&self, generator: &mut Generator) -> Type {
+        match self {
+            VarType::Var => Type::Polymorphic(generator.fresh()),
+            VarType::Type(t) => t.transform(generator, &mut HashMap::new())
+        }
+    }
+}
+
+impl RetType {
+    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Type {
+        match self {
+            RetType::Type(t) => t.transform(generator, poly_names),
+            RetType::Void => Type::Void
+        }
+    }
+}
+
+impl TypeAnnotation {
+    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Type {
+        match self {
+            TypeAnnotation::BasicType(BasicType::Int) => Type::Int,
+            TypeAnnotation::BasicType(BasicType::Bool) => Type::Bool,
+            TypeAnnotation::BasicType(BasicType::Char) => Type::Char,
+            TypeAnnotation::Tuple(l, r) => Type::Tuple(Box::new(l.transform(generator, poly_names)), Box::new(r.transform(generator, poly_names))),
+            TypeAnnotation::Array(a) => Type::Array(Box::new(a.transform(generator, poly_names))),
+            TypeAnnotation::Polymorphic(id) => {
+                match poly_names.get(id) {
+                    None => {
+                        let v = generator.fresh();
+                        poly_names.insert(id.clone(), v);
+                        Type::Polymorphic(v)
+                    }
+                    Some(v) => {
+                        Type::Polymorphic(*v)
+                    }
+                }
+            }
+        }
+    }
+}
 
 pub struct StmtIterator<'a> {
     iter: Box<Chain<FlatMap<IntoIter<&'a Stmt>, StmtIterator<'a>, fn(&Stmt) -> StmtIterator>, IntoIter<&'a Stmt>>>

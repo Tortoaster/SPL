@@ -5,7 +5,7 @@ use error::Result;
 use crate::error::CompileError;
 use crate::lexer::Lexable;
 use crate::tree::SPL;
-use crate::typer::{Environment, Generator, Inferable};
+use crate::typer::{Environment, Generator, Infer};
 
 mod char_iterator;
 mod lexer;
