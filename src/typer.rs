@@ -7,8 +7,9 @@ use std::ops::{Deref, DerefMut};
 use error::Result;
 
 use crate::lexer::{Operator, Field};
-use crate::tree::{Exp, Id, SPL, Stmt, Decl, VarDecl, FunDecl, FunCall, TypeAnnotation, BasicType, RetType};
+use crate::tree::{Exp, Id, SPL, Stmt, Decl, VarDecl, FunDecl, FunCall, TypeAnnotation, BasicType, RetType, VarType};
 use crate::typer::error::TypeError;
+use std::fmt;
 
 trait Typable {
     fn free_variables(&self) -> HashSet<TypeVariable>;
@@ -47,6 +48,15 @@ pub enum Type {
     Array(Box<Type>),
     Function(Box<Type>, Box<Type>),
     Polymorphic(TypeVariable),
+}
+
+impl VarType {
+    fn instantiate(&self, generator: &mut Generator) -> Type {
+        match self {
+            VarType::Var => Type::Polymorphic(generator.fresh()),
+            VarType::Type(t) => t.instantiate(generator, &mut HashMap::new())
+        }
+    }
 }
 
 impl RetType {
@@ -103,14 +113,27 @@ impl Type {
         }
     }
 
-    fn unfold(self) -> Vec<Type> {
+    fn unfold(&self) -> Vec<&Type> {
         match self {
             Type::Function(a, b) => {
-                let mut vec = vec![*a];
+                let mut vec = vec![&**a];
                 vec.append(&mut b.unfold());
                 vec
             }
             _ => vec![self]
+        }
+    }
+
+    fn format(&self, poly_names: &HashMap<TypeVariable, char>) -> String {
+        match self {
+            Type::Void => format!("Void"),
+            Type::Int => format!("Int"),
+            Type::Bool => format!("Bool"),
+            Type::Char => format!("Char"),
+            Type::Tuple(l, r) => format!("({}, {})", l.format(poly_names), r.format(poly_names)),
+            Type::Array(a) => format!("[{}]", a.format(poly_names)),
+            Type::Function(a, b) => format!("({} -> {})", a.format(poly_names), b.format(poly_names)),
+            Type::Polymorphic(v) => format!("{}", poly_names.get(&v).unwrap_or(&'?'))
         }
     }
 }
@@ -145,10 +168,17 @@ impl Typable for Type {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PolyType {
     variables: Vec<TypeVariable>,
     inner: Type,
+}
+
+impl fmt::Display for PolyType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let poly_names: HashMap<TypeVariable, char> = self.variables.iter().copied().zip('a'..'z').collect();
+        write!(f, "{}", self.inner.format(&poly_names))
+    }
 }
 
 impl PolyType {
@@ -177,7 +207,7 @@ impl Typable for PolyType {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Environment(HashMap<Id, PolyType>);
 
 impl Environment {
@@ -270,8 +300,63 @@ pub trait Inferable {
 
 impl Inferable for SPL {
     fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
-        // TODO: Find all global functions and variables
+        // Add prelude functions
+        let v = generator.fresh();
+        let t = PolyType { variables: vec![v], inner: Type::Function(Box::new(Type::Polymorphic(v)), Box::new(Type::Void)) };
+        environment.insert(Id("print".to_owned()), t);
+        let v = generator.fresh();
+        let t = PolyType { variables: vec![v], inner: Type::Function(Box::new(Type::Array(Box::new(Type::Polymorphic(v)))), Box::new(Type::Bool)) };
+        environment.insert(Id("isEmpty".to_owned()), t);
+        let v = generator.fresh();
+        let t = PolyType { variables: vec![v], inner: Type::Function(Box::new(Type::Array(Box::new(Type::Polymorphic(v)))), Box::new(Type::Polymorphic(v))) };
+        environment.insert(Id("hd".to_owned()), t);
+        let v = generator.fresh();
+        let t = PolyType { variables: vec![v], inner: Type::Function(Box::new(Type::Array(Box::new(Type::Polymorphic(v)))), Box::new(Type::Array(Box::new(Type::Polymorphic(v))))) };
+        environment.insert(Id("tl".to_owned()), t);
+        let v1 = generator.fresh();
+        let v2 = generator.fresh();
+        let t = PolyType { variables: vec![v1, v2], inner: Type::Function(Box::new(Type::Tuple(Box::new(Type::Polymorphic(v1)), Box::new(Type::Polymorphic(v2)))), Box::new(Type::Polymorphic(v1))) };
+        environment.insert(Id("fst".to_owned()), t);
+        let v1 = generator.fresh();
+        let v2 = generator.fresh();
+        let t = PolyType { variables: vec![v1, v2], inner: Type::Function(Box::new(Type::Tuple(Box::new(Type::Polymorphic(v1)), Box::new(Type::Polymorphic(v2)))), Box::new(Type::Polymorphic(v2))) };
+        environment.insert(Id("snd".to_owned()), t);
+
+        // Add global variables and functions to scope
+        self.decls.iter()
+            .map(|decl| match decl {
+                Decl::VarDecl(decl) => {
+                    let v = generator.fresh();
+                    let t = PolyType { variables: vec![v], inner: Type::Polymorphic(v) };
+                    if environment.insert(decl.id.clone(), t).is_some() {
+                        Err(TypeError::Conflict(decl.id.clone()))
+                    } else {
+                        Ok(())
+                    }
+                }
+                Decl::FunDecl(decl) => {
+                    let v = generator.fresh();
+                    let (variables, inner) = decl.args.iter().fold(
+                        (vec![v], Type::Polymorphic(v)),
+                        |(mut vars, t), _| {
+                            let a = generator.fresh();
+                            vars.push(a);
+                            (vars, Type::Function(Box::new(Type::Polymorphic(a)), Box::new(t)))
+                        }
+                    );
+                    let t = PolyType { variables, inner };
+                    if environment.insert(decl.id.clone(), t).is_some() {
+                        Err(TypeError::Conflict(decl.id.clone()))
+                    } else {
+                        Ok(())
+                    }
+                    // TODO: check for doubly defined variables in functions
+                }
+            }).collect::<Result<()>>()?;
+
+        // Infer types of inner declarations
         self.decls.iter().map(|decl| decl.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
+
         Ok(Type::Void)
     }
 }
@@ -287,9 +372,11 @@ impl Inferable for Decl {
 
 impl Inferable for VarDecl {
     fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
-        let t = self.exp.infer_type(environment, generator)?;
-        // TODO: Check type annotation
-        environment.insert(self.id.clone(), PolyType { variables: Vec::new(), inner: t });
+        let mut t = self.exp.infer_type(environment, generator)?;
+        let subst = t.unify(&self.var_type.instantiate(generator))?;
+        t.apply(&subst);
+        let t = environment.generalize(&t);
+        environment.insert(self.id.clone(), t);
         Ok(Type::Void)
     }
 }
@@ -299,21 +386,33 @@ impl Inferable for FunDecl {
         // Create local scope
         let mut local = environment.clone();
         let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
+        let arg_types: Vec<Type> = local.get(&self.id).unwrap().inner.unfold().into_iter().cloned().collect();
 
         // Add arguments to local scope
-        self.args.iter().zip(match &self.fun_type {
-            None => std::iter::repeat(None).take(self.args.len()).collect::<Vec<Option<Type>>>(),
-            Some(t) => t.arg_types.iter().map(|t| Some(t.instantiate(generator, &mut poly_names))).collect::<Vec<Option<Type>>>()
-        }).for_each(|(arg, annotation)| {
-            let t = match annotation {
-                None => {
-                    let v = generator.fresh();
-                    PolyType { variables: vec![v], inner: Type::Polymorphic(v) }
+        self.args
+            .iter()
+            .zip(match &self.fun_type {
+                None => std::iter::repeat(None)
+                    .take(self.args.len())
+                    .collect::<Vec<Option<Type>>>(),
+                Some(t) => t.arg_types
+                    .iter()
+                    .map(|t| Some(t.instantiate(generator, &mut poly_names)))
+                    .collect::<Vec<Option<Type>>>()
+            })
+            .zip(arg_types.clone())
+            .map(|((arg, annotation), mut t)| {
+                if let Some(a) = annotation {
+                    let subst = a.unify(&t)?;
+                    local.apply(&subst);
+                    // Is this necessary?
+                    t.apply(&subst);
                 }
-                Some(t) => local.generalize(&t)
-            };
-            local.insert(arg.clone(), t);
-        });
+                let t = local.generalize(&t);
+                local.insert(arg.clone(), t);
+                Ok(())
+            })
+            .collect::<Result<()>>()?;
 
         // Add variable declarations to local scope
         self.var_decls.iter().map(|decl| decl.infer_type(&mut local, generator)).collect::<Result<Vec<Type>>>()?;
@@ -324,22 +423,38 @@ impl Inferable for FunDecl {
         // Check return type
         let returns = self.stmts.iter().flat_map(|stmt| stmt.iter()).flat_map(|ret| {
             if let Stmt::Return(exp) = ret {
-                Some(exp.as_ref().map_or(Ok(Type::Void), |e| e.infer_type(environment, generator)))
+                Some(exp.as_ref().map_or(Ok(Type::Void), |e| e.infer_type(&mut local, generator)))
             } else {
                 None
             }
         }).collect::<Result<Vec<Type>>>()?;
+        let mut initial = arg_types.last().unwrap().clone();
+        if let Some(f) = &self.fun_type {
+            let t = f.ret_type.instantiate(generator, &mut poly_names);
+            let subst = initial.unify(&t)?;
+            local.apply(&subst);
+            initial.apply(&subst);
+        }
         returns.into_iter()
             .fold(
-                Ok((Substitution::new(), self.fun_type.as_ref().map_or(Type::Polymorphic(generator.fresh()), |t| t.ret_type.instantiate(generator, &mut poly_names)))),
-                |r, mut t2| {
-                    let (s, t1) = r?;
+                Ok((Substitution::new(), initial)),
+                |r, t2| {
+                    let (s, mut t1) = r?;
                     let subst = t1.unify(&t2)?;
-                    t2.apply(&subst);
-                    Ok((s.compose(subst), t2))
+                    t1.apply(&subst);
+                    Ok((s.compose(subst), t1))
                 }
             )?;
-        // TODO: Delete local scope
+
+        // Delete local scope
+        self.args.iter().for_each(|arg| {
+            local.remove(arg);
+        });
+        self.var_decls.iter().for_each(|decl| {
+            local.remove(&decl.id);
+        });
+        environment.extend(local.0);
+
         Ok(Type::Void)
     }
 }
@@ -508,16 +623,17 @@ impl Inferable for Exp {
 
 impl Inferable for FunCall {
     fn infer_type(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type, TypeError> {
-        let types = match environment.get(&self.id) {
+        let types: Vec<Type> = match environment.get(&self.id) {
             None => return Err(TypeError::Unbound(self.id.clone())),
             Some(t) => t.clone()
-        }.inner.unfold();
-        self.args.iter().zip(&types).map(|(e, t)| {
+        }.inner.unfold().into_iter().cloned().collect();
+        let ret_type = types.last().unwrap().clone();
+        self.args.iter().zip(types).map(|(e, t)| {
             let found = e.infer_type(environment, generator)?;
             environment.apply(&found.unify(&t)?);
             Ok(())
         }).collect::<Result<()>>()?;
-        Ok(types.last().unwrap().to_owned())
+        Ok(ret_type)
     }
 }
 
@@ -550,6 +666,7 @@ pub mod error {
     pub enum TypeError {
         Unify(Type, Type),
         Unbound(Id),
+        Conflict(Id),
         Recursive(TypeVariable, Type),
     }
 
@@ -558,6 +675,7 @@ pub mod error {
             match self {
                 TypeError::Unify(t1, t2) => write!(f, "Types {:?} and {:?} do not unify", t1, t2),
                 TypeError::Unbound(id) => write!(f, "Unbound variable {:?}", id),
+                TypeError::Conflict(id) => write!(f, "Variable {:?} is defined more than once", id),
                 TypeError::Recursive(v, t) => write!(f, "Occur check fails: {:?} vs {:?}", v, t),
             }
         }

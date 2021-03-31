@@ -30,7 +30,12 @@ fn main() -> Result<()> {
 
     ast.infer_type(&mut environment, &mut generator)?;
 
-    // println!("{}", ast);
+    println!("{}", ast);
+    environment
+        .iter()
+        .filter(|(id, _)| !vec!["print", "isEmpty", "fst", "snd", "hd", "tl"]
+            .contains(&id.0.as_str()))
+        .for_each(|(id, t)| println!("{}: {}", id.0, t));
 
     Ok(())
 }

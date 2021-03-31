@@ -72,39 +72,39 @@ reverse ( list ) :: [t] -> [t] {
 }
 
 // Absolute value, in a strange layout
-abs ( n ) :: Int -> Int { if (n < 0) {return -n;} else {return n ;} }
+abs ( n ) { if (n < 0) {return -n;} else {return n ;} }
 
-// make a copy of a tuple with swapped elements
-swapCopy ( pair ) :: (a, b) -> (b, a) {
-	return (pair.snd, pair.fst);
-}
-
-// swap the elements in a tuple
-swap ( tuple ) :: (a, a) -> (a, a) {
-	var tmp = tuple.fst;
-	tuple.fst = tuple.snd;
-	tuple.snd = tmp;
-	return tuple;
-}
-
-// list append
-append ( l1, l2 ) :: [t] [t] -> [t] {
-	if ( isEmpty ( l1 ) ) {
-		return l2;
-    } else {
-		l1.tl = append ( l1.tl, l2 );
-		return l1;
-	}
-}
-
-// square the odd numbers in a list and remove the even numbers
-squareOddNumbers ( list ) :: [Int] -> [Int] {
-    while (! isEmpty (list) && list.hd % 2 == 0) {
-        list = list.tl;
-    }
-    if ( ! isEmpty (list) ) {
-        list.hd = list.hd * list.hd;
-        list.tl = squareOddNumbers(list.tl);
-    }
-    return list;
-}
+//// make a copy of a tuple with swapped elements
+//swapCopy ( pair ) :: (a, b) -> (b, a) {
+//	return (pair.snd, pair.fst);
+//}
+//
+//// swap the elements in a tuple
+//swap ( tuple ) :: (a, a) -> (a, a) {
+//	var tmp = tuple.fst;
+//	tuple.fst = tuple.snd;
+//	tuple.snd = tmp;
+//	return tuple;
+//}
+//
+//// list append
+//append ( l1, l2 ) :: [t] [t] -> [t] {
+//	if ( isEmpty ( l1 ) ) {
+//		return l2;
+//    } else {
+//		l1.tl = append ( l1.tl, l2 );
+//		return l1;
+//	}
+//}
+//
+//// square the odd numbers in a list and remove the even numbers
+//squareOddNumbers ( list ) :: [Int] -> [Int] {
+//    while (! isEmpty (list) && list.hd % 2 == 0) {
+//        list = list.tl;
+//    }
+//    if ( ! isEmpty (list) ) {
+//        list.hd = list.hd * list.hd;
+//        list.tl = squareOddNumbers(list.tl);
+//    }
+//    return list;
+//}
