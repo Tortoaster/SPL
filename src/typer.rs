@@ -4,11 +4,14 @@ use std::fmt;
 use std::hash::Hash;
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
+use std::str::FromStr;
 
 use error::Result;
 
-use crate::lexer::{Field, Operator};
-use crate::tree::{BasicType, Decl, Exp, FunCall, FunDecl, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+use crate::lexer::{Field, Lexable, Operator};
+use crate::parser::error::ParseError;
+use crate::parser::Parsable;
+use crate::tree::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
 use crate::typer::error::TypeError;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -65,17 +68,16 @@ impl Type {
     fn unify_with(&self, other: &Type) -> Result<Substitution> {
         match (self, other) {
             (Type::Int, Type::Int) | (Type::Bool, Type::Bool) | (Type::Char, Type::Char) => Ok(Substitution::new()),
-            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => Ok(l1.unify_with(l2)?.compose(&r1.unify_with(r2)?)),
+            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
+                let subst_l = l1.unify_with(l2)?;
+                let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
+                Ok(subst_l.compose(&subst_r))
+            },
             (Type::Array(t1), Type::Array(t2)) => t1.unify_with(t2),
             (Type::Function(a1, b1), Type::Function(a2, b2)) => {
-                let arg = a1.unify_with(a2)?;
-                // TODO: Is applying necessary?
-                let mut b1 = b1.clone();
-                b1.apply(&arg);
-                let mut b2 = b2.clone();
-                b2.apply(&arg);
-                let res = b1.unify_with(&b2)?;
-                Ok(arg.compose(&res))
+                let subst_a = a1.unify_with(a2)?;
+                let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
+                Ok(subst_a.compose(&subst_b))
             }
             (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
             (t1, t2) => Err(TypeError::Unify(t1.clone(), t2.clone()))
@@ -118,6 +120,27 @@ impl PolyType {
         let fresh = std::iter::repeat_with(|| Type::Polymorphic(generator.fresh()));
         let subst = Substitution(self.variables.iter().cloned().zip(fresh).collect());
         self.inner.apply(&subst)
+    }
+}
+
+impl FromStr for PolyType {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let fun_type = FunType::parse(&mut s.tokenize().unwrap().peekable())?;
+
+        let mut generator = Generator::new();
+        let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
+
+        let arg_types: Vec<Type> = fun_type.arg_types
+            .iter()
+            .map(|t| t.transform(&mut generator, &mut poly_names))
+            .collect();
+
+        let ret_type = fun_type.ret_type.transform(&mut generator, &mut poly_names);
+
+        let t = arg_types.into_iter().rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret)));
+        Ok(PolyType { variables: poly_names.values().collect(), inner: t })
     }
 }
 
@@ -171,10 +194,11 @@ impl Substitution {
     }
 
     fn compose(&self, other: &Self) -> Self {
-        other
+        // TODO: this way, or the other way around?
+        self
             .iter()
             .map(|(k, v)| (*k, v.apply(&self)))
-            .chain(self
+            .chain(other
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
             )
@@ -281,29 +305,35 @@ pub trait InferMut {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type>;
 }
 
-impl Infer for SPL {
-    fn infer_type(&self, environment: &Environment, generator: &mut Generator) -> Result<(Substitution, Type)> {
+impl InferMut for SPL {
+    fn infer_type_mut(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
         // Add prelude functions
-        let v = generator.fresh();
-        let t = PolyType { variables: vec![v], inner: Type::Function(Box::new(Type::Polymorphic(v)), Box::new(Type::Void)) };
-        environment.insert(Id("print".to_owned()), t);
-        let v = generator.fresh();
-        let t = PolyType { variables: vec![v], inner: Type::Function(Box::new(Type::Array(Box::new(Type::Polymorphic(v)))), Box::new(Type::Bool)) };
-        environment.insert(Id("isEmpty".to_owned()), t);
-        let v = generator.fresh();
-        let t = PolyType { variables: vec![v], inner: Type::Function(Box::new(Type::Array(Box::new(Type::Polymorphic(v)))), Box::new(Type::Polymorphic(v))) };
-        environment.insert(Id("hd".to_owned()), t);
-        let v = generator.fresh();
-        let t = PolyType { variables: vec![v], inner: Type::Function(Box::new(Type::Array(Box::new(Type::Polymorphic(v)))), Box::new(Type::Array(Box::new(Type::Polymorphic(v))))) };
-        environment.insert(Id("tl".to_owned()), t);
-        let v1 = generator.fresh();
-        let v2 = generator.fresh();
-        let t = PolyType { variables: vec![v1, v2], inner: Type::Function(Box::new(Type::Tuple(Box::new(Type::Polymorphic(v1)), Box::new(Type::Polymorphic(v2)))), Box::new(Type::Polymorphic(v1))) };
-        environment.insert(Id("fst".to_owned()), t);
-        let v1 = generator.fresh();
-        let v2 = generator.fresh();
-        let t = PolyType { variables: vec![v1, v2], inner: Type::Function(Box::new(Type::Tuple(Box::new(Type::Polymorphic(v1)), Box::new(Type::Polymorphic(v2)))), Box::new(Type::Polymorphic(v2))) };
-        environment.insert(Id("snd".to_owned()), t);
+        for (name, annotation) in vec![
+            ("print", "a -> Void"),
+            ("isEmpty", "[a] -> Bool"),
+            ("hd", "[a] -> a"),
+            ("tl", "[a] -> [a]"),
+            ("fst", "(a, b) -> a"),
+            ("snd", "(a, b) -> b"),
+            ("not", "Bool -> Bool"),
+            ("add", "Int Int -> Int"),
+            ("sub", "Int Int -> Int"),
+            ("mul", "Int Int -> Int"),
+            ("div", "Int Int -> Int"),
+            ("mod", "Int Int -> Int"),
+            ("eq", "a a -> Bool"),
+            ("ne", "a a -> Bool"),
+            ("lt", "Int Int -> Bool"),
+            ("gt", "Int Int -> Bool"),
+            ("le", "Int Int -> Bool"),
+            ("ge", "Int Int -> Bool"),
+            ("and", "Bool Bool -> Bool"),
+            ("or", "Bool Bool -> Bool"),
+            ("cons", "a [a] -> [a]"),
+        ] {
+            let t: PolyType = annotation.parse().unwrap();
+            environment.insert(Id(name.to_owned()), environment.generalize(&t.instantiate(generator)))
+        }
 
         // Add global variables and functions to scope
         self.decls.iter()
@@ -367,25 +397,39 @@ impl Infer for FunDecl {
     fn infer_type(&self, environment: &Environment, generator: &mut Generator) -> Result<(Substitution, Type)> {
         // Create local scope
         let mut local = environment.clone();
+        let mut arg_types: Vec<Type> = local
+            .get(&self.id)
+            .ok_or(TypeError::Unbound(x.clone()))?.inner
+            .unfold()
+            .into_iter()
+            .cloned()
+            .collect();
+        let ret_type = arg_types.pop().unwrap();
         let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
-        let arg_types: Vec<Type> = local.get(&self.id).unwrap().inner.unfold().into_iter().cloned().collect();
+        let (arg_annotations, ret_annotation) = match &self.fun_type {
+            None => {
+                let args: Vec<Option<Type>> = std::iter::repeat(None)
+                    .take(self.args.len())
+                    .collect();
+                (args, None)
+            },
+            Some(fun_type) => {
+                let args: Vec<Option<Type>> = fun_type.arg_types
+                    .iter()
+                    .map(|t| Some(t.transform(generator, &mut poly_names)))
+                    .collect();
+                (args, fun_type.ret_type.transform(generator, &mut poly_names))
+            }
+        };
 
         // Add arguments to local scope
         self.args
             .iter()
-            .zip(match &self.fun_type {
-                None => std::iter::repeat(None)
-                    .take(self.args.len())
-                    .collect::<Vec<Option<Type>>>(),
-                Some(t) => t.arg_types
-                    .iter()
-                    .map(|t| Some(t.transform(generator, &mut poly_names)))
-                    .collect::<Vec<Option<Type>>>()
-            })
             .zip(arg_types.clone())
-            .map(|((arg, annotation), mut t)| {
+            .zip(arg_annotations)
+            .map(|((arg, mut t), annotation)| {
                 if let Some(a) = annotation {
-                    let subst = a.unify_with(&t)?;
+                    let subst = t.unify_with(&a)?;
                     local.apply(&subst);
                     // TODO: Is this necessary?
                     t.apply(&subst);
@@ -403,6 +447,7 @@ impl Infer for FunDecl {
         self.stmts.iter().map(|decl| decl.infer_type(&mut local, generator)).collect::<Result<Vec<Type>>>()?;
 
         // Check return type
+        // TODO: Check all paths for returns
         let returns = self.stmts.iter().flat_map(|stmt| stmt.iter()).flat_map(|ret| {
             if let Stmt::Return(exp) = ret {
                 Some(exp.as_ref().map_or(Ok(Type::Void), |e| e.infer_type(&mut local, generator)))
@@ -441,114 +486,103 @@ impl Infer for FunDecl {
     }
 }
 
-impl Infer for Stmt {
-    fn infer_type(&self, environment: &Environment, generator: &mut Generator) -> Result<(Substitution, Type)> {
-        match self {
-            Stmt::If(c, t, e) => {
-                let inferred = c.infer_type(environment, generator)?;
-                environment.apply(&inferred.unify(&Type::Bool)?);
-                t.iter().map(|e| e.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
-                e.iter().map(|e| e.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
-                Ok(Type::Void)
-            }
-            Stmt::While(c, t) => {
-                let inferred = c.infer_type(environment, generator)?;
-                environment.apply(&inferred.unify(&Type::Bool)?);
-                t.iter().map(|e| e.infer_type(environment, generator)).collect::<Result<Vec<Type>>>()?;
-                Ok(Type::Void)
-            }
-            Stmt::Assignment(x, s, e) => {
-                let mut inferred = e.infer_type(environment, generator)?;
-                let remembered = environment.get(x).ok_or(TypeError::Unbound(x.clone()))?;
-                let subst = inferred.unify(&remembered.inner)?;
-                environment.apply(&subst);
-                inferred.apply(&subst);
-                for field in &s.fields {
-                    match field {
-                        Field::Head => {
-                            let mut list = Type::Array(Box::new(Type::Polymorphic(generator.fresh())));
-                            let subst = inferred.unify(&list)?;
-                            environment.apply(&subst);
-                            list.apply(&subst);
-                            if let Type::Array(t) = list {
-                                inferred = *t;
-                            } else {
-                                panic!("Impossible")
-                            }
-                        }
-                        Field::Tail => {
-                            let mut list = Type::Array(Box::new(Type::Polymorphic(generator.fresh())));
-                            let subst = inferred.unify(&list)?;
-                            environment.apply(&subst);
-                            list.apply(&subst);
-                            inferred = list;
-                        }
-                        Field::First => {
-                            let mut tuple = Type::Tuple(Box::new(Type::Polymorphic(generator.fresh())), Box::new(Type::Polymorphic(generator.fresh())));
-                            let subst = inferred.unify(&tuple)?;
-                            environment.apply(&subst);
-                            tuple.apply(&subst);
-                            if let Type::Tuple(t, _) = tuple {
-                                inferred = *t;
-                            } else {
-                                panic!("Impossible")
-                            }
-                        }
-                        Field::Second => {
-                            let mut tuple = Type::Tuple(Box::new(Type::Polymorphic(generator.fresh())), Box::new(Type::Polymorphic(generator.fresh())));
-                            let subst = inferred.unify(&tuple)?;
-                            environment.apply(&subst);
-                            tuple.apply(&subst);
-                            if let Type::Tuple(_, t) = tuple {
-                                inferred = *t;
-                            } else {
-                                panic!("Impossible")
-                            }
-                        }
-                    }
-                }
-                Ok(Type::Void)
-            }
-            Stmt::FunCall(fun_call) => fun_call.infer_type(environment, generator),
-            Stmt::Return(_) => Ok(Type::Void)
-        }
+impl Infer for Vec<Stmt> {
+    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
+        let mut env = env.clone();
+        let subst = self
+            .iter()
+            .inspect()
+            .map(|e| {
+                let (s, _) = e.infer_type(&env, gen)?;
+                env = env.apply(&s);
+                Ok(s)
+            })
+            .collect::<Result<Vec<Substitution>>>()?
+            .into_iter()
+            .fold(Substitution::new(), |acc, s| acc.compose(&s));
+        Ok((subst, Type::Void))
     }
 }
 
-impl Operator {
-    fn get_type(&self, generator: &mut Generator) -> PolyType {
-        // TODO: turn operators into functions
+impl Infer for Stmt {
+    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
         match self {
-            Operator::Not => PolyType {
-                variables: Vec::new(),
-                inner: Type::Function(Box::new(Type::Bool), Box::new(Type::Bool)),
-            },
-            Operator::Plus | Operator::Minus | Operator::Times | Operator::Divide | Operator::Modulo => PolyType {
-                variables: Vec::new(),
-                inner: Type::Function(Box::new(Type::Int), Box::new(Type::Function(Box::new(Type::Int), Box::new(Type::Int)))),
-            },
-            Operator::Equals | Operator::NotEqual => {
-                let a = generator.fresh();
-                PolyType {
-                    variables: vec![a],
-                    inner: Type::Function(Box::new(Type::Polymorphic(a)), Box::new(Type::Function(Box::new(Type::Polymorphic(a)), Box::new(Type::Bool)))),
-                }
+            Stmt::If(c, t, e) => {
+                let (subst_i, inferred) = c.infer_type(env, gen)?;
+                let subst_u = inferred.unify_with(&Type::Bool)?;
+                let subst = subst_i.compose(&subst_u);
+                let env = &env.apply(&subst);
+                let (subst_t, _) = t.infer_type_mut(env, gen);
+                let env = &env.apply(&subst_t);
+                let (subst_e, _) = t.infer_type_mut(env, gen);
+                Ok((subst.compose(&subst_t).compose(&subst_e), Type::Void))
             }
-            Operator::Smaller | Operator::Greater | Operator::SmallerEqual | Operator::GreaterEqual => PolyType {
-                variables: Vec::new(),
-                inner: Type::Function(Box::new(Type::Int), Box::new(Type::Function(Box::new(Type::Int), Box::new(Type::Bool)))),
-            },
-            Operator::And | Operator::Or => PolyType {
-                variables: Vec::new(),
-                inner: Type::Function(Box::new(Type::Bool), Box::new(Type::Function(Box::new(Type::Bool), Box::new(Type::Bool)))),
-            },
-            Operator::Cons => {
-                let a = generator.fresh();
-                PolyType {
-                    variables: vec![a],
-                    inner: Type::Function(Box::new(Type::Polymorphic(a)), Box::new(Type::Function(Box::new(Type::Array(Box::new(Type::Polymorphic(a)))), Box::new(Type::Array(Box::new(Type::Polymorphic(a))))))),
-                }
+            Stmt::While(c, t) => {
+                let (subst_i, inferred) = c.infer_type(env, gen)?;
+                let subst_u = inferred.unify_with(&Type::Bool)?;
+                let subst = subst_i.compose(&subst_u);
+                let env = &env.apply(&subst);
+                let (subst_t, _) = t.infer_type(env, gen);
+                Ok((subst.compose(&subst_t), Type::Void))
             }
+            Stmt::Assignment(x, _, e) => {
+                let (subst_i, inferred) = e.infer_type(env, gen)?;
+                let remembered = &env
+                    .get(x)
+                    .ok_or(TypeError::Unbound(x.clone()))?.inner;
+                let subst_u = remembered.unify_with(&inferred)?;
+                let subst = subst_i.compose(&subst_u);
+                // TODO: Implement fields
+                // let env = &env.apply(&subst);
+                // inferred.apply(&subst);
+                // for field in &s.fields {
+                //     match field {
+                //         Field::Head => {
+                //             let mut list = Type::Array(Box::new(Type::Polymorphic(gen.fresh())));
+                //             let subst = inferred.unify(&list)?;
+                //             env.apply(&subst);
+                //             list.apply(&subst);
+                //             if let Type::Array(t) = list {
+                //                 inferred = *t;
+                //             } else {
+                //                 panic!("Impossible")
+                //             }
+                //         }
+                //         Field::Tail => {
+                //             let mut list = Type::Array(Box::new(Type::Polymorphic(gen.fresh())));
+                //             let subst = inferred.unify(&list)?;
+                //             env.apply(&subst);
+                //             list.apply(&subst);
+                //             inferred = list;
+                //         }
+                //         Field::First => {
+                //             let mut tuple = Type::Tuple(Box::new(Type::Polymorphic(gen.fresh())), Box::new(Type::Polymorphic(gen.fresh())));
+                //             let subst = inferred.unify(&tuple)?;
+                //             env.apply(&subst);
+                //             tuple.apply(&subst);
+                //             if let Type::Tuple(t, _) = tuple {
+                //                 inferred = *t;
+                //             } else {
+                //                 panic!("Impossible")
+                //             }
+                //         }
+                //         Field::Second => {
+                //             let mut tuple = Type::Tuple(Box::new(Type::Polymorphic(gen.fresh())), Box::new(Type::Polymorphic(gen.fresh())));
+                //             let subst = inferred.unify(&tuple)?;
+                //             env.apply(&subst);
+                //             tuple.apply(&subst);
+                //             if let Type::Tuple(_, t) = tuple {
+                //                 inferred = *t;
+                //             } else {
+                //                 panic!("Impossible")
+                //             }
+                //         }
+                //     }
+                // }
+                Ok((subst, Type::Void))
+            }
+            Stmt::FunCall(fun_call) => fun_call.infer_type(env, gen),
+            Stmt::Return(_) => Ok((Substitution::new(), Type::Void))
         }
     }
 }
@@ -559,35 +593,6 @@ impl Infer for Exp {
             Exp::Variable(id) => match environment.get(id) {
                 None => Err(TypeError::Unbound(id.clone())),
                 Some(t) => Ok((Substitution::new(), t.instantiate(generator)))
-            }
-            Exp::BinaryOp(op, lhs, rhs) => {
-                if let Type::Function(a, f) = op.get_type(generator).inner {
-                    if let Type::Function(b, mut c) = *f {
-                        let t1 = lhs.infer_type(environment, generator)?;
-                        let subst_a = t1.unify(&a)?;
-                        environment.apply(&subst_a);
-                        let t2 = rhs.infer_type(environment, generator)?;
-                        let subst_b = t2.unify(&b)?;
-                        environment.apply(&subst_b);
-                        c.apply(&subst_a.compose(subst_b));
-                        Ok(*c)
-                    } else {
-                        panic!("Impossible")
-                    }
-                } else {
-                    panic!("Impossible")
-                }
-            }
-            Exp::UnaryOp(op, rhs) => {
-                if let Type::Function(a, mut b) = op.get_type(generator).inner {
-                    let t = rhs.infer_type(environment, generator)?;
-                    let subst = t.unify(&a)?;
-                    environment.apply(&subst);
-                    b.apply(&subst);
-                    Ok(*b)
-                } else {
-                    panic!("Impossible")
-                }
             }
             Exp::Number(_) => Ok((Substitution::new(), Type::Int)),
             Exp::Character(_) => Ok((Substitution::new(), Type::Char)),

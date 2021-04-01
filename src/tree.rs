@@ -76,8 +76,6 @@ pub enum Stmt {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Exp {
     Variable(Id),
-    BinaryOp(Operator, Box<Exp>, Box<Exp>),
-    UnaryOp(Operator, Box<Exp>),
     Number(i32),
     Character(char),
     False,

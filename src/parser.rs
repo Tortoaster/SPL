@@ -7,7 +7,7 @@ use crate::tree::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, 
 use crate::parser::error::ParseError;
 use crate::char_iterator::Positioned;
 
-trait Parsable: Sized {
+pub trait Parsable: Sized {
     /**
     Parses this parsable. This consumes the necessary tokens from the iterator,
     hence this should only be used when no alternative parsables are valid.
@@ -306,7 +306,7 @@ impl Exp {
             Positioned { inner: Token::Operator(op), row, col, .. } => {
                 let r_bp = op.prefix_binding_power(row, col)?;
                 let rhs = Self::parse_exp(tokens, r_bp)?;
-                Exp::UnaryOp(op.clone(), Box::new(rhs))
+                Exp::FunCall(FunCall { id: Id(format!("{}", op)), args: vec![rhs] })
             }
             Positioned { inner: Token::Number(n), .. } => Exp::Number(n),
             Positioned { inner: Token::Character(c), .. } => Exp::Character(c),
@@ -341,13 +341,10 @@ impl Exp {
                 break;
             }
 
-            let op = match *tokens.next().unwrap() {
-                Token::Operator(ref op) => op.clone(),
-                _ => panic!("Impossible"),
-            };
+            tokens.next();
             let rhs = Self::parse_exp(tokens, r_bp)?;
 
-            lhs = Exp::BinaryOp(op, Box::new(lhs), Box::new(rhs));
+            lhs = Exp::FunCall(FunCall { id: Id(format!("{}", op)), args: vec![lhs, rhs] });
         }
 
         Ok(lhs)
