@@ -83,14 +83,14 @@ impl Type {
         }
     }
 
-    fn unfold(&self) -> Vec<&Type> {
+    fn unfold(&self) -> Vec<Type> {
         match self {
             Type::Function(a, b) => {
-                let mut vec = vec![&**a];
+                let mut vec = vec![a.as_ref().clone()];
                 vec.append(&mut b.unfold());
                 vec
             }
-            _ => vec![self]
+            _ => vec![self.clone()]
         }
     }
 
@@ -314,6 +314,10 @@ pub trait InferMut {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type>;
 }
 
+trait TryInfer {
+    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<Type>)>;
+}
+
 impl InferMut for SPL {
     fn infer_type_mut(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
         // Add prelude functions
@@ -417,23 +421,20 @@ impl Infer for FunDecl {
         let mut arg_types: Vec<Type> = local
             .get(&self.id)
             .ok_or(TypeError::Unbound(self.id.clone()))?.inner
-            .unfold()
-            .into_iter()
-            .cloned()
-            .collect();
+            .unfold();
         let ret_type = arg_types.pop().unwrap();
         let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
         let (arg_annotations, ret_annotation) = match &self.fun_type {
             None => {
-                let args: Vec<Option<Type>> = std::iter::repeat(None)
+                let args: Vec<Type> = std::iter::repeat(Type::Polymorphic(gen.fresh()))
                     .take(self.args.len())
                     .collect();
                 (args, Type::Void)
             }
             Some(fun_type) => {
-                let args: Vec<Option<Type>> = fun_type.arg_types
+                let args: Vec<Type> = fun_type.arg_types
                     .iter()
-                    .map(|t| Some(t.transform(gen, &mut poly_names)))
+                    .map(|t| t.transform(gen, &mut poly_names))
                     .collect();
                 (args, fun_type.ret_type.transform(gen, &mut poly_names))
             }
@@ -445,10 +446,8 @@ impl Infer for FunDecl {
             .zip(arg_types)
             .zip(arg_annotations)
             .map(|((arg, t), annotation)| {
-                let subst = match annotation {
-                    None => Substitution::new(),
-                    Some(a) => t.unify_with(&a)?
-                };
+                // TODO: Other way around?
+                let subst = annotation.unify_with(&t)?;
                 let t = local.generalize(&t.apply(&subst));
                 local.insert(arg.clone(), t);
                 Ok(subst)
@@ -460,15 +459,13 @@ impl Infer for FunDecl {
 
         // Infer types in inner statements
         let (subst_i, ret) = self.stmts.try_infer_type(&local, gen)?;
+        // TODO: Other way around?
+        // TODO: Propagate type annotation immediately to Vec<Stmt>?
         let subst_r = ret_type.unify_with(&ret.unwrap_or(Type::Void))?;
-        // TODO: check return annotation
+        let subst_r2 = ret_type.unify_with(&ret_annotation)?;
 
-        Ok((subst_a.compose(&subst_i).compose(&subst_r), Type::Void))
+        Ok((subst_a.compose(&subst_i).compose(&subst_r).compose(&subst_r2), Type::Void))
     }
-}
-
-trait TryInfer {
-    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<Type>)>;
 }
 
 impl TryInfer for Vec<Stmt> {
@@ -630,10 +627,7 @@ impl Infer for FunCall {
         let mut arg_types: Vec<Type> = environment
             .get(&self.id)
             .ok_or(TypeError::Unbound(self.id.clone()))?.inner
-            .unfold()
-            .into_iter()
-            .cloned()
-            .collect();
+            .unfold();
 
         let ret_type = arg_types
             .pop()
