@@ -1,8 +1,7 @@
-use crate::lexer::{Field, Operator};
-use std::iter::{FlatMap, Chain};
-use std::vec::IntoIter;
-use crate::typer::{Type, Generator, TypeVariable};
 use std::collections::HashMap;
+
+use crate::lexer::Field;
+use crate::typer::{Generator, Type, TypeVariable};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL {
@@ -19,7 +18,7 @@ pub enum Decl {
 pub struct VarDecl {
     pub var_type: VarType,
     pub id: Id,
-    pub exp: Exp
+    pub exp: Exp,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -34,13 +33,13 @@ pub struct FunDecl {
     pub args: Vec<Id>,
     pub fun_type: Option<FunType>,
     pub var_decls: Vec<VarDecl>,
-    pub stmts: Vec<Stmt>
+    pub stmts: Vec<Stmt>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FunType {
     pub arg_types: Vec<TypeAnnotation>,
-    pub ret_type: RetType
+    pub ret_type: RetType,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -93,7 +92,7 @@ pub struct Fields {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunCall {
     pub id: Id,
-    pub args: Vec<Exp>
+    pub args: Vec<Exp>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -141,35 +140,10 @@ impl TypeAnnotation {
     }
 }
 
-pub struct StmtIterator<'a> {
-    iter: Box<Chain<FlatMap<IntoIter<&'a Stmt>, StmtIterator<'a>, fn(&Stmt) -> StmtIterator>, IntoIter<&'a Stmt>>>
-}
-
-impl Stmt {
-    pub fn iter(&self) -> StmtIterator {
-        let list: Vec<&Stmt> = match self {
-            Stmt::If(_, a, b) => a.iter().chain(b).collect(),
-            Stmt::While(_, a) => a.iter().collect(),
-            Stmt::Assignment(_, _, _) | Stmt::FunCall(_) | Stmt::Return(_) => Vec::new()
-        };
-        StmtIterator {
-            iter: Box::new(list.into_iter().flat_map((|stmt| stmt.iter()) as fn(&Stmt) -> StmtIterator).chain(vec![self]))
-        }
-    }
-}
-
-impl<'a> Iterator for StmtIterator<'a> {
-    type Item = &'a Stmt;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
 mod printer {
     use std::fmt;
 
-    use super::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+    use super::{BasicType, Decl, Exp, Fields, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
 
     const TAB_SIZE: usize = 4;
 
@@ -325,8 +299,6 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
                 Exp::Variable(id) => id.fmt_pretty(indent),
-                Exp::BinaryOp(op, lhs, rhs) => format!("({} {} {})", lhs.fmt_pretty(indent), op, rhs.fmt_pretty(indent)),
-                Exp::UnaryOp(op, lhs) => format!("({}{})", op, lhs.fmt_pretty(indent)),
                 Exp::Number(n) => format!("{}", n),
                 Exp::Character(c) => format!("'{}'", c),
                 Exp::False => format!("False"),

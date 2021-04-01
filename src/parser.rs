@@ -341,6 +341,7 @@ impl Exp {
                 break;
             }
 
+            let op = op.clone();
             tokens.next();
             let rhs = Self::parse_exp(tokens, r_bp)?;
 

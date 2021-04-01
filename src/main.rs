@@ -6,6 +6,7 @@ use crate::error::CompileError;
 use crate::lexer::Lexable;
 use crate::tree::SPL;
 use crate::typer::{Environment, Generator, Infer};
+use crate::typer::InferMut;
 
 mod char_iterator;
 mod lexer;
@@ -28,12 +29,12 @@ fn main() -> Result<()> {
     let mut environment = Environment::new();
     let mut generator = Generator::new();
 
-    ast.infer_type(&mut environment, &mut generator)?;
+    ast.infer_type_mut(&mut environment, &mut generator)?;
 
     println!("{}", ast);
     environment
         .iter()
-        .filter(|(id, _)| !vec!["print", "isEmpty", "fst", "snd", "hd", "tl"]
+        .filter(|(id, _)| !vec!["print", "isEmpty", "fst", "snd", "hd", "tl", "not", "add", "sub", "mul", "div", "mod", "eq", "ne", "lt", "gt", "le", "ge", "and", "or", "cons"]
             .contains(&id.0.as_str()))
         .for_each(|(id, t)| println!("{}: {}", id.0, t));
 
