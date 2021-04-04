@@ -3,10 +3,17 @@ use std::{env, fs};
 use error::Result;
 
 use crate::error::CompileError;
-use crate::lexer::Lexable;
-use crate::tree::SPL;
-use crate::typer::{Environment, Generator};
-use crate::typer::InferMut;
+use spl::lexer::Lexable;
+use spl::tree::SPL;
+use spl::typer::{Environment, Generator, Typed};
+use spl::typer::InferMut;
+use spl::tree::Exp;
+use spl::parser::Parsable;
+use spl::typer::Infer;
+use spl::typer::PolyType;
+use spl::tree::Id;
+use spl::tree::Stmt;
+use spl::typer::TryInfer;
 
 mod char_iterator;
 mod lexer;
@@ -29,13 +36,45 @@ fn main() -> Result<()> {
     let mut environment = Environment::new();
     let mut generator = Generator::new();
 
-    ast.infer_type_mut(&mut environment, &mut generator)?;
+    for (name, annotation) in vec![
+        ("print", "a -> Void"),
+        ("isEmpty", "[a] -> Bool"),
+        ("hd", "[a] -> a"),
+        ("tl", "[a] -> [a]"),
+        ("fst", "(a, b) -> a"),
+        ("snd", "(a, b) -> b"),
+        ("not", "Bool -> Bool"),
+        ("add", "Int Int -> Int"),
+        ("sub", "Int Int -> Int"),
+        ("mul", "Int Int -> Int"),
+        ("div", "Int Int -> Int"),
+        ("mod", "Int Int -> Int"),
+        ("eq", "a a -> Bool"),
+        ("ne", "a a -> Bool"),
+        ("lt", "Int Int -> Bool"),
+        ("gt", "Int Int -> Bool"),
+        ("le", "Int Int -> Bool"),
+        ("ge", "Int Int -> Bool"),
+        ("and", "Bool Bool -> Bool"),
+        ("or", "Bool Bool -> Bool"),
+        ("cons", "a [a] -> [a]"),
+    ] {
+        let mut t: PolyType = annotation.parse().unwrap();
+        t = environment.generalize(&t.instantiate(&mut generator));
+        environment.insert(Id(name.to_owned()), t);
+    }
 
-    println!("{}", ast);
+    let exp = Exp::parse(&mut "('a' : []) : []".tokenize()?.peekable())?;
+    let (subst, inferred) = exp.infer_type(&environment, &mut generator)?;
+    environment = environment.apply(&subst);
+    println!("{}", environment.generalize(&inferred));
+
+    // ast.infer_type_mut(&mut environment, &mut generator)?;
+    //
+    // println!("{}", ast);
     environment
         .iter()
-        .filter(|(id, _)| !vec!["print", "isEmpty", "fst", "snd", "hd", "tl", "not", "add", "sub", "mul", "div", "mod", "eq", "ne", "lt", "gt", "le", "ge", "and", "or", "cons"]
-            .contains(&id.0.as_str()))
+        .filter(|(id, _)| !vec!["print", "isEmpty", "fst", "snd", "hd", "tl", "not", "add", "sub", "mul", "div", "mod", "eq", "ne", "lt", "gt", "le", "ge", "and", "or", "cons"].contains(&id.0.as_str()))
         .for_each(|(id, t)| println!("{}: {}", id.0, t));
 
     Ok(())
@@ -46,9 +85,9 @@ mod error {
     use std::fmt;
     use std::fmt::Debug;
 
-    use crate::lexer::error::LexError;
-    use crate::parser::error::ParseError;
-    use crate::typer::error::TypeError;
+    use spl::lexer::error::LexError;
+    use spl::parser::error::ParseError;
+    use spl::typer::error::TypeError;
 
     pub type Result<T, E = CompileError> = std::result::Result<T, E>;
 

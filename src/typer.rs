@@ -12,6 +12,7 @@ use crate::parser::error::ParseError;
 use crate::parser::Parsable;
 use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, SPL, Stmt, VarDecl};
 use crate::typer::error::TypeError;
+use std::collections::hash_map::IntoIter;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable(usize);
@@ -83,6 +84,7 @@ impl Type {
         }
     }
 
+    /// Returns a type into a vector of the argument types and the return type
     fn unfold(&self) -> Vec<Type> {
         match self {
             Type::Function(a, b) => {
@@ -115,7 +117,7 @@ pub struct PolyType {
 }
 
 impl PolyType {
-    fn instantiate(&self, generator: &mut Generator) -> Type {
+    pub fn instantiate(&self, generator: &mut Generator) -> Type {
         let fresh = std::iter::repeat_with(|| Type::Polymorphic(generator.fresh()));
         let subst = Substitution(self.variables.iter().cloned().zip(fresh).collect());
         self.inner.apply(&subst)
@@ -158,7 +160,7 @@ impl Environment {
         Environment(HashMap::new())
     }
 
-    fn generalize(&self, instance: &Type) -> PolyType {
+    pub fn generalize(&self, instance: &Type) -> PolyType {
         let free = self.free_vars();
         PolyType {
             variables: instance
@@ -194,10 +196,10 @@ impl Substitution {
 
     fn compose(&self, other: &Self) -> Self {
         // TODO: this way, or the other way around?
-        self
+        other
             .iter()
             .map(|(k, v)| (*k, v.apply(&self)))
-            .chain(other
+            .chain(self
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
             )
@@ -219,8 +221,6 @@ impl DerefMut for Substitution {
     }
 }
 
-// TODO: IntoIter?
-
 impl FromIterator<(TypeVariable, Type)> for Substitution {
     fn from_iter<T: IntoIterator<Item=(TypeVariable, Type)>>(iter: T) -> Self {
         Substitution(iter.into_iter().collect())
@@ -235,7 +235,7 @@ impl FromIterator<Substitution> for Substitution {
     }
 }
 
-trait Typed {
+pub trait Typed {
     fn free_vars(&self) -> HashSet<TypeVariable>;
 
     fn apply(&self, subst: &Substitution) -> Self;
@@ -268,6 +268,22 @@ impl Typed for Type {
             Type::Function(a, b) => Type::Function(Box::new(a.apply(subst)), Box::new(b.apply(subst))),
             Type::Polymorphic(v) => subst.get(v).unwrap_or(self).clone(),
         }
+    }
+}
+
+impl<T: Typed> Typed for Vec<T> {
+    fn free_vars(&self) -> HashSet<TypeVariable> {
+        self
+            .iter()
+            .flat_map(|t| t.free_vars())
+            .collect()
+    }
+
+    fn apply(&self, subst: &Substitution) -> Self {
+        self
+            .iter()
+            .map(|t| t.apply(&subst))
+            .collect()
     }
 }
 
@@ -314,7 +330,7 @@ pub trait InferMut {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type>;
 }
 
-trait TryInfer {
+pub trait TryInfer {
     fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<Type>)>;
 }
 
@@ -623,29 +639,46 @@ impl Infer for Exp {
 }
 
 impl Infer for FunCall {
-    fn infer_type(&self, environment: &Environment, generator: &mut Generator) -> Result<(Substitution, Type)> {
-        let mut arg_types: Vec<Type> = environment
+    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
+        let mut arg_types = env
             .get(&self.id)
-            .ok_or(TypeError::Unbound(self.id.clone()))?.inner
+            .ok_or(TypeError::Unbound(self.id.clone()))?
+            .instantiate(gen)
             .unfold();
 
         let ret_type = arg_types
             .pop()
             .unwrap();
 
-        let subst = self.args
+        let mut env = env.clone();
+        // TODO: Error if wrong number of args
+        let mut types = Vec::new();
+        let subst_i = self.args
             .iter()
-            .zip(arg_types)
-            .map(|(e, t)| {
-                let (subst_i, inferred) = e.infer_type(environment, generator)?;
-                let subst_u = inferred.unify_with(&t)?;
-                Ok(subst_i.compose(&subst_u))
+            .map(|exp| {
+                let (subst, inferred) = exp.infer_type(&env, gen)?;
+                env = env.apply(&subst);
+                types.push(inferred);
+                Ok(subst)
             })
-            .collect::<Result<Vec<Substitution>>>()?
-            .into_iter()
-            .fold(Substitution::new(), |acc, subst| acc.compose(&subst));
+            .collect::<Result<Substitution>>()?;
 
-        Ok((subst, ret_type))
+        types.apply(&subst_i);
+        // TODO: Necessary? Probably
+        arg_types.apply(&subst_i);
+
+        let subst_u = types
+            .into_iter()
+            .zip(&arg_types)
+            .fold(Ok(Substitution::new()), |acc, (inferred, required)| {
+                let subst = acc?;
+                let s = inferred.unify_with(&required.apply(&subst))?;
+                Ok(subst.compose(&s))
+            })?;
+
+        let subst = subst_i.compose(&subst_u);
+        let t = ret_type.apply(&subst);
+        Ok((subst, t))
     }
 }
 
