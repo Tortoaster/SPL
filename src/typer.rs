@@ -116,8 +116,8 @@ pub struct PolyType {
 }
 
 impl PolyType {
-    pub fn instantiate(&self, generator: &mut Generator) -> Type {
-        let fresh = std::iter::repeat_with(|| Type::Polymorphic(generator.fresh()));
+    pub fn instantiate(&self, gen: &mut Generator) -> Type {
+        let fresh = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()));
         let subst = Substitution(self.variables.iter().cloned().zip(fresh).collect());
         self.inner.apply(&subst)
     }
@@ -129,15 +129,15 @@ impl FromStr for PolyType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let fun_type = FunType::parse(&mut s.tokenize().unwrap().peekable())?;
 
-        let mut generator = Generator::new();
+        let mut gen = Generator::new();
         let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
 
         let arg_types: Vec<Type> = fun_type.arg_types
             .iter()
-            .map(|t| t.transform(&mut generator, &mut poly_names))
+            .map(|t| t.transform(&mut gen, &mut poly_names))
             .collect();
 
-        let ret_type = fun_type.ret_type.transform(&mut generator, &mut poly_names);
+        let ret_type = fun_type.ret_type.transform(&mut gen, &mut poly_names);
 
         let t = arg_types.into_iter().rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret)));
         Ok(PolyType { variables: poly_names.values().cloned().collect(), inner: t })
@@ -155,8 +155,36 @@ impl fmt::Display for PolyType {
 pub struct Environment(HashMap<Id, PolyType>);
 
 impl Environment {
-    pub fn new() -> Self {
-        Environment(HashMap::new())
+    pub fn new(gen: &mut Generator) -> Self {
+        let mut env = Environment(HashMap::new());
+        for (name, annotation) in vec![
+            ("print", "a -> Void"),
+            ("isEmpty", "[a] -> Bool"),
+            ("hd", "[a] -> a"),
+            ("tl", "[a] -> [a]"),
+            ("fst", "(a, b) -> a"),
+            ("snd", "(a, b) -> b"),
+            ("not", "Bool -> Bool"),
+            ("add", "Int Int -> Int"),
+            ("sub", "Int Int -> Int"),
+            ("mul", "Int Int -> Int"),
+            ("div", "Int Int -> Int"),
+            ("mod", "Int Int -> Int"),
+            ("eq", "a a -> Bool"),
+            ("ne", "a a -> Bool"),
+            ("lt", "Int Int -> Bool"),
+            ("gt", "Int Int -> Bool"),
+            ("le", "Int Int -> Bool"),
+            ("ge", "Int Int -> Bool"),
+            ("and", "Bool Bool -> Bool"),
+            ("or", "Bool Bool -> Bool"),
+            ("cons", "a [a] -> [a]"),
+        ] {
+            let mut t: PolyType = annotation.parse().unwrap();
+            t = env.generalize(&t.instantiate(gen));
+            env.insert(Id(name.to_owned()), t);
+        }
+        env
     }
 
     pub fn generalize(&self, instance: &Type) -> PolyType {
@@ -334,60 +362,31 @@ pub trait TryInfer {
 }
 
 impl InferMut for SPL {
-    fn infer_type_mut(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
-        // Add prelude functions
-        for (name, annotation) in vec![
-            ("print", "a -> Void"),
-            ("isEmpty", "[a] -> Bool"),
-            ("hd", "[a] -> a"),
-            ("tl", "[a] -> [a]"),
-            ("fst", "(a, b) -> a"),
-            ("snd", "(a, b) -> b"),
-            ("not", "Bool -> Bool"),
-            ("add", "Int Int -> Int"),
-            ("sub", "Int Int -> Int"),
-            ("mul", "Int Int -> Int"),
-            ("div", "Int Int -> Int"),
-            ("mod", "Int Int -> Int"),
-            ("eq", "a a -> Bool"),
-            ("ne", "a a -> Bool"),
-            ("lt", "Int Int -> Bool"),
-            ("gt", "Int Int -> Bool"),
-            ("le", "Int Int -> Bool"),
-            ("ge", "Int Int -> Bool"),
-            ("and", "Bool Bool -> Bool"),
-            ("or", "Bool Bool -> Bool"),
-            ("cons", "a [a] -> [a]"),
-        ] {
-            let mut t: PolyType = annotation.parse().unwrap();
-            t = environment.generalize(&t.instantiate(generator));
-            environment.insert(Id(name.to_owned()), t);
-        }
-
+    fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
         // Add global variables and functions to scope
         self.decls.iter()
             .map(|decl| match decl {
                 Decl::VarDecl(decl) => {
-                    let v = generator.fresh();
+                    let v = gen.fresh();
                     let t = PolyType { variables: vec![v], inner: Type::Polymorphic(v) };
-                    if environment.insert(decl.id.clone(), t).is_some() {
+                    if env.insert(decl.id.clone(), t).is_some() {
                         Err(TypeError::Conflict(decl.id.clone()))
                     } else {
                         Ok(())
                     }
                 }
                 Decl::FunDecl(decl) => {
-                    let v = generator.fresh();
+                    let v = gen.fresh();
                     let (variables, inner) = decl.args.iter().fold(
                         (vec![v], Type::Polymorphic(v)),
                         |(mut vars, t), _| {
-                            let a = generator.fresh();
+                            let a = gen.fresh();
                             vars.push(a);
                             (vars, Type::Function(Box::new(Type::Polymorphic(a)), Box::new(t)))
                         },
                     );
                     let t = PolyType { variables, inner };
-                    if environment.insert(decl.id.clone(), t).is_some() {
+                    if env.insert(decl.id.clone(), t).is_some() {
                         Err(TypeError::Conflict(decl.id.clone()))
                     } else {
                         Ok(())
@@ -399,7 +398,7 @@ impl InferMut for SPL {
         // Infer types of inner declarations
         self.decls
             .iter()
-            .map(|decl| decl.infer_type_mut(environment, generator))
+            .map(|decl| decl.infer_type_mut(env, gen))
             .collect::<Result<Vec<Type>>>()?;
 
         Ok(Type::Void)
@@ -407,12 +406,12 @@ impl InferMut for SPL {
 }
 
 impl InferMut for Decl {
-    fn infer_type_mut(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
+    fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
         match self {
-            Decl::VarDecl(var_decl) => var_decl.infer_type_mut(environment, generator),
+            Decl::VarDecl(var_decl) => var_decl.infer_type_mut(env, gen),
             Decl::FunDecl(fun_decl) => {
-                let (subst, inferred) = fun_decl.infer_type(environment, generator)?;
-                *environment = environment.apply(&subst);
+                let (subst, inferred) = fun_decl.infer_type(env, gen)?;
+                *env = env.apply(&subst);
                 Ok(inferred)
             }
         }
@@ -420,11 +419,11 @@ impl InferMut for Decl {
 }
 
 impl InferMut for VarDecl {
-    fn infer_type_mut(&self, environment: &mut Environment, generator: &mut Generator) -> Result<Type> {
-        let (subst_i, inferred) = self.exp.infer_type(environment, generator)?;
-        let subst_u = inferred.unify_with(&self.var_type.transform(generator))?;
-        let t = environment.generalize(&inferred.apply(&subst_i.compose(&subst_u)));
-        environment.insert(self.id.clone(), t);
+    fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
+        let (subst_i, inferred) = self.exp.infer_type(env, gen)?;
+        let subst_u = inferred.unify_with(&self.var_type.transform(gen))?;
+        let t = env.generalize(&inferred.apply(&subst_i.compose(&subst_u)));
+        env.insert(self.id.clone(), t);
         Ok(Type::Void)
     }
 }
@@ -614,20 +613,20 @@ impl Stmt {
 }
 
 impl Infer for Exp {
-    fn infer_type(&self, environment: &Environment, generator: &mut Generator) -> Result<(Substitution, Type)> {
+    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
         match self {
-            Exp::Variable(id) => match environment.get(id) {
+            Exp::Variable(id) => match env.get(id) {
                 None => Err(TypeError::Unbound(id.clone())),
-                Some(t) => Ok((Substitution::new(), t.instantiate(generator)))
+                Some(t) => Ok((Substitution::new(), t.instantiate(gen)))
             }
             Exp::Number(_) => Ok((Substitution::new(), Type::Int)),
             Exp::Character(_) => Ok((Substitution::new(), Type::Char)),
             Exp::False | Exp::True => Ok((Substitution::new(), Type::Bool)),
-            Exp::FunCall(fun_call) => fun_call.infer_type(environment, generator),
-            Exp::Nil => Ok((Substitution::new(), Type::Array(Box::new(Type::Polymorphic(generator.fresh()))))),
+            Exp::FunCall(fun_call) => fun_call.infer_type(env, gen),
+            Exp::Nil => Ok((Substitution::new(), Type::Array(Box::new(Type::Polymorphic(gen.fresh()))))),
             Exp::Tuple(l, r) => {
-                let (l_subst, l_inferred) = l.infer_type(environment, generator)?;
-                let (r_subst, r_inferred) = r.infer_type(&environment.apply(&l_subst), generator)?;
+                let (l_subst, l_inferred) = l.infer_type(env, gen)?;
+                let (r_subst, r_inferred) = r.infer_type(&env.apply(&l_subst), gen)?;
                 let subst = l_subst.compose(&r_subst);
                 // TODO: Apply substitutions to l_inferred?
                 let l_inferred = l_inferred.apply(&subst);

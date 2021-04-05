@@ -3,11 +3,9 @@ use std::{env, fs};
 use error::CompileError;
 use error::Result;
 use lexer::Lexable;
-use tree::Id;
 use tree::SPL;
 use typer::{Environment, Generator};
 use typer::InferMut;
-use typer::PolyType;
 
 mod char_iterator;
 mod lexer;
@@ -27,47 +25,19 @@ fn main() -> Result<()> {
     let lexer = code.as_str().tokenize()?;
     let ast = SPL::new(lexer.peekable())?;
 
-    let mut environment = Environment::new();
-    let mut generator = Generator::new();
-
-    for (name, annotation) in vec![
-        ("print", "a -> Void"),
-        ("isEmpty", "[a] -> Bool"),
-        ("hd", "[a] -> a"),
-        ("tl", "[a] -> [a]"),
-        ("fst", "(a, b) -> a"),
-        ("snd", "(a, b) -> b"),
-        ("not", "Bool -> Bool"),
-        ("add", "Int Int -> Int"),
-        ("sub", "Int Int -> Int"),
-        ("mul", "Int Int -> Int"),
-        ("div", "Int Int -> Int"),
-        ("mod", "Int Int -> Int"),
-        ("eq", "a a -> Bool"),
-        ("ne", "a a -> Bool"),
-        ("lt", "Int Int -> Bool"),
-        ("gt", "Int Int -> Bool"),
-        ("le", "Int Int -> Bool"),
-        ("ge", "Int Int -> Bool"),
-        ("and", "Bool Bool -> Bool"),
-        ("or", "Bool Bool -> Bool"),
-        ("cons", "a [a] -> [a]"),
-    ] {
-        let mut t: PolyType = annotation.parse().unwrap();
-        t = environment.generalize(&t.instantiate(&mut generator));
-        environment.insert(Id(name.to_owned()), t);
-    }
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
 
     // let stmt = Stmt::parse(&mut "Var x = ('a' : []) : [];".tokenize()?.peekable())?;
     // let (subst, inferred) = stmt.infer_type(&environment, &mut generator, &Type::Void)?;
     // environment = environment.apply(&subst);
     // println!("{}", environment.generalize(&inferred.unwrap()));
 
-    ast.infer_type_mut(&mut environment, &mut generator)?;
+    ast.infer_type_mut(&mut env, &mut gen)?;
 
     println!("{}", ast);
 
-    environment
+    env
         .iter()
         .filter(|(id, _)| !vec!["print", "isEmpty", "fst", "snd", "hd", "tl", "not", "add", "sub", "mul", "div", "mod", "eq", "ne", "lt", "gt", "le", "ge", "and", "or", "cons"].contains(&id.0.as_str()))
         .for_each(|(id, t)| println!("{}: {}", id.0, t));
