@@ -214,6 +214,7 @@ impl DerefMut for Environment {
     }
 }
 
+#[derive(Eq, PartialEq, Debug)]
 pub struct Substitution(HashMap<TypeVariable, Type>);
 
 impl Substitution {
@@ -543,11 +544,25 @@ impl Stmt {
             }
             Stmt::Assignment(x, _, e) => {
                 let (subst_i, inferred) = e.infer_type(env, gen)?;
-                let remembered = &env
+                let env = env.apply(&subst_i);
+                let remembered = env
                     .get(x)
-                    .ok_or(TypeError::Unbound(x.clone()))?.inner;
+                    .ok_or(TypeError::Unbound(x.clone()))?
+                    .instantiate(gen);
                 let subst_u = remembered.unify_with(&inferred)?;
-                let subst = subst_i.compose(&subst_u);
+                let subst = subst_u.compose(&subst_i);
+                println!("{:?}", *subst);
+                env
+                    .iter()
+                    .filter(|(id, _)| {
+                        !vec![
+                            "print", "isEmpty", "fst", "snd", "hd", "tl",
+                            "not", "add", "sub", "mul", "div", "mod",
+                            "eq", "ne", "lt", "gt", "le", "ge",
+                            "and", "or", "cons"
+                        ].contains(&id.0.as_str())
+                    })
+                    .for_each(|(id, pt)| println!("{:?}: {:?}", id, pt));
                 // TODO: Implement fields
                 // let env = &env.apply(&subst);
                 // inferred.apply(&subst);
