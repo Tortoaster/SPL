@@ -217,8 +217,9 @@ impl Parsable for BasicType {
 
 impl Parsable for Stmt {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self, ParseError> {
-        let t = match tokens.next().ok_or(ParseError::EOF { expected: "statement".to_owned() })? {
-            Positioned { inner: Token::If, .. } => {
+        let token = tokens.next().ok_or(ParseError::EOF { expected: "statement".to_owned() })?;
+        let t = match &*token {
+            Token::If => {
                 munch(tokens, &Token::OpenParen)?;
                 let condition = Exp::parse(tokens)?;
                 munch(tokens, &Token::CloseParen)?;
@@ -237,7 +238,7 @@ impl Parsable for Stmt {
 
                 Stmt::If(condition, then, otherwise)
             }
-            Positioned { inner: Token::While, .. } => {
+            Token::While => {
                 munch(tokens, &Token::OpenParen)?;
                 let condition = Exp::parse(tokens)?;
                 munch(tokens, &Token::CloseParen)?;
@@ -247,7 +248,7 @@ impl Parsable for Stmt {
 
                 Stmt::While(condition, repeat)
             }
-            Positioned { inner: Token::Return, .. } => {
+            Token::Return => {
                 let value = if let Some(Positioned { inner: Token::Semicolon, .. }) = tokens.peek() {
                     None
                 } else {
@@ -257,8 +258,8 @@ impl Parsable for Stmt {
 
                 Stmt::Return(value)
             }
-            Positioned { inner: Token::Identifier(s), .. } => {
-                let id = Id(s);
+            Token::Identifier(s) => {
+                let id = Id(s.clone());
                 if let Some(Positioned { inner: Token::OpenParen, .. }) = tokens.peek() {
                     munch(tokens, &Token::OpenParen)?;
                     let args = Exp::parse_many_sep(tokens, &Token::Comma)?;
@@ -275,7 +276,7 @@ impl Parsable for Stmt {
                     Stmt::Assignment(id, selector, exp)
                 }
             }
-            token => return Err(ParseError::BadToken {
+            _ => return Err(ParseError::BadToken {
                 found: (*token).clone(),
                 row: token.row,
                 col: token.col,
@@ -460,28 +461,26 @@ pub mod error {
     impl fmt::Display for ParseError {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                ParseError::BadToken { found, row, col, code: _, expected } => write!(
+                ParseError::BadToken { found, row, col, code, expected } => write!(
                     f,
                     "Bad token {:?} at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
                     found,
                     row,
                     col,
-                    "TODO",
-                    // code.lines().nth(*row - 1).unwrap(),
+                    code.lines().nth(*row - 1).unwrap(),
                     "^",
                     expected,
                     indent = col - 1
                 ),
                 ParseError::EOF { expected } => write!(f, "Unexpected end of file, expected {}", expected),
-                ParseError::Fixity { found, prefix, row, col, code: _ } => write!(
+                ParseError::Fixity { found, prefix, row, col, code } => write!(
                     f,
-                    "{:?} is not a {}fix operator, at {}:{}:\n{}\n{: >indent$}",
+                    "{:?} is not a{}fix operator, at {}:{}:\n{}\n{: >indent$}",
                     found,
-                    if *prefix { "pre" } else { "in" },
+                    if *prefix { " pre" } else { "n in" },
                     row,
                     col,
-                    "TODO",
-                    // code.lines().nth(*row - 1).unwrap(),
+                    code.lines().nth(*row - 1).unwrap(),
                     "^",
                     indent = col - 1
                 ),

@@ -109,7 +109,7 @@ impl Type {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct PolyType {
     variables: Vec<TypeVariable>,
     inner: Type,
