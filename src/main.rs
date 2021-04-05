@@ -1,19 +1,13 @@
 use std::{env, fs};
 
+use error::CompileError;
 use error::Result;
-
-use crate::error::CompileError;
-use spl::lexer::Lexable;
-use spl::tree::SPL;
-use spl::typer::{Environment, Generator, Typed};
-use spl::typer::InferMut;
-use spl::tree::Exp;
-use spl::parser::Parsable;
-use spl::typer::Infer;
-use spl::typer::PolyType;
-use spl::tree::Id;
-use spl::tree::Stmt;
-use spl::typer::TryInfer;
+use lexer::Lexable;
+use tree::Id;
+use tree::SPL;
+use typer::{Environment, Generator};
+use typer::InferMut;
+use typer::PolyType;
 
 mod char_iterator;
 mod lexer;
@@ -64,14 +58,15 @@ fn main() -> Result<()> {
         environment.insert(Id(name.to_owned()), t);
     }
 
-    let exp = Exp::parse(&mut "('a' : []) : []".tokenize()?.peekable())?;
-    let (subst, inferred) = exp.infer_type(&environment, &mut generator)?;
-    environment = environment.apply(&subst);
-    println!("{}", environment.generalize(&inferred));
+    // let stmt = Stmt::parse(&mut "Var x = ('a' : []) : [];".tokenize()?.peekable())?;
+    // let (subst, inferred) = stmt.infer_type(&environment, &mut generator, &Type::Void)?;
+    // environment = environment.apply(&subst);
+    // println!("{}", environment.generalize(&inferred.unwrap()));
 
-    // ast.infer_type_mut(&mut environment, &mut generator)?;
-    //
-    // println!("{}", ast);
+    ast.infer_type_mut(&mut environment, &mut generator)?;
+
+    println!("{}", ast);
+
     environment
         .iter()
         .filter(|(id, _)| !vec!["print", "isEmpty", "fst", "snd", "hd", "tl", "not", "add", "sub", "mul", "div", "mod", "eq", "ne", "lt", "gt", "le", "ge", "and", "or", "cons"].contains(&id.0.as_str()))
@@ -85,9 +80,9 @@ mod error {
     use std::fmt;
     use std::fmt::Debug;
 
-    use spl::lexer::error::LexError;
-    use spl::parser::error::ParseError;
-    use spl::typer::error::TypeError;
+    use super::lexer::error::LexError;
+    use super::parser::error::ParseError;
+    use super::typer::error::TypeError;
 
     pub type Result<T, E = CompileError> = std::result::Result<T, E>;
 

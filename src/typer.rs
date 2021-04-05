@@ -12,7 +12,6 @@ use crate::parser::error::ParseError;
 use crate::parser::Parsable;
 use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, SPL, Stmt, VarDecl};
 use crate::typer::error::TypeError;
-use std::collections::hash_map::IntoIter;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable(usize);
@@ -508,7 +507,7 @@ impl TryInfer for Vec<Stmt> {
 }
 
 impl Stmt {
-    fn infer_type(&self, env: &Environment, gen: &mut Generator, ret_type: &Type) -> Result<(Substitution, Option<Type>)> {
+    pub fn infer_type(&self, env: &Environment, gen: &mut Generator, ret_type: &Type) -> Result<(Substitution, Option<Type>)> {
         match self {
             Stmt::If(c, t, e) => {
                 let (subst_i, inferred) = c.infer_type(env, gen)?;
