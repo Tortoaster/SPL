@@ -51,7 +51,7 @@ impl Generator {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Type {
     Void,
     Int,
@@ -79,7 +79,7 @@ impl Type {
                 Ok(subst_a.compose(&subst_b))
             }
             (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
-            (t1, t2) => Err(TypeError::Unify(t1.clone(), t2.clone()))
+            (t1, t2) => Err(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() })
         }
     }
 
@@ -690,8 +690,12 @@ pub mod error {
 
     pub type Result<T, E = TypeError> = std::result::Result<T, E>;
 
+    #[derive(Eq, PartialEq)]
     pub enum TypeError {
-        Unify(Type, Type),
+        Mismatch {
+            expected: Type,
+            found: Type,
+        },
         Unbound(Id),
         Conflict(Id),
         Recursive(TypeVariable, Type),
@@ -700,7 +704,7 @@ pub mod error {
     impl fmt::Display for TypeError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                TypeError::Unify(t1, t2) => write!(f, "Types {:?} and {:?} do not unify", t1, t2),
+                TypeError::Mismatch { expected, found } => write!(f, "Type mismatch: expected {:?}, found {:?}", expected, found),
                 TypeError::Unbound(id) => write!(f, "Unbound variable {:?}", id),
                 TypeError::Conflict(id) => write!(f, "Variable {:?} is defined more than once", id),
                 TypeError::Recursive(v, t) => write!(f, "Occur check fails: {:?} vs {:?}", v, t),
