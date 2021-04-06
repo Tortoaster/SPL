@@ -97,7 +97,7 @@ trait Union {
 impl Union for Type {
     fn unify_with(&self, other: &Self) -> Result<Substitution> {
         match (self, other) {
-            (Type::Int, Type::Int) | (Type::Bool, Type::Bool) | (Type::Char, Type::Char) => Ok(Substitution::new()),
+            (Type::Void, Type::Void) | (Type::Int, Type::Int) | (Type::Bool, Type::Bool) | (Type::Char, Type::Char) => Ok(Substitution::new()),
             (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
                 let subst_l = l1.unify_with(l2)?;
                 let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
@@ -139,6 +139,15 @@ impl PolyType {
     }
 }
 
+impl From<Type> for PolyType {
+    fn from(inner: Type) -> Self {
+        PolyType {
+            variables: vec![],
+            inner,
+        }
+    }
+}
+
 impl FromStr for PolyType {
     type Err = ParseError;
 
@@ -162,7 +171,11 @@ impl FromStr for PolyType {
 
 impl fmt::Display for PolyType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let poly_names: HashMap<TypeVariable, char> = self.variables.iter().copied().zip('a'..'z').collect();
+        let poly_names: HashMap<TypeVariable, char> = self
+            .free_vars()
+            .into_iter()
+            .zip('a'..'z')
+            .collect();
         write!(f, "{}", self.inner.format(&poly_names))
     }
 }
@@ -374,31 +387,37 @@ impl InferMut for SPL {
         self.decls.iter()
             .map(|decl| match decl {
                 Decl::VarDecl(decl) => {
-                    let v = gen.fresh();
-                    let t = PolyType { variables: vec![v], inner: Type::Polymorphic(v) };
-                    if env.insert(decl.id.clone(), t).is_some() {
+                    if env.insert(decl.id.clone(), decl.var_type.transform(gen).into()).is_some() {
                         Err(TypeError::Conflict(decl.id.clone()))
                     } else {
                         Ok(())
                     }
                 }
                 Decl::FunDecl(decl) => {
-                    let v = gen.fresh();
-                    let (variables, inner) = decl.args.iter().fold(
-                        (vec![v], Type::Polymorphic(v)),
-                        |(mut vars, t), _| {
-                            let a = gen.fresh();
-                            vars.push(a);
-                            (vars, Type::Function(Box::new(Type::Polymorphic(a)), Box::new(t)))
-                        },
-                    );
-                    let t = PolyType { variables, inner };
-                    if env.insert(decl.id.clone(), t).is_some() {
+                    let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
+                    let (arg_annotations, ret_annotation) = match &decl.fun_type {
+                        None => {
+                            let args: Vec<Type> = std::iter::repeat(Type::Polymorphic(gen.fresh()))
+                                .take(decl.args.len())
+                                .collect();
+                            (args, Type::Polymorphic(gen.fresh()))
+                        }
+                        Some(fun_type) => {
+                            let args: Vec<Type> = fun_type.arg_types
+                                .iter()
+                                .map(|t| t.transform(gen, &mut poly_names))
+                                .collect();
+                            (args, fun_type.ret_type.transform(gen, &mut poly_names))
+                        }
+                    };
+                    let inner = arg_annotations
+                        .into_iter()
+                        .fold(ret_annotation, |t, annotation| Type::Function(Box::new(annotation), Box::new(t)));
+                    if env.insert(decl.id.clone(), inner.into()).is_some() {
                         Err(TypeError::Conflict(decl.id.clone()))
                     } else {
                         Ok(())
                     }
-                    // TODO: check for doubly defined variables in functions
                 }
             }).collect::<Result<()>>()?;
 
@@ -416,11 +435,7 @@ impl InferMut for Decl {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
         match self {
             Decl::VarDecl(var_decl) => var_decl.infer_type_mut(env, gen),
-            Decl::FunDecl(fun_decl) => {
-                let (subst, inferred) = fun_decl.infer_type(env, gen)?;
-                *env = env.apply(&subst);
-                Ok(inferred)
-            }
+            Decl::FunDecl(fun_decl) => fun_decl.infer_type_mut(env, gen)
         }
     }
 }
@@ -429,15 +444,15 @@ impl InferMut for VarDecl {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
         let (subst_i, inferred) = self.exp.infer_type(env, gen)?;
         let subst_u = inferred.unify_with(&self.var_type.transform(gen))?;
-        // let t = env.generalize(&inferred.apply(&subst_u.compose(&subst_i)));
         let t = PolyType { variables: vec![], inner: inferred.apply(&subst_u.compose(&subst_i)) };
         env.insert(self.id.clone(), t);
         Ok(Type::Void)
     }
 }
 
-impl Infer for FunDecl {
-    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
+impl InferMut for FunDecl {
+    fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
+        // TODO: check for doubly defined variables in functions
         // Create local scope
         let mut local = env.clone();
         let mut arg_types: Vec<Type> = local
@@ -445,49 +460,29 @@ impl Infer for FunDecl {
             .ok_or(TypeError::Unbound(self.id.clone()))?.inner
             .unfold();
         let ret_type = arg_types.pop().unwrap();
-        let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
-        let (arg_annotations, ret_annotation) = match &self.fun_type {
-            None => {
-                let args: Vec<Type> = std::iter::repeat(Type::Polymorphic(gen.fresh()))
-                    .take(self.args.len())
-                    .collect();
-                (args, Type::Void)
-            }
-            Some(fun_type) => {
-                let args: Vec<Type> = fun_type.arg_types
-                    .iter()
-                    .map(|t| t.transform(gen, &mut poly_names))
-                    .collect();
-                (args, fun_type.ret_type.transform(gen, &mut poly_names))
-            }
-        };
 
         // Add arguments to local scope
-        let subst_a = self.args
+        local.extend(self.args
             .iter()
-            .zip(arg_types)
-            .zip(arg_annotations)
-            .fold(Ok(Substitution::new()), |acc, ((arg, t), annotation)| {
-                let subst_a = acc?;
-                // TODO: Other way around?
-                let subst_u = annotation.unify_with(&t)?;
-                let subst = subst_u.compose(&subst_a);
-                let t = local.generalize(&t.apply(&subst));
-                local.insert(arg.clone(), t);
-                Ok(subst)
-            })?;
+            .cloned()
+            .zip(arg_types
+                .into_iter()
+                .map(|arg| arg.into())));
 
-        // Add variable declarations to local scope TODO: return subst
-        self.var_decls.iter().map(|decl| decl.infer_type_mut(&mut local, gen)).collect::<Result<Vec<Type>>>()?;
+        // Add variable declarations to local scope
+        self.var_decls
+            .iter()
+            .map(|decl| decl.infer_type_mut(&mut local, gen))
+            .collect::<Result<Vec<Type>>>()?;
 
         // Infer types in inner statements
-        let (subst_i, ret) = self.stmts.try_infer_type(&local, gen)?;
-        // TODO: Other way around?
-        // TODO: Propagate type annotation immediately to Vec<Stmt>?
-        let subst_r = ret_type.unify_with(&ret.unwrap_or(Type::Void))?;
-        let subst_r2 = ret_type.unify_with(&ret_annotation)?;
+        let (subst_i, inferred) = self.stmts.try_infer_type(&local, gen)?;
 
-        Ok((subst_r2.compose(&subst_r.compose(&subst_i.compose(&subst_a))), Type::Void))
+        // Check return type
+        let subst_r = ret_type.unify_with(&inferred.unwrap_or(Type::Void))?;
+
+        *env = env.apply(&subst_r.compose(&subst_i));
+        Ok(Type::Void)
     }
 }
 
@@ -568,8 +563,8 @@ impl TryInfer for Stmt {
                 // let env = env.apply(&subst_i);
                 let remembered = env
                     .get(x)
-                    .ok_or(TypeError::Unbound(x.clone()))?
-                    .inner.clone();
+                    .ok_or(TypeError::Unbound(x.clone()))?.inner
+                    .clone();
 
                 let mut current = remembered;
                 let subst_f = f.fields

@@ -24,6 +24,7 @@ pub fn compile() -> Result<()> {
 
     ast.infer_type_mut(&mut env, &mut gen)?;
 
+    println!("{}", ast);
     env
         .iter()
         .filter(|(id, _)|

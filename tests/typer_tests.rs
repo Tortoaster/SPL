@@ -1,7 +1,7 @@
 use spl::compiler::error::CompileError;
 use spl::lexer::Lexable;
 use spl::parser::Parsable;
-use spl::tree::{Exp, Stmt, VarDecl, Id};
+use spl::tree::{Exp, Stmt, VarDecl, Id, SPL};
 use spl::typer::{Environment, Generator, Infer, Type, InferMut, TryInfer};
 use spl::typer::error::TypeError;
 use spl::typer::Typed;
@@ -130,4 +130,62 @@ fn fields() -> Result<(), CompileError> {
         }
     }
     panic!("Does not match fields: {:?}", result);
+}
+
+#[test]
+fn infer_mono_function() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let program = SPL::parse(&mut "test(x) { x = x + 1; }".tokenize()?.peekable())?;
+    program.infer_type_mut(&mut env, &mut gen)?;
+
+    let result = env.get(&Id("test".to_owned())).unwrap();
+
+    assert_eq!("(Int -> Void)", format!("{}", result));
+
+    Ok(())
+}
+
+#[test]
+fn infer_poly_function() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let program = SPL::parse(&mut "id(x) { return x; }".tokenize()?.peekable())?;
+    program.infer_type_mut(&mut env, &mut gen)?;
+
+    let result = env.get(&Id("id".to_owned())).unwrap();
+
+    assert_eq!("(a -> a)", format!("{}", result));
+
+    Ok(())
+}
+
+#[test]
+fn check_function() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let program = SPL::parse(&mut "test(x) :: a -> Void { x = x + 1; }".tokenize()?.peekable())?;
+    program.infer_type_mut(&mut env, &mut gen)?;
+
+    let result = env.get(&Id("test".to_owned())).unwrap();
+
+    assert_eq!("(Int -> Void)", format!("{}", result));
+
+    Ok(())
+}
+
+#[test]
+fn conflict_function() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let program = SPL::parse(&mut "test(x) :: Bool -> Void { x = x + 1; }".tokenize()?.peekable())?;
+    let result = program.infer_type_mut(&mut env, &mut gen);
+
+    assert_eq!(Err(TypeError::Mismatch { expected: Type::Bool, found: Type::Int }), result);
+
+    Ok(())
 }
