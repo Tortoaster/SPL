@@ -7,7 +7,7 @@ use spl::typer::error::TypeError;
 use spl::typer::Typed;
 
 #[test]
-fn test_simple_exp() -> Result<(), CompileError> {
+fn simple_exp() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let env = Environment::new(&mut gen);
 
@@ -20,7 +20,7 @@ fn test_simple_exp() -> Result<(), CompileError> {
 }
 
 #[test]
-fn test_list_exp() -> Result<(), CompileError> {
+fn list_exp() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let env = Environment::new(&mut gen);
 
@@ -33,7 +33,7 @@ fn test_list_exp() -> Result<(), CompileError> {
 }
 
 #[test]
-fn test_invalid_list() -> Result<(), CompileError> {
+fn invalid_list() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let env = Environment::new(&mut gen);
 
@@ -46,7 +46,7 @@ fn test_invalid_list() -> Result<(), CompileError> {
 }
 
 #[test]
-fn test_assignment() -> Result<(), CompileError> {
+fn assignment() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new(&mut gen);
 
@@ -56,26 +56,15 @@ fn test_assignment() -> Result<(), CompileError> {
     let (subst, _) = assignment.infer_type(&mut env, &mut gen, &Type::Void)?;
     env = env.apply(&subst);
 
-    let (id, result) = env
-        .iter()
-        .find(|(id, _)| {
-            !vec![
-                "print", "isEmpty", "fst", "snd", "hd", "tl",
-                "not", "add", "sub", "mul", "div", "mod",
-                "eq", "ne", "lt", "gt", "le", "ge",
-                "and", "or", "cons"
-            ].contains(&id.0.as_str())
-        })
-        .unwrap();
+    let result = env.get(&Id("x".to_owned())).unwrap();
 
-    assert_eq!(&Id("x".to_owned()), id);
     assert_eq!(&env.generalize(&Type::Array(Box::new(Type::Int))), result);
 
     Ok(())
 }
 
 #[test]
-fn test_return() -> Result<(), CompileError> {
+fn return_type() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new(&mut gen);
 
@@ -90,7 +79,7 @@ fn test_return() -> Result<(), CompileError> {
 }
 
 #[test]
-fn test_no_return() -> Result<(), CompileError> {
+fn no_return() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new(&mut gen);
 
@@ -105,7 +94,7 @@ fn test_no_return() -> Result<(), CompileError> {
 }
 
 #[test]
-fn test_bad_return() -> Result<(), CompileError> {
+fn bad_return() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new(&mut gen);
 
@@ -117,4 +106,28 @@ fn test_bad_return() -> Result<(), CompileError> {
     assert_eq!(Err(TypeError::Mismatch { expected: Type::Bool, found: Type::Int }), result);
 
     Ok(())
+}
+
+#[test]
+fn fields() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let decl = VarDecl::parse(&mut "var x = [];".tokenize()?.peekable())?;
+    decl.infer_type_mut(&mut env, &mut gen)?;
+    let stmt = Stmt::parse(&mut "x.tl.hd.fst.snd = True;".tokenize()?.peekable())?;
+    let (subst, _) = stmt.infer_type(&mut env, &mut gen, &Type::Void)?;
+    env = env.apply(&subst);
+
+    let result = env.get(&Id("x".to_owned())).unwrap();
+
+    if let Type::Array(result) = &result.inner {
+        if let Type::Tuple(result, _) = &**result {
+            if let Type::Tuple(_, result) = &**result {
+                assert_eq!(Type::Bool, **result);
+                return Ok(());
+            }
+        }
+    }
+    panic!("Does not match fields: {:?}", result);
 }

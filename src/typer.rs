@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use error::Result;
 
-use crate::lexer::Lexable;
+use crate::lexer::{Lexable, Field};
 use crate::parser::error::ParseError;
 use crate::parser::Parsable;
 use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, SPL, Stmt, VarDecl};
@@ -70,13 +70,13 @@ impl Type {
             (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
                 let subst_l = l1.unify_with(l2)?;
                 let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
-                Ok(subst_l.compose(&subst_r))
+                Ok(subst_r.compose(&subst_l))
             }
             (Type::Array(t1), Type::Array(t2)) => t1.unify_with(t2),
             (Type::Function(a1, b1), Type::Function(a2, b2)) => {
                 let subst_a = a1.unify_with(a2)?;
                 let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
-                Ok(subst_a.compose(&subst_b))
+                Ok(subst_b.compose(&subst_a))
             }
             (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
             (t1, t2) => Err(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() })
@@ -111,8 +111,8 @@ impl Type {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct PolyType {
-    variables: Vec<TypeVariable>,
-    inner: Type,
+    pub variables: Vec<TypeVariable>,
+    pub inner: Type,
 }
 
 impl PolyType {
@@ -188,12 +188,11 @@ impl Environment {
     }
 
     pub fn generalize(&self, instance: &Type) -> PolyType {
-        let free = self.free_vars();
         PolyType {
             variables: instance
                 .free_vars()
-                .into_iter()
-                .filter(|t| !free.contains(t))
+                .difference(&self.free_vars())
+                .cloned()
                 .collect(),
             inner: instance.clone(),
         }
@@ -255,14 +254,6 @@ impl FromIterator<(TypeVariable, Type)> for Substitution {
     }
 }
 
-impl FromIterator<Substitution> for Substitution {
-    fn from_iter<T: IntoIterator<Item=Substitution>>(iter: T) -> Self {
-        iter
-            .into_iter()
-            .fold(Substitution::new(), |acc, subst| acc.compose(&subst))
-    }
-}
-
 pub trait Typed {
     fn free_vars(&self) -> HashSet<TypeVariable>;
 
@@ -319,8 +310,8 @@ impl Typed for PolyType {
     fn free_vars(&self) -> HashSet<TypeVariable> {
         self.inner
             .free_vars()
-            .into_iter()
-            .filter(|t| !self.variables.contains(t))
+            .difference(&self.variables.iter().cloned().collect())
+            .cloned()
             .collect()
     }
 
@@ -423,7 +414,8 @@ impl InferMut for VarDecl {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
         let (subst_i, inferred) = self.exp.infer_type(env, gen)?;
         let subst_u = inferred.unify_with(&self.var_type.transform(gen))?;
-        let t = env.generalize(&inferred.apply(&subst_i.compose(&subst_u)));
+        // let t = env.generalize(&inferred.apply(&subst_u.compose(&subst_i)));
+        let t = PolyType { variables: vec![], inner: inferred.apply(&subst_u.compose(&subst_i)) };
         env.insert(self.id.clone(), t);
         Ok(Type::Void)
     }
@@ -460,14 +452,15 @@ impl Infer for FunDecl {
             .iter()
             .zip(arg_types)
             .zip(arg_annotations)
-            .map(|((arg, t), annotation)| {
+            .fold(Ok(Substitution::new()), |acc, ((arg, t), annotation)| {
+                let subst_a = acc?;
                 // TODO: Other way around?
-                let subst = annotation.unify_with(&t)?;
+                let subst_u = annotation.unify_with(&t)?;
+                let subst = subst_u.compose(&subst_a);
                 let t = local.generalize(&t.apply(&subst));
                 local.insert(arg.clone(), t);
                 Ok(subst)
-            })
-            .collect::<Result<Substitution>>()?;
+            })?;
 
         // Add variable declarations to local scope TODO: return subst
         self.var_decls.iter().map(|decl| decl.infer_type_mut(&mut local, gen)).collect::<Result<Vec<Type>>>()?;
@@ -479,7 +472,7 @@ impl Infer for FunDecl {
         let subst_r = ret_type.unify_with(&ret.unwrap_or(Type::Void))?;
         let subst_r2 = ret_type.unify_with(&ret_annotation)?;
 
-        Ok((subst_a.compose(&subst_i).compose(&subst_r).compose(&subst_r2), Type::Void))
+        Ok((subst_r2.compose(&subst_r.compose(&subst_i.compose(&subst_a))), Type::Void))
     }
 }
 
@@ -490,18 +483,19 @@ impl TryInfer for Vec<Stmt> {
         let mut ret_type = Type::Polymorphic(gen.fresh());
         let subst = self
             .iter()
-            .map(|stmt| {
-                let (mut subst, inferred) = stmt.infer_type(&env, gen, &ret_type)?;
+            .fold(Ok(Substitution::new()), |acc, stmt| {
+                let subst_a = acc?;
+                let (mut subst_i, inferred) = stmt.infer_type(&env, gen, &ret_type)?;
                 if let Some(ret) = inferred {
                     let subst_u = ret_type.unify_with(&ret)?;
-                    subst = subst.compose(&subst_u);
+                    subst_i = subst_u.compose(&subst_i);
                     returns = true;
                 }
+                let subst = subst_i.compose(&subst_a);
                 env = env.apply(&subst);
                 ret_type = ret_type.apply(&subst);
                 Ok(subst)
-            })
-            .collect::<Result<Substitution>>()?;
+            })?;
         Ok((subst, if returns { Some(ret_type) } else { None }))
     }
 }
@@ -512,21 +506,22 @@ impl Stmt {
             Stmt::If(c, t, e) => {
                 let (subst_i, inferred) = c.infer_type(env, gen)?;
                 let subst_u = inferred.unify_with(&Type::Bool)?;
-                let subst = subst_i.compose(&subst_u);
+                let subst = subst_u.compose(&subst_i);
                 let env = &env.apply(&subst);
 
                 let (mut subst_t, ret_t) = t.try_infer_type(env, gen)?;
                 if let Some(ret) = &ret_t {
-                    subst_t = subst_t.compose(&ret_type.unify_with(ret)?);
+                    subst_t = ret_type.unify_with(ret)?.compose(&subst_t);
                 }
                 let env = &env.apply(&subst_t);
 
                 let (mut subst_e, ret_e) = e.try_infer_type(env, gen)?;
                 if let Some(ret) = &ret_e {
-                    subst_e = subst_e.compose(&ret_type.unify_with(ret)?);
+                    subst_e = ret_type.unify_with(ret)?.compose(&subst_e);
                 }
 
-                let subst = subst.compose(&subst_t).compose(&subst_e);
+                let subst = subst_e.compose(&subst_t.compose(&subst));
+
                 if let (Some(_), Some(ret)) = (ret_t, ret_e) {
                     let ret = ret.apply(&subst);
                     Ok((subst, Some(ret)))
@@ -537,80 +532,64 @@ impl Stmt {
             Stmt::While(c, t) => {
                 let (subst_i, inferred) = c.infer_type(env, gen)?;
                 let subst_u = inferred.unify_with(&Type::Bool)?;
-                let subst = subst_i.compose(&subst_u);
+                let subst = subst_u.compose(&subst_i);
                 let env = &env.apply(&subst);
-                let (subst_t, ret_t) = t.try_infer_type(env, gen)?;
-                Ok((subst.compose(&subst_t), ret_t))
+
+                let (mut subst_t, ret_t) = t.try_infer_type(env, gen)?;
+                if let Some(ret) = &ret_t {
+                    subst_t = ret_type.unify_with(ret)?.compose(&subst_t);
+                }
+
+                Ok((subst_t.compose(&subst), ret_t))
             }
-            Stmt::Assignment(x, _, e) => {
+            Stmt::Assignment(x, f, e) => {
                 let (subst_i, inferred) = e.infer_type(env, gen)?;
-                let env = env.apply(&subst_i);
+
+                // TODO: neccessary?
+                // let env = env.apply(&subst_i);
                 let remembered = env
                     .get(x)
                     .ok_or(TypeError::Unbound(x.clone()))?
-                    .instantiate(gen);
-                let subst_u = remembered.unify_with(&inferred)?;
-                let subst = subst_u.compose(&subst_i);
-                println!("{:?}", *subst);
-                env
+                    .inner.clone();
+
+                let mut current = remembered;
+                let subst_f = f.fields
                     .iter()
-                    .filter(|(id, _)| {
-                        !vec![
-                            "print", "isEmpty", "fst", "snd", "hd", "tl",
-                            "not", "add", "sub", "mul", "div", "mod",
-                            "eq", "ne", "lt", "gt", "le", "ge",
-                            "and", "or", "cons"
-                        ].contains(&id.0.as_str())
-                    })
-                    .for_each(|(id, pt)| println!("{:?}: {:?}", id, pt));
-                // TODO: Implement fields
-                // let env = &env.apply(&subst);
-                // inferred.apply(&subst);
-                // for field in &s.fields {
-                //     match field {
-                //         Field::Head => {
-                //             let mut list = Type::Array(Box::new(Type::Polymorphic(gen.fresh())));
-                //             let subst = inferred.unify(&list)?;
-                //             env.apply(&subst);
-                //             list.apply(&subst);
-                //             if let Type::Array(t) = list {
-                //                 inferred = *t;
-                //             } else {
-                //                 panic!("Impossible")
-                //             }
-                //         }
-                //         Field::Tail => {
-                //             let mut list = Type::Array(Box::new(Type::Polymorphic(gen.fresh())));
-                //             let subst = inferred.unify(&list)?;
-                //             env.apply(&subst);
-                //             list.apply(&subst);
-                //             inferred = list;
-                //         }
-                //         Field::First => {
-                //             let mut tuple = Type::Tuple(Box::new(Type::Polymorphic(gen.fresh())), Box::new(Type::Polymorphic(gen.fresh())));
-                //             let subst = inferred.unify(&tuple)?;
-                //             env.apply(&subst);
-                //             tuple.apply(&subst);
-                //             if let Type::Tuple(t, _) = tuple {
-                //                 inferred = *t;
-                //             } else {
-                //                 panic!("Impossible")
-                //             }
-                //         }
-                //         Field::Second => {
-                //             let mut tuple = Type::Tuple(Box::new(Type::Polymorphic(gen.fresh())), Box::new(Type::Polymorphic(gen.fresh())));
-                //             let subst = inferred.unify(&tuple)?;
-                //             env.apply(&subst);
-                //             tuple.apply(&subst);
-                //             if let Type::Tuple(_, t) = tuple {
-                //                 inferred = *t;
-                //             } else {
-                //                 panic!("Impossible")
-                //             }
-                //         }
-                //     }
-                // }
-                Ok((subst, None))
+                    .fold(Ok(Substitution::new()), |acc, field| {
+                        let subst = acc?;
+                        let inner = Type::Polymorphic(gen.fresh());
+                        match field {
+                            Field::Head => {
+                                let thing = Type::Array(Box::new(inner.clone()));
+                                let subst_u = thing.unify_with(&current)?;
+                                current = inner.apply(&subst_u);
+                                Ok(subst_u.compose(&subst))
+                            }
+                            Field::Tail => {
+                                let thing = Type::Array(Box::new(inner.clone()));
+                                let subst_u = thing.unify_with(&current)?;
+                                current = Type::Array(Box::new(inner)).apply(&subst_u);
+                                Ok(subst_u.compose(&subst))
+                            }
+                            Field::First => {
+                                let thing = Type::Tuple(Box::new(inner.clone()), Box::new(Type::Polymorphic(gen.fresh())));
+                                let subst_u = thing.unify_with(&current)?;
+                                current = inner.apply(&subst_u);
+                                Ok(subst_u.compose(&subst))
+                            }
+                            Field::Second => {
+                                let thing = Type::Tuple(Box::new(Type::Polymorphic(gen.fresh())), Box::new(inner.clone()));
+                                let subst_u = thing.unify_with(&current)?;
+                                current = inner.apply(&subst_u);
+                                Ok(subst_u.compose(&subst))
+                            }
+                        }
+                    })?;
+
+                // TODO: other way around?
+                let subst_u = current.unify_with(&inferred)?;
+
+                Ok((subst_u.compose(&subst_f.compose(&subst_i)), None))
             }
             Stmt::FunCall(fun_call) => {
                 let (subst, _) = fun_call.infer_type(env, gen)?;
@@ -620,7 +599,8 @@ impl Stmt {
                 None => Ok((Substitution::new(), Some(Type::Void))),
                 Some(exp) => {
                     let (subst, inferred) = exp.infer_type(env, gen)?;
-                    Ok((subst, Some(inferred)))
+                    let subst_i = ret_type.unify_with(&inferred)?;
+                    Ok((subst_i.compose(&subst), Some(inferred)))
                 }
             }
         }
@@ -642,7 +622,7 @@ impl Infer for Exp {
             Exp::Tuple(l, r) => {
                 let (l_subst, l_inferred) = l.infer_type(env, gen)?;
                 let (r_subst, r_inferred) = r.infer_type(&env.apply(&l_subst), gen)?;
-                let subst = l_subst.compose(&r_subst);
+                let subst = r_subst.compose(&l_subst);
                 // TODO: Apply substitutions to l_inferred?
                 let l_inferred = l_inferred.apply(&subst);
                 Ok((subst, Type::Tuple(Box::new(l_inferred), Box::new(r_inferred))))
@@ -668,13 +648,14 @@ impl Infer for FunCall {
         let mut types = Vec::new();
         let subst_i = self.args
             .iter()
-            .map(|exp| {
-                let (subst, inferred) = exp.infer_type(&env, gen)?;
+            .fold(Ok(Substitution::new()), |acc, exp| {
+                let subst_a = acc?;
+                let (subst_i, inferred) = exp.infer_type(&env, gen)?;
+                let subst = subst_i.compose(&subst_a);
                 env = env.apply(&subst);
                 types.push(inferred);
                 Ok(subst)
-            })
-            .collect::<Result<Substitution>>()?;
+            })?;
 
         types.apply(&subst_i);
         // TODO: Necessary? Probably
@@ -686,10 +667,10 @@ impl Infer for FunCall {
             .fold(Ok(Substitution::new()), |acc, (inferred, required)| {
                 let subst = acc?;
                 let s = inferred.unify_with(&required.apply(&subst))?;
-                Ok(subst.compose(&s))
+                Ok(s.compose(&subst))
             })?;
 
-        let subst = subst_i.compose(&subst_u);
+        let subst = subst_u.compose(&subst_i);
         let t = ret_type.apply(&subst);
         Ok((subst, t))
     }
