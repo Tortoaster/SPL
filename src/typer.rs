@@ -64,27 +64,8 @@ pub enum Type {
 }
 
 impl Type {
-    fn unify_with(&self, other: &Type) -> Result<Substitution> {
-        match (self, other) {
-            (Type::Int, Type::Int) | (Type::Bool, Type::Bool) | (Type::Char, Type::Char) => Ok(Substitution::new()),
-            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
-                let subst_l = l1.unify_with(l2)?;
-                let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
-                Ok(subst_r.compose(&subst_l))
-            }
-            (Type::Array(t1), Type::Array(t2)) => t1.unify_with(t2),
-            (Type::Function(a1, b1), Type::Function(a2, b2)) => {
-                let subst_a = a1.unify_with(a2)?;
-                let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
-                Ok(subst_b.compose(&subst_a))
-            }
-            (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
-            (t1, t2) => Err(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() })
-        }
-    }
-
     /// Returns a type into a vector of the argument types and the return type
-    fn unfold(&self) -> Vec<Type> {
+    fn unfold(&self) -> Vec<Self> {
         match self {
             Type::Function(a, b) => {
                 let mut vec = vec![a.as_ref().clone()];
@@ -105,6 +86,41 @@ impl Type {
             Type::Array(a) => format!("[{}]", a.format(poly_names)),
             Type::Function(a, b) => format!("({} -> {})", a.format(poly_names), b.format(poly_names)),
             Type::Polymorphic(v) => format!("{}", poly_names.get(&v).unwrap_or(&'?'))
+        }
+    }
+}
+
+trait Union {
+    fn unify_with(&self, other: &Self) -> Result<Substitution>;
+}
+
+impl Union for Type {
+    fn unify_with(&self, other: &Self) -> Result<Substitution> {
+        match (self, other) {
+            (Type::Int, Type::Int) | (Type::Bool, Type::Bool) | (Type::Char, Type::Char) => Ok(Substitution::new()),
+            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
+                let subst_l = l1.unify_with(l2)?;
+                let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
+                Ok(subst_r.compose(&subst_l))
+            }
+            (Type::Array(t1), Type::Array(t2)) => t1.unify_with(t2),
+            (Type::Function(a1, b1), Type::Function(a2, b2)) => {
+                let subst_a = a1.unify_with(a2)?;
+                let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
+                Ok(subst_b.compose(&subst_a))
+            }
+            (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
+            (t1, t2) => Err(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() })
+        }
+    }
+}
+
+impl Union for Option<Type> {
+    fn unify_with(&self, other: &Self) -> Result<Substitution> {
+        if let (Some(t1), Some(t2)) = (self, other) {
+            t1.unify_with(&t2)
+        } else {
+            Ok(Substitution::new())
         }
     }
 }
@@ -222,7 +238,6 @@ impl Substitution {
     }
 
     fn compose(&self, other: &Self) -> Self {
-        // TODO: this way, or the other way around?
         other
             .iter()
             .map(|(k, v)| (*k, v.apply(&self)))
@@ -479,29 +494,37 @@ impl Infer for FunDecl {
 impl TryInfer for Vec<Stmt> {
     fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<Type>)> {
         let mut env = env.clone();
-        let mut returns = false;
-        let mut ret_type = Type::Polymorphic(gen.fresh());
+        let mut current = None;
+
         let subst = self
             .iter()
             .fold(Ok(Substitution::new()), |acc, stmt| {
                 let subst_a = acc?;
-                let (mut subst_i, inferred) = stmt.infer_type(&env, gen, &ret_type)?;
-                if let Some(ret) = inferred {
-                    let subst_u = ret_type.unify_with(&ret)?;
-                    subst_i = subst_u.compose(&subst_i);
-                    returns = true;
-                }
-                let subst = subst_i.compose(&subst_a);
+
+                let (subst_i, inferred) = stmt.try_infer_type(&env, gen)?;
+
+                let subst_u = current.unify_with(&inferred)?;
+
+                let subst = subst_u.compose(&subst_i.compose(&subst_a));
                 env = env.apply(&subst);
-                ret_type = ret_type.apply(&subst);
+
+                if inferred.is_some() && current.is_none() {
+                    current = inferred;
+                }
+
+                if let Some(t) = &current {
+                    current = Some(t.apply(&subst));
+                }
+
                 Ok(subst)
             })?;
-        Ok((subst, if returns { Some(ret_type) } else { None }))
+
+        Ok((subst, current))
     }
 }
 
-impl Stmt {
-    pub fn infer_type(&self, env: &Environment, gen: &mut Generator, ret_type: &Type) -> Result<(Substitution, Option<Type>)> {
+impl TryInfer for Stmt {
+    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<Type>)> {
         match self {
             Stmt::If(c, t, e) => {
                 let (subst_i, inferred) = c.infer_type(env, gen)?;
@@ -509,25 +532,21 @@ impl Stmt {
                 let subst = subst_u.compose(&subst_i);
                 let env = &env.apply(&subst);
 
-                let (mut subst_t, ret_t) = t.try_infer_type(env, gen)?;
-                if let Some(ret) = &ret_t {
-                    subst_t = ret_type.unify_with(ret)?.compose(&subst_t);
-                }
+                let (subst_t, ret_t) = t.try_infer_type(env, gen)?;
                 let env = &env.apply(&subst_t);
 
-                let (mut subst_e, ret_e) = e.try_infer_type(env, gen)?;
-                if let Some(ret) = &ret_e {
-                    subst_e = ret_type.unify_with(ret)?.compose(&subst_e);
-                }
+                let (subst_e, ret_e) = e.try_infer_type(env, gen)?;
 
-                let subst = subst_e.compose(&subst_t.compose(&subst));
+                let subst_r = ret_e.unify_with(&ret_t)?;
 
-                if let (Some(_), Some(ret)) = (ret_t, ret_e) {
-                    let ret = ret.apply(&subst);
-                    Ok((subst, Some(ret)))
+                let subst = subst_r.compose(&subst_e.compose(&subst_t.compose(&subst)));
+                let ret_type = if let (Some(_), Some(t)) = (ret_t, ret_e) {
+                    Some(t.apply(&subst))
                 } else {
-                    Ok((subst, None))
-                }
+                    None
+                };
+
+                Ok((subst, ret_type))
             }
             Stmt::While(c, t) => {
                 let (subst_i, inferred) = c.infer_type(env, gen)?;
@@ -535,12 +554,12 @@ impl Stmt {
                 let subst = subst_u.compose(&subst_i);
                 let env = &env.apply(&subst);
 
-                let (mut subst_t, ret_t) = t.try_infer_type(env, gen)?;
-                if let Some(ret) = &ret_t {
-                    subst_t = ret_type.unify_with(ret)?.compose(&subst_t);
-                }
+                let (subst_t, ret_t) = t.try_infer_type(env, gen)?;
 
-                Ok((subst_t.compose(&subst), ret_t))
+                let subst = subst_t.compose(&subst);
+                let ret_type = ret_t.map(|t| t.apply(&subst));
+
+                Ok((subst, ret_type))
             }
             Stmt::Assignment(x, f, e) => {
                 let (subst_i, inferred) = e.infer_type(env, gen)?;
@@ -599,8 +618,7 @@ impl Stmt {
                 None => Ok((Substitution::new(), Some(Type::Void))),
                 Some(exp) => {
                     let (subst, inferred) = exp.infer_type(env, gen)?;
-                    let subst_i = ret_type.unify_with(&inferred)?;
-                    Ok((subst_i.compose(&subst), Some(inferred)))
+                    Ok((subst, Some(inferred)))
                 }
             }
         }

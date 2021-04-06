@@ -53,7 +53,7 @@ fn assignment() -> Result<(), CompileError> {
     let decl = VarDecl::parse(&mut "var x = [];".tokenize()?.peekable())?;
     decl.infer_type_mut(&mut env, &mut gen)?;
     let assignment = Stmt::parse(&mut "x = 1 : x;".tokenize()?.peekable())?;
-    let (subst, _) = assignment.infer_type(&mut env, &mut gen, &Type::Void)?;
+    let (subst, _) = assignment.try_infer_type(&mut env, &mut gen)?;
     env = env.apply(&subst);
 
     let result = env.get(&Id("x".to_owned())).unwrap();
@@ -103,7 +103,7 @@ fn bad_return() -> Result<(), CompileError> {
     let stmts = Stmt::parse_many(&mut "x = x + 1; if(x < 5) { return True; } else { return 1; } x = x + 2;".tokenize()?.peekable());
     let result = stmts.try_infer_type(&mut env, &mut gen);
 
-    assert_eq!(Err(TypeError::Mismatch { expected: Type::Bool, found: Type::Int }), result);
+    assert_eq!(Err(TypeError::Mismatch { expected: Type::Int, found: Type::Bool }), result);
 
     Ok(())
 }
@@ -116,7 +116,7 @@ fn fields() -> Result<(), CompileError> {
     let decl = VarDecl::parse(&mut "var x = [];".tokenize()?.peekable())?;
     decl.infer_type_mut(&mut env, &mut gen)?;
     let stmt = Stmt::parse(&mut "x.tl.hd.fst.snd = True;".tokenize()?.peekable())?;
-    let (subst, _) = stmt.infer_type(&mut env, &mut gen, &Type::Void)?;
+    let (subst, _) = stmt.try_infer_type(&mut env, &mut gen)?;
     env = env.apply(&subst);
 
     let result = env.get(&Id("x".to_owned())).unwrap();
