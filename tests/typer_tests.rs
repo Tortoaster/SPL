@@ -5,6 +5,8 @@ use spl::tree::{Exp, Stmt, VarDecl, Id, SPL};
 use spl::typer::{Environment, Generator, Infer, Type, InferMut, TryInfer};
 use spl::typer::error::TypeError;
 use spl::typer::Typed;
+use std::fs;
+use spl::compiler;
 
 #[test]
 fn simple_exp() -> Result<(), CompileError> {
@@ -186,6 +188,27 @@ fn conflict_function() -> Result<(), CompileError> {
     let result = program.infer_type_mut(&mut env, &mut gen);
 
     assert_eq!(Err(TypeError::Mismatch { expected: Type::Bool, found: Type::Int }), result);
+
+    Ok(())
+}
+
+#[test]
+fn type_check_files() -> Result<(), CompileError> {
+    for dir in fs::read_dir("tests/res/") {
+        for file in dir {
+            if let Ok(file) = file {
+                let result = compiler::compile(file.path());
+                match result {
+                    Ok(_) => if file.file_name().into_string().unwrap().ends_with("shouldfail.spl") {
+                        eprintln!("{:?}: Should fail but does not", file.file_name());
+                    }
+                    Err(e) => if !file.file_name().into_string().unwrap().ends_with("shouldfail.spl") {
+                        eprintln!("{:?}: {}", file.file_name(), e);
+                    }
+                }
+            }
+        }
+    }
 
     Ok(())
 }

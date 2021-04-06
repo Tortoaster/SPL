@@ -1,20 +1,14 @@
-use std::{env, fs};
+use std::fs;
+use std::path::Path;
 
-use error::CompileError;
 use error::Result;
 
 use crate::lexer::Lexable;
 use crate::tree::SPL;
 use crate::typer::{Environment, Generator, InferMut};
 
-pub fn compile() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 {
-        return Err(CompileError::InsufficientArguments);
-    }
-
-    let code = fs::read_to_string(&args[1]).expect("File inaccessible");
+pub fn compile<P: AsRef<Path>>(path: P) -> Result<(SPL, Environment)> {
+    let code = fs::read_to_string(path).expect("File inaccessible");
 
     let lexer = code.as_str().tokenize()?;
     let ast = SPL::new(lexer.peekable())?;
@@ -24,20 +18,7 @@ pub fn compile() -> Result<()> {
 
     ast.infer_type_mut(&mut env, &mut gen)?;
 
-    println!("{}", ast);
-    env
-        .iter()
-        .filter(|(id, _)|
-            !vec![
-                "print", "isEmpty", "fst", "snd", "hd", "tl",
-                "not", "add", "sub", "mul", "div", "mod",
-                "eq", "ne", "lt", "gt", "le", "ge",
-                "and", "or", "cons"
-            ].contains(&id.0.as_str())
-        )
-        .for_each(|(id, t)| println!("{}: {}", id.0, t));
-
-    Ok(())
+    Ok((ast, env))
 }
 
 pub mod error {

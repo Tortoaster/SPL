@@ -559,8 +559,7 @@ impl TryInfer for Stmt {
             Stmt::Assignment(x, f, e) => {
                 let (subst_i, inferred) = e.infer_type(env, gen)?;
 
-                // TODO: neccessary?
-                // let env = env.apply(&subst_i);
+                let env = env.apply(&subst_i);
                 let remembered = env
                     .get(x)
                     .ok_or(TypeError::Unbound(x.clone()))?.inner
@@ -600,7 +599,6 @@ impl TryInfer for Stmt {
                         }
                     })?;
 
-                // TODO: other way around?
                 let subst_u = current.unify_with(&inferred)?;
 
                 Ok((subst_u.compose(&subst_f.compose(&subst_i)), None))
