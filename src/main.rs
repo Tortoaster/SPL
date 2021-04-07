@@ -23,9 +23,9 @@ fn main() -> Result<(), CompileError> {
         .filter(|(id, _)|
             !vec![
                 "print", "isEmpty", "fst", "snd", "hd", "tl",
-                "not", "add", "sub", "mul", "div", "mod",
-                "eq", "ne", "lt", "gt", "le", "ge",
-                "and", "or", "cons"
+                "!", "+", "-", "*", "/", "%",
+                "==", "!=", "<", ">", "<=", ">=",
+                "&&", "||", ":"
             ].contains(&id.0.as_str())
         )
         .for_each(|(id, t)| println!("{}: {}", id.0, t));

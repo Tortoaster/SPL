@@ -11,7 +11,7 @@ use spl::compiler;
 #[test]
 fn simple_exp() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let env = Environment::new(&mut gen);
+    let env = Environment::new();
 
     let exp = Exp::parse(&mut "1 + 1".tokenize()?.peekable())?;
     let (_, inferred) = exp.infer_type(&env, &mut gen)?;
@@ -24,7 +24,7 @@ fn simple_exp() -> Result<(), CompileError> {
 #[test]
 fn list_exp() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let env = Environment::new(&mut gen);
+    let env = Environment::new();
 
     let exp = Exp::parse(&mut "'a' : []".tokenize()?.peekable())?;
     let (_, inferred) = exp.infer_type(&env, &mut gen)?;
@@ -37,7 +37,7 @@ fn list_exp() -> Result<(), CompileError> {
 #[test]
 fn invalid_list() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let env = Environment::new(&mut gen);
+    let env = Environment::new();
 
     let exp = Exp::parse(&mut "1 : 'a' : []".tokenize()?.peekable())?;
     let result = exp.infer_type(&env, &mut gen).err().unwrap();
@@ -50,7 +50,7 @@ fn invalid_list() -> Result<(), CompileError> {
 #[test]
 fn assignment() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let decl = VarDecl::parse(&mut "var x = [];".tokenize()?.peekable())?;
     decl.infer_type_mut(&mut env, &mut gen)?;
@@ -68,7 +68,7 @@ fn assignment() -> Result<(), CompileError> {
 #[test]
 fn return_type() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let decl = VarDecl::parse(&mut "var x = 1;".tokenize()?.peekable())?;
     decl.infer_type_mut(&mut env, &mut gen)?;
@@ -83,7 +83,7 @@ fn return_type() -> Result<(), CompileError> {
 #[test]
 fn no_return() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let decl = VarDecl::parse(&mut "var x = 1;".tokenize()?.peekable())?;
     decl.infer_type_mut(&mut env, &mut gen)?;
@@ -98,7 +98,7 @@ fn no_return() -> Result<(), CompileError> {
 #[test]
 fn bad_return() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let decl = VarDecl::parse(&mut "var x = 1;".tokenize()?.peekable())?;
     decl.infer_type_mut(&mut env, &mut gen)?;
@@ -113,7 +113,7 @@ fn bad_return() -> Result<(), CompileError> {
 #[test]
 fn fields() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let decl = VarDecl::parse(&mut "var x = [];".tokenize()?.peekable())?;
     decl.infer_type_mut(&mut env, &mut gen)?;
@@ -137,7 +137,7 @@ fn fields() -> Result<(), CompileError> {
 #[test]
 fn infer_mono_function() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "test(x) { x = x + 1; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
@@ -152,7 +152,7 @@ fn infer_mono_function() -> Result<(), CompileError> {
 #[test]
 fn infer_poly_function() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "id(x) { return x; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
@@ -167,7 +167,7 @@ fn infer_poly_function() -> Result<(), CompileError> {
 #[test]
 fn check_function() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "test(x) :: a -> Void { x = x + 1; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
@@ -182,7 +182,7 @@ fn check_function() -> Result<(), CompileError> {
 #[test]
 fn conflict_function() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "test(x) :: Bool -> Void { x = x + 1; }".tokenize()?.peekable())?;
     let result = program.infer_type_mut(&mut env, &mut gen);
@@ -194,6 +194,8 @@ fn conflict_function() -> Result<(), CompileError> {
 
 #[test]
 fn type_check_files() -> Result<(), CompileError> {
+    let mut errors = 0;
+
     for dir in fs::read_dir("tests/res/") {
         for file in dir {
             if let Ok(file) = file {
@@ -201,14 +203,20 @@ fn type_check_files() -> Result<(), CompileError> {
                 match result {
                     Ok(_) => if file.file_name().into_string().unwrap().ends_with("shouldfail.spl") {
                         eprintln!("{:?}: Should fail but does not", file.file_name());
+                        errors += 1;
                     }
                     Err(e) => if !file.file_name().into_string().unwrap().ends_with("shouldfail.spl") {
                         eprintln!("{:?}: {}", file.file_name(), e);
+                        errors += 1;
                     }
                 }
             }
         }
     }
 
-    Ok(())
+    if errors > 0 {
+        panic!("Errors found while typing")
+    } else {
+        Ok(())
+    }
 }

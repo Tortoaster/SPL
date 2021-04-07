@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use error::Result;
 
 use crate::lexer::{Lexer, Operator, Token};
-use crate::tree::{BasicType, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
 use crate::parser::error::ParseError;
 use crate::char_iterator::Positioned;
 
@@ -173,7 +173,20 @@ impl Parsable for FunType {
 
 impl Parsable for TypeAnnotation {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let t = match **tokens.peek().ok_or(ParseError::EOF { expected: "type".to_owned() })? {
+        let token = tokens.peek().ok_or(ParseError::EOF { expected: "type".to_owned() })?;
+        let t = match **token {
+            Token::Int => {
+                munch(tokens, &Token::Int)?;
+                TypeAnnotation::Int
+            },
+            Token::Bool => {
+                munch(tokens, &Token::Bool)?;
+                TypeAnnotation::Bool
+            },
+            Token::Char => {
+                munch(tokens, &Token::Char)?;
+                TypeAnnotation::Char
+            },
             Token::OpenParen => {
                 munch(tokens, &Token::OpenParen)?;
                 let l = TypeAnnotation::parse(tokens)?;
@@ -189,25 +202,12 @@ impl Parsable for TypeAnnotation {
                 TypeAnnotation::Array(Box::new(t))
             }
             Token::Identifier(_) => TypeAnnotation::Polymorphic(Id::parse(tokens)?),
-            _ => TypeAnnotation::BasicType(BasicType::parse(tokens)?)
-        };
-
-        Ok(t)
-    }
-}
-
-impl Parsable for BasicType {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let t = match tokens.next().ok_or(ParseError::EOF { expected: "Int, Bool, or Char".to_owned() })? {
-            Positioned { inner: Token::Int, .. } => BasicType::Int,
-            Positioned { inner: Token::Bool, .. } => BasicType::Bool,
-            Positioned { inner: Token::Char, .. } => BasicType::Char,
-            token => return Err(ParseError::BadToken {
-                found: (*token).clone(),
+            _ => return Err(ParseError::BadToken {
+                found: (**token).clone(),
                 row: token.row,
                 col: token.col,
                 code: token.code.to_owned(),
-                expected: "Int, Bool, or Char".to_owned()
+                expected: "type".to_owned()
             })
         };
 

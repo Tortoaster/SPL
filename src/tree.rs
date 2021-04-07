@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-
 use crate::lexer::Field;
-use crate::typer::{Generator, Type, TypeVariable};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL {
@@ -50,17 +47,12 @@ pub enum RetType {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum TypeAnnotation {
-    BasicType(BasicType),
-    Tuple(Box<TypeAnnotation>, Box<TypeAnnotation>),
-    Array(Box<TypeAnnotation>),
-    Polymorphic(Id),
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum BasicType {
     Int,
     Bool,
     Char,
+    Tuple(Box<TypeAnnotation>, Box<TypeAnnotation>),
+    Array(Box<TypeAnnotation>),
+    Polymorphic(Id),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -98,52 +90,10 @@ pub struct FunCall {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Id(pub String);
 
-impl VarType {
-    pub fn transform(&self, generator: &mut Generator) -> Type {
-        match self {
-            VarType::Var => Type::Polymorphic(generator.fresh()),
-            VarType::Type(t) => t.transform(generator, &mut HashMap::new())
-        }
-    }
-}
-
-impl RetType {
-    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Type {
-        match self {
-            RetType::Type(t) => t.transform(generator, poly_names),
-            RetType::Void => Type::Void
-        }
-    }
-}
-
-impl TypeAnnotation {
-    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Type {
-        match self {
-            TypeAnnotation::BasicType(BasicType::Int) => Type::Int,
-            TypeAnnotation::BasicType(BasicType::Bool) => Type::Bool,
-            TypeAnnotation::BasicType(BasicType::Char) => Type::Char,
-            TypeAnnotation::Tuple(l, r) => Type::Tuple(Box::new(l.transform(generator, poly_names)), Box::new(r.transform(generator, poly_names))),
-            TypeAnnotation::Array(a) => Type::Array(Box::new(a.transform(generator, poly_names))),
-            TypeAnnotation::Polymorphic(id) => {
-                match poly_names.get(id) {
-                    None => {
-                        let v = generator.fresh();
-                        poly_names.insert(id.clone(), v);
-                        Type::Polymorphic(v)
-                    }
-                    Some(v) => {
-                        Type::Polymorphic(*v)
-                    }
-                }
-            }
-        }
-    }
-}
-
 mod printer {
     use std::fmt;
 
-    use super::{BasicType, Decl, Exp, Fields, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+    use super::{Decl, Exp, Fields, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
 
     const TAB_SIZE: usize = 4;
 
@@ -232,20 +182,12 @@ mod printer {
     impl PrettyPrintable for TypeAnnotation {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
-                TypeAnnotation::BasicType(t) => t.fmt_pretty(indent),
+                TypeAnnotation::Int => format!("Int"),
+                TypeAnnotation::Bool => format!("Bool"),
+                TypeAnnotation::Char => format!("Char"),
                 TypeAnnotation::Tuple(l, r) => format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
                 TypeAnnotation::Array(t) => format!("[{}]", t.fmt_pretty(indent)),
                 TypeAnnotation::Polymorphic(t) => t.fmt_pretty(indent),
-            }
-        }
-    }
-
-    impl PrettyPrintable for BasicType {
-        fn fmt_pretty(&self, _: usize) -> String {
-            match self {
-                BasicType::Int => String::from("Int"),
-                BasicType::Bool => String::from("Bool"),
-                BasicType::Char => String::from("Char"),
             }
         }
     }

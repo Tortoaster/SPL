@@ -10,7 +10,7 @@ use error::Result;
 use crate::lexer::{Lexable, Field};
 use crate::parser::error::ParseError;
 use crate::parser::Parsable;
-use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, SPL, Stmt, VarDecl};
+use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, SPL, Stmt, VarDecl, TypeAnnotation, RetType, VarType};
 use crate::typer::error::TypeError;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -90,6 +90,28 @@ impl Type {
     }
 }
 
+impl FromStr for Type {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let fun_type = FunType::parse(&mut s.tokenize().unwrap().peekable())?;
+
+        let mut gen = Generator::new();
+        let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
+
+        let arg_types: Vec<Type> = fun_type.arg_types
+            .iter()
+            .map(|t| t.transform(&mut gen, &mut poly_names))
+            .collect();
+
+        let ret_type = fun_type.ret_type.transform(&mut gen, &mut poly_names);
+
+        Ok(arg_types
+            .into_iter()
+            .rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret))))
+    }
+}
+
 trait Union {
     fn unify_with(&self, other: &Self) -> Result<Substitution>;
 }
@@ -148,31 +170,10 @@ impl From<Type> for PolyType {
     }
 }
 
-impl FromStr for PolyType {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let fun_type = FunType::parse(&mut s.tokenize().unwrap().peekable())?;
-
-        let mut gen = Generator::new();
-        let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
-
-        let arg_types: Vec<Type> = fun_type.arg_types
-            .iter()
-            .map(|t| t.transform(&mut gen, &mut poly_names))
-            .collect();
-
-        let ret_type = fun_type.ret_type.transform(&mut gen, &mut poly_names);
-
-        let t = arg_types.into_iter().rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret)));
-        Ok(PolyType { variables: poly_names.values().cloned().collect(), inner: t })
-    }
-}
-
 impl fmt::Display for PolyType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let poly_names: HashMap<TypeVariable, char> = self
-            .free_vars()
+        let poly_names: HashMap<TypeVariable, char> = self.variables
+            .clone()
             .into_iter()
             .zip('a'..'z')
             .collect();
@@ -184,7 +185,7 @@ impl fmt::Display for PolyType {
 pub struct Environment(HashMap<Id, PolyType>);
 
 impl Environment {
-    pub fn new(gen: &mut Generator) -> Self {
+    pub fn new() -> Self {
         let mut env = Environment(HashMap::new());
         for (name, annotation) in vec![
             ("print", "a -> Void"),
@@ -193,24 +194,23 @@ impl Environment {
             ("tl", "[a] -> [a]"),
             ("fst", "(a, b) -> a"),
             ("snd", "(a, b) -> b"),
-            ("not", "Bool -> Bool"),
-            ("add", "Int Int -> Int"),
-            ("sub", "Int Int -> Int"),
-            ("mul", "Int Int -> Int"),
-            ("div", "Int Int -> Int"),
-            ("mod", "Int Int -> Int"),
-            ("eq", "a a -> Bool"),
-            ("ne", "a a -> Bool"),
-            ("lt", "Int Int -> Bool"),
-            ("gt", "Int Int -> Bool"),
-            ("le", "Int Int -> Bool"),
-            ("ge", "Int Int -> Bool"),
-            ("and", "Bool Bool -> Bool"),
-            ("or", "Bool Bool -> Bool"),
-            ("cons", "a [a] -> [a]"),
+            ("!", "Bool -> Bool"),
+            ("+", "Int Int -> Int"),
+            ("-", "Int Int -> Int"),
+            ("*", "Int Int -> Int"),
+            ("/", "Int Int -> Int"),
+            ("%", "Int Int -> Int"),
+            ("==", "a a -> Bool"),
+            ("!=", "a a -> Bool"),
+            ("<", "Int Int -> Bool"),
+            (">", "Int Int -> Bool"),
+            ("<=", "Int Int -> Bool"),
+            (">=", "Int Int -> Bool"),
+            ("&&", "Bool Bool -> Bool"),
+            ("||", "Bool Bool -> Bool"),
+            (":", "a [a] -> [a]"),
         ] {
-            let mut t: PolyType = annotation.parse().unwrap();
-            t = env.generalize(&t.instantiate(gen));
+            let t = env.generalize(&annotation.parse().unwrap());
             env.insert(Id(name.to_owned()), t);
         }
         env
@@ -279,6 +279,48 @@ impl DerefMut for Substitution {
 impl FromIterator<(TypeVariable, Type)> for Substitution {
     fn from_iter<T: IntoIterator<Item=(TypeVariable, Type)>>(iter: T) -> Self {
         Substitution(iter.into_iter().collect())
+    }
+}
+
+impl VarType {
+    pub fn transform(&self, generator: &mut Generator) -> Type {
+        match self {
+            VarType::Var => Type::Polymorphic(generator.fresh()),
+            VarType::Type(t) => t.transform(generator, &mut HashMap::new())
+        }
+    }
+}
+
+impl RetType {
+    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Type {
+        match self {
+            RetType::Type(t) => t.transform(generator, poly_names),
+            RetType::Void => Type::Void
+        }
+    }
+}
+
+impl TypeAnnotation {
+    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Type {
+        match self {
+            TypeAnnotation::Int => Type::Int,
+            TypeAnnotation::Bool => Type::Bool,
+            TypeAnnotation::Char => Type::Char,
+            TypeAnnotation::Tuple(l, r) => Type::Tuple(Box::new(l.transform(generator, poly_names)), Box::new(r.transform(generator, poly_names))),
+            TypeAnnotation::Array(a) => Type::Array(Box::new(a.transform(generator, poly_names))),
+            TypeAnnotation::Polymorphic(id) => {
+                match poly_names.get(id) {
+                    None => {
+                        let v = generator.fresh();
+                        poly_names.insert(id.clone(), v);
+                        Type::Polymorphic(v)
+                    }
+                    Some(v) => {
+                        Type::Polymorphic(*v)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -482,7 +524,12 @@ impl InferMut for FunDecl {
         // Check return type
         let subst_r = ret_type.unify_with(&inferred.unwrap_or(Type::Void))?;
 
+        // Generalize function
         *env = env.apply(&subst_r.compose(&subst_i));
+        let t = env.remove(&self.id).unwrap();
+        let new = env.generalize(&t.inner);
+        env.insert(self.id.clone(), new);
+
         Ok(Type::Void)
     }
 }

@@ -68,21 +68,21 @@ pub enum Operator {
 impl fmt::Display for Operator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Operator::Not => write!(f, "not"),
-            Operator::Plus => write!(f, "add"),
-            Operator::Minus => write!(f, "sub"),
-            Operator::Times => write!(f, "mul"),
-            Operator::Divide => write!(f, "div"),
-            Operator::Modulo => write!(f, "mod"),
-            Operator::Equals => write!(f, "eq"),
-            Operator::Smaller => write!(f, "lt"),
-            Operator::Greater => write!(f, "gt"),
-            Operator::SmallerEqual => write!(f, "le"),
-            Operator::GreaterEqual => write!(f, "ge"),
-            Operator::NotEqual => write!(f, "ne"),
-            Operator::And => write!(f, "and"),
-            Operator::Or => write!(f, "or"),
-            Operator::Cons => write!(f, "cons"),
+            Operator::Not => write!(f, "!"),
+            Operator::Plus => write!(f, "+"),
+            Operator::Minus => write!(f, "-"),
+            Operator::Times => write!(f, "*"),
+            Operator::Divide => write!(f, "/"),
+            Operator::Modulo => write!(f, "%"),
+            Operator::Equals => write!(f, "=="),
+            Operator::Smaller => write!(f, "<"),
+            Operator::Greater => write!(f, ">"),
+            Operator::SmallerEqual => write!(f, "<="),
+            Operator::GreaterEqual => write!(f, ">="),
+            Operator::NotEqual => write!(f, "!="),
+            Operator::And => write!(f, "&&"),
+            Operator::Or => write!(f, "||"),
+            Operator::Cons => write!(f, ":"),
         }
     }
 }
