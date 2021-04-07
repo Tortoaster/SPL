@@ -397,7 +397,7 @@ impl InferMut for SPL {
                     let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
                     let (arg_annotations, ret_annotation) = match &decl.fun_type {
                         None => {
-                            let args: Vec<Type> = std::iter::repeat(Type::Polymorphic(gen.fresh()))
+                            let args: Vec<Type> = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()))
                                 .take(decl.args.len())
                                 .collect();
                             (args, Type::Polymorphic(gen.fresh()))
@@ -559,7 +559,8 @@ impl TryInfer for Stmt {
             Stmt::Assignment(x, f, e) => {
                 let (subst_i, inferred) = e.infer_type(env, gen)?;
 
-                let env = env.apply(&subst_i);
+                // TODO: necessary? Probably not
+                // let env = env.apply(&subst_i);
                 let remembered = env
                     .get(x)
                     .ok_or(TypeError::Unbound(x.clone()))?.inner
