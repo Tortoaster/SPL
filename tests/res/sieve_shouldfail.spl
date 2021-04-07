@@ -2,6 +2,6 @@ sieve ( x ) :: [Int] -> [Int] {
 	if (isEmpty(x)) {
 		return x;
 	} else {
-		
+
 	}
 }
