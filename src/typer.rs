@@ -412,7 +412,7 @@ impl InferMut for SPL {
                     };
                     let inner = arg_annotations
                         .into_iter()
-                        .fold(ret_annotation, |t, annotation| Type::Function(Box::new(annotation), Box::new(t)));
+                        .rfold(ret_annotation, |t, annotation| Type::Function(Box::new(annotation), Box::new(t)));
                     if env.insert(decl.id.clone(), inner.into()).is_some() {
                         Err(TypeError::Conflict(decl.id.clone()))
                     } else {
@@ -453,9 +453,10 @@ impl InferMut for VarDecl {
 impl InferMut for FunDecl {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
         // TODO: check for doubly defined variables in functions
+        // TODO: namespace for functions and variables
         // Create local scope
         let mut local = env.clone();
-        let mut arg_types: Vec<Type> = local
+        let mut arg_types = local
             .get(&self.id)
             .ok_or(TypeError::Unbound(self.id.clone()))?.inner
             .unfold();
@@ -727,4 +728,15 @@ pub mod error {
     }
 
     impl Error for TypeError {}
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::typer::Type;
+
+    #[test]
+    fn unfold() {
+        let t = Type::Function(Box::new(Type::Int), Box::new(Type::Function(Box::new(Type::Bool), Box::new(Type::Array(Box::new(Type::Char))))));
+        assert_eq!(vec![Type::Int, Type::Bool, Type::Array(Box::new(Type::Char))], t.unfold())
+    }
 }
