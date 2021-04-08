@@ -153,6 +153,8 @@ pub struct PolyType {
     pub inner: Type,
 }
 
+// TODO: Functions may not yet be generalized when they are called, which may change their type, and that is wrong. Can this be solved with topological sorting? Or do I need to remove generalizations/instantiations?
+
 impl PolyType {
     pub fn instantiate(&self, gen: &mut Generator) -> Type {
         let fresh = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()));

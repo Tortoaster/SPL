@@ -193,6 +193,23 @@ fn conflict_function() -> Result<(), CompileError> {
 }
 
 #[test]
+fn mut_rec() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new();
+
+    let program = SPL::parse(&mut "a(x) { return b(x) + 1; } b(x) { return a(x) - 1; }".tokenize()?.peekable())?;
+    program.infer_type_mut(&mut env, &mut gen)?;
+
+    let result_a = env.get(&Id("a".to_owned())).unwrap();
+    let result_b = env.get(&Id("b".to_owned())).unwrap();
+
+    assert_eq!("(Int -> Int)", format!("{}", result_a));
+    assert_eq!("(Int -> Int)", format!("{}", result_b));
+
+    Ok(())
+}
+
+#[test]
 fn type_check_files() -> Result<(), CompileError> {
     let mut errors = 0;
 
