@@ -2,7 +2,7 @@ use spl::compiler::error::CompileError;
 use spl::lexer::Lexable;
 use spl::parser::Parsable;
 use spl::tree::{Exp, Stmt, VarDecl, Id, SPL};
-use spl::typer::{Environment, Generator, Infer, Type, InferMut, TryInfer};
+use spl::typer::{Environment, Generator, Infer, Type, InferMut, TryInfer, Space};
 use spl::typer::error::TypeError;
 use spl::typer::Typed;
 use std::fs;
@@ -58,7 +58,7 @@ fn assignment() -> Result<(), CompileError> {
     let (subst, _) = assignment.try_infer_type(&mut env, &mut gen)?;
     env = env.apply(&subst);
 
-    let result = env.get(&Id("x".to_owned())).unwrap();
+    let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
     assert_eq!(&env.generalize(&Type::Array(Box::new(Type::Int))), result);
 
@@ -121,7 +121,7 @@ fn fields() -> Result<(), CompileError> {
     let (subst, _) = stmt.try_infer_type(&mut env, &mut gen)?;
     env = env.apply(&subst);
 
-    let result = env.get(&Id("x".to_owned())).unwrap();
+    let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
     if let Type::Array(result) = &result.inner {
         if let Type::Tuple(result, _) = &**result {
@@ -142,7 +142,7 @@ fn infer_mono_function() -> Result<(), CompileError> {
     let program = SPL::parse(&mut "test(x) { x = x + 1; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
-    let result = env.get(&Id("test".to_owned())).unwrap();
+    let result = env.get(&(Id("test".to_owned()), Space::Fun)).unwrap();
 
     assert_eq!("(Int -> Void)", format!("{}", result));
 
@@ -157,7 +157,7 @@ fn infer_poly_function() -> Result<(), CompileError> {
     let program = SPL::parse(&mut "id(x) { return x; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
-    let result = env.get(&Id("id".to_owned())).unwrap();
+    let result = env.get(&(Id("id".to_owned()), Space::Fun)).unwrap();
 
     assert_eq!("(a -> a)", format!("{}", result));
 
@@ -172,7 +172,7 @@ fn check_function() -> Result<(), CompileError> {
     let program = SPL::parse(&mut "test(x) :: a -> Void { x = x + 1; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
-    let result = env.get(&Id("test".to_owned())).unwrap();
+    let result = env.get(&(Id("test".to_owned()), Space::Fun)).unwrap();
 
     assert_eq!("(Int -> Void)", format!("{}", result));
 
@@ -200,8 +200,8 @@ fn mut_rec() -> Result<(), CompileError> {
     let program = SPL::parse(&mut "a(x) { return b(x) + 1; } b(x) { return a(x) - 1; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
-    let result_a = env.get(&Id("a".to_owned())).unwrap();
-    let result_b = env.get(&Id("b".to_owned())).unwrap();
+    let result_a = env.get(&(Id("a".to_owned()), Space::Fun)).unwrap();
+    let result_b = env.get(&(Id("b".to_owned()), Space::Fun)).unwrap();
 
     assert_eq!("(Int -> Int)", format!("{}", result_a));
     assert_eq!("(Int -> Int)", format!("{}", result_b));

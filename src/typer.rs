@@ -150,7 +150,7 @@ impl PolyType {
 impl From<Type> for PolyType {
     fn from(inner: Type) -> Self {
         PolyType {
-            variables: vec![],
+            variables: Vec::new(),
             inner,
         }
     }
@@ -167,8 +167,14 @@ impl fmt::Display for PolyType {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Space {
+    Fun,
+    Var
+}
+
 #[derive(Clone, Debug)]
-pub struct Environment(HashMap<Id, PolyType>);
+pub struct Environment(HashMap<(Id, Space), PolyType>);
 
 impl Environment {
     pub fn new() -> Self {
@@ -197,7 +203,7 @@ impl Environment {
             (":", "a [a] -> [a]"),
         ] {
             let t = env.generalize(&annotation.parse().unwrap());
-            env.insert(Id(name.to_owned()), t);
+            env.insert((Id(name.to_owned()), Space::Fun), t);
         }
         env
     }
@@ -215,7 +221,7 @@ impl Environment {
 }
 
 impl Deref for Environment {
-    type Target = HashMap<Id, PolyType>;
+    type Target = HashMap<(Id, Space), PolyType>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -415,7 +421,8 @@ impl InferMut for SPL {
         self.decls.iter()
             .map(|decl| match decl {
                 Decl::VarDecl(decl) => {
-                    if env.insert(decl.id.clone(), decl.var_type.transform(gen).into()).is_some() {
+                    // TODO: These are re-inserted in VarDecl
+                    if env.insert((decl.id.clone(), Space::Var), decl.var_type.transform(gen).into()).is_some() {
                         Err(TypeError::Conflict(decl.id.clone()))
                     } else {
                         Ok(())
@@ -441,7 +448,7 @@ impl InferMut for SPL {
                     let inner = arg_annotations
                         .into_iter()
                         .rfold(ret_annotation, |t, annotation| Type::Function(Box::new(annotation), Box::new(t)));
-                    if env.insert(decl.id.clone(), inner.into()).is_some() {
+                    if env.insert((decl.id.clone(), Space::Fun), inner.into()).is_some() {
                         Err(TypeError::Conflict(decl.id.clone()))
                     } else {
                         Ok(())
@@ -473,7 +480,7 @@ impl InferMut for VarDecl {
         let (subst_i, inferred) = self.exp.infer_type(env, gen)?;
         let subst_u = inferred.unify_with(&self.var_type.transform(gen))?;
         let t = PolyType { variables: vec![], inner: inferred.apply(&subst_u.compose(&subst_i)) };
-        env.insert(self.id.clone(), t);
+        env.insert((self.id.clone(), Space::Var), t);
         Ok(Type::Void)
     }
 }
@@ -485,7 +492,7 @@ impl InferMut for FunDecl {
         // Create local scope
         let mut local = env.clone();
         let mut arg_types = local
-            .get(&self.id)
+            .get(&(self.id.clone(), Space::Fun))
             .ok_or(TypeError::Unbound(self.id.clone()))?.inner
             .unfold();
         let ret_type = arg_types.pop().unwrap();
@@ -494,6 +501,7 @@ impl InferMut for FunDecl {
         local.extend(self.args
             .iter()
             .cloned()
+            .map(|id| (id, Space::Var))
             .zip(arg_types
                 .into_iter()
                 .map(|arg| arg.into())));
@@ -516,9 +524,9 @@ impl InferMut for FunDecl {
 
         // Generalize function
         *env = env.apply(&subst_r.compose(&subst_i));
-        let t = env.remove(&self.id).unwrap();
+        let t = env.remove(&(self.id.clone(), Space::Fun)).unwrap();
         let new = env.generalize(&t.inner);
-        env.insert(self.id.clone(), new);
+        env.insert((self.id.clone(), Space::Fun), new);
 
         Ok(Type::Void)
     }
@@ -614,7 +622,7 @@ impl TryInfer for Stmt {
                 // TODO: necessary?
                 let env = env.apply(&subst_i);
                 let remembered = env
-                    .get(x)
+                    .get(&(x.clone(), Space::Var))
                     .ok_or(TypeError::Unbound(x.clone()))?.inner
                     .clone();
 
@@ -674,7 +682,7 @@ impl TryInfer for Stmt {
 impl Infer for Exp {
     fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
         match self {
-            Exp::Variable(id) => match env.get(id) {
+            Exp::Variable(id) => match env.get(&(id.clone(), Space::Var)) {
                 None => Err(TypeError::Unbound(id.clone())),
                 Some(t) => Ok((Substitution::new(), t.instantiate(gen)))
             }
@@ -698,7 +706,7 @@ impl Infer for Exp {
 impl Infer for FunCall {
     fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
         let mut arg_types = env
-            .get(&self.id)
+            .get(&(self.id.clone(), Space::Fun))
             .ok_or(TypeError::Unbound(self.id.clone()))?
             .instantiate(gen)
             .unfold();

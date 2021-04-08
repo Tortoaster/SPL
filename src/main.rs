@@ -20,7 +20,7 @@ fn main() -> Result<(), CompileError> {
     println!("{}", ast);
     env
         .iter()
-        .filter(|(id, _)|
+        .filter(|((id, _), _)|
             !vec![
                 "print", "isEmpty", "fst", "snd", "hd", "tl",
                 "!", "+", "-", "*", "/", "%",
@@ -28,7 +28,7 @@ fn main() -> Result<(), CompileError> {
                 "&&", "||", ":"
             ].contains(&id.0.as_str())
         )
-        .for_each(|(id, t)| println!("{}: {}", id.0, t));
+        .for_each(|((id, _), t)| println!("{}: {}", id.0, t));
 
     Ok(())
 }
