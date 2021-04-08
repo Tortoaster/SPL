@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use error::Result;
 
 use crate::lexer::{Lexer, Operator, Token, Field};
-use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType, ClassAnnotation};
 use crate::parser::error::ParseError;
 use crate::char_iterator::Positioned;
 
@@ -45,7 +45,7 @@ pub trait Parsable: Sized {
             parsed.push(p);
             match tokens.peek() {
                 None => break,
-                Some(s) => if *separator != **s { break }
+                Some(s) => if *separator != **s { break; }
             }
             munch(tokens, separator)?;
         }
@@ -64,7 +64,7 @@ fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
             row: found.row,
             col: found.col,
             code: found.code.to_owned(),
-            expected: format!("{:?}", expected)
+            expected: format!("{:?}", expected),
         })
     }
 }
@@ -118,7 +118,7 @@ impl Parsable for FunDecl {
         let args = Id::parse_many_sep(tokens, &Token::Comma)?;
         munch(tokens, &Token::CloseParen)?;
 
-        let fun_type = if let Some(Positioned { inner: Token::HasType, .. } ) = tokens.peek() {
+        let fun_type = if let Some(Positioned { inner: Token::HasType, .. }) = tokens.peek() {
             munch(tokens, &Token::HasType)?;
             Some(FunType::parse(tokens)?)
         } else {
@@ -164,10 +164,28 @@ impl Parsable for RetType {
 
 impl Parsable for FunType {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+        let type_classes = <Vec<ClassAnnotation>>::try_parse(tokens).unwrap_or(Vec::new());
         let arg_types = TypeAnnotation::parse_many(tokens);
         munch(tokens, &Token::To)?;
         let ret_type = RetType::parse(tokens)?;
-        Ok(FunType { arg_types, ret_type })
+        Ok(FunType { type_classes, arg_types, ret_type })
+    }
+}
+
+impl Parsable for Vec<ClassAnnotation> {
+    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+        let type_classes = ClassAnnotation::parse_many_sep(tokens, &Token::Comma)?;
+        munch(tokens, &Token::DoubleArrow)?;
+        Ok(type_classes)
+    }
+}
+
+impl Parsable for ClassAnnotation {
+    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+        let class = Id::parse(tokens)?;
+        let var = Id::parse(tokens)?;
+
+        Ok(ClassAnnotation { class, var })
     }
 }
 
@@ -178,15 +196,15 @@ impl Parsable for TypeAnnotation {
             Token::Int => {
                 munch(tokens, &Token::Int)?;
                 TypeAnnotation::Int
-            },
+            }
             Token::Bool => {
                 munch(tokens, &Token::Bool)?;
                 TypeAnnotation::Bool
-            },
+            }
             Token::Char => {
                 munch(tokens, &Token::Char)?;
                 TypeAnnotation::Char
-            },
+            }
             Token::OpenParen => {
                 munch(tokens, &Token::OpenParen)?;
                 let l = TypeAnnotation::parse(tokens)?;
@@ -207,7 +225,7 @@ impl Parsable for TypeAnnotation {
                 row: token.row,
                 col: token.col,
                 code: token.code.to_owned(),
-                expected: "type".to_owned()
+                expected: "type".to_owned(),
             })
         };
 
@@ -281,7 +299,7 @@ impl Parsable for Stmt {
                 row: token.row,
                 col: token.col,
                 code: token.code.to_owned(),
-                expected: "statement".to_owned()
+                expected: "statement".to_owned(),
             })
         };
 
@@ -294,7 +312,7 @@ impl Exp {
         let mut lhs = match tokens.next().ok_or(ParseError::EOF { expected: "expression".to_owned() })? {
             Positioned { inner: Token::Identifier(s), .. } => {
                 let id = Id(s);
-                if let Some(Positioned { inner: Token::OpenParen, .. }) = tokens.peek(){
+                if let Some(Positioned { inner: Token::OpenParen, .. }) = tokens.peek() {
                     munch(tokens, &Token::OpenParen)?;
                     let fun_call = FunCall { id, args: Exp::parse_many_sep(tokens, &Token::Comma)? };
                     munch(tokens, &Token::CloseParen)?;
@@ -331,7 +349,7 @@ impl Exp {
                 row: token.row,
                 col: token.col,
                 code: token.code.to_owned(),
-                expected: "expression".to_owned()
+                expected: "expression".to_owned(),
             })
         };
 
@@ -363,7 +381,7 @@ impl Operator {
                 prefix: true,
                 row,
                 col,
-                code: "TODO".to_string()
+                code: "TODO".to_string(),
             })
         };
 
@@ -385,7 +403,7 @@ impl Operator {
                 prefix: false,
                 row,
                 col,
-                code: "TODO".to_string()
+                code: "TODO".to_string(),
             })
         };
 
@@ -423,7 +441,7 @@ impl Parsable for Id {
                 row: token.row,
                 col: token.col,
                 code: token.code.to_owned(),
-                expected: "identifier".to_owned()
+                expected: "identifier".to_owned(),
             })
         }
     }
@@ -454,7 +472,7 @@ pub mod error {
             prefix: bool,
             row: usize,
             col: usize,
-            code: String
+            code: String,
         },
     }
 

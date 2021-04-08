@@ -18,6 +18,7 @@ pub enum Token {
     OpenBracket,
     CloseBracket,
     Void,
+    DoubleArrow,
     To,
     Comma,
     OpenArr,
@@ -201,6 +202,8 @@ impl<'a> Iterator for Lexer<'a> {
         let token = match *current {
             '=' => if self.followed_by('=') {
                 Token::Operator(Operator::Equals)
+            } else if self.followed_by('>') {
+                Token::DoubleArrow
             } else {
                 Token::Assign
             }

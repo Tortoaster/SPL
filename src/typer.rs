@@ -13,8 +13,8 @@ use crate::parser::Parsable;
 use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, SPL, Stmt, VarDecl, TypeAnnotation, RetType, VarType};
 use crate::typer::error::TypeError;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TypeVariable(usize);
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TypeVariable(usize, Vec<Id>);
 
 impl TypeVariable {
     fn bind(&self, to: &Type) -> Result<Substitution> {
@@ -47,7 +47,7 @@ impl Generator {
 
     pub fn fresh(&mut self) -> TypeVariable {
         self.current += 1;
-        TypeVariable(self.current)
+        TypeVariable(self.current, Vec::new())
     }
 }
 
@@ -153,7 +153,7 @@ impl FromStr for PolyType {
         Ok(PolyType {
             variables: poly_names
                 .values()
-                .copied()
+                .cloned()
                 .collect(),
             inner: arg_types
                 .into_iter()
@@ -186,7 +186,7 @@ impl Environment {
     pub fn new() -> Self {
         let mut env = Environment(HashMap::new());
         for (name, annotation) in vec![
-            ("print", "a -> Void"),
+            ("print", "Show a => a -> Void"),
             ("isEmpty", "[a] -> Bool"),
             ("hd", "[a] -> a"),
             ("tl", "[a] -> [a]"),
@@ -198,12 +198,12 @@ impl Environment {
             ("mul", "Int Int -> Int"),
             ("div", "Int Int -> Int"),
             ("mod", "Int Int -> Int"),
-            ("eq", "a a -> Bool"),
-            ("ne", "a a -> Bool"),
-            ("lt", "Int Int -> Bool"),
-            ("gt", "Int Int -> Bool"),
-            ("le", "Int Int -> Bool"),
-            ("ge", "Int Int -> Bool"),
+            ("eq", "Eq a => a a -> Bool"),
+            ("ne", "Eq a => a a -> Bool"),
+            ("lt", "Ord a => a a -> Bool"),
+            ("gt", "Ord a => a a -> Bool"),
+            ("le", "Ord a => a a -> Bool"),
+            ("ge", "Ord a => a a -> Bool"),
             ("and", "Bool Bool -> Bool"),
             ("or", "Bool Bool -> Bool"),
             ("cons", "a [a] -> [a]"),
@@ -250,7 +250,7 @@ impl Substitution {
     fn compose(&self, other: &Self) -> Self {
         other
             .iter()
-            .map(|(k, v)| (*k, v.apply(&self)))
+            .map(|(k, v)| (k.clone(), v.apply(&self)))
             .chain(self
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -308,12 +308,12 @@ impl TypeAnnotation {
             TypeAnnotation::Polymorphic(id) => {
                 match poly_names.get(id) {
                     None => {
-                        let v = generator.fresh();
-                        poly_names.insert(id.clone(), v);
-                        Type::Polymorphic(v)
+                        let var = generator.fresh();
+                        poly_names.insert(id.clone(), var.clone());
+                        Type::Polymorphic(var)
                     }
-                    Some(v) => {
-                        Type::Polymorphic(*v)
+                    Some(var) => {
+                        Type::Polymorphic(var.clone())
                     }
                 }
             }
@@ -342,7 +342,7 @@ impl Typed for Type {
                 .union(&b.free_vars())
                 .cloned()
                 .collect(),
-            Type::Polymorphic(v) => Some(*v).into_iter().collect(),
+            Type::Polymorphic(v) => Some(v.clone()).into_iter().collect(),
         }
     }
 

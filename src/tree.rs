@@ -35,6 +35,7 @@ pub struct FunDecl {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FunType {
+    pub type_classes: Vec<ClassAnnotation>,
     pub arg_types: Vec<TypeAnnotation>,
     pub ret_type: RetType,
 }
@@ -43,6 +44,12 @@ pub struct FunType {
 pub enum RetType {
     Type(TypeAnnotation),
     Void,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ClassAnnotation {
+    pub class: Id,
+    pub var: Id
 }
 
 #[derive(Debug, Eq, PartialEq)]
