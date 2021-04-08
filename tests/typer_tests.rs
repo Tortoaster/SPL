@@ -197,14 +197,33 @@ fn mut_rec() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new();
 
-    let program = SPL::parse(&mut "a(x) { return b(x) + 1; } b(x) { return a(x) - 1; }".tokenize()?.peekable())?;
+    let program = SPL::parse(&mut "a(x) { return b(x); } b(x) { return c(x + 1); } c(x) { return a(x) + 1; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
     let result_a = env.get(&(Id("a".to_owned()), Space::Fun)).unwrap();
     let result_b = env.get(&(Id("b".to_owned()), Space::Fun)).unwrap();
+    let result_c = env.get(&(Id("c".to_owned()), Space::Fun)).unwrap();
 
     assert_eq!("(Int -> Int)", format!("{}", result_a));
     assert_eq!("(Int -> Int)", format!("{}", result_b));
+    assert_eq!("(Int -> Int)", format!("{}", result_c));
+
+    Ok(())
+}
+
+#[test]
+fn generalized_in_time() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new();
+
+    let program = SPL::parse(&mut "main(x) { return id(x) + 1; } id(x) { return x; }".tokenize()?.peekable())?;
+    program.infer_type_mut(&mut env, &mut gen)?;
+
+    let result_main = env.get(&(Id("main".to_owned()), Space::Fun)).unwrap();
+    let result_id = env.get(&(Id("id".to_owned()), Space::Fun)).unwrap();
+
+    assert_eq!("(Int -> Int)", format!("{}", result_main));
+    assert_eq!("(a -> a)", format!("{}", result_id));
 
     Ok(())
 }
