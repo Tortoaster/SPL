@@ -64,6 +64,25 @@ pub enum Type {
 }
 
 impl Type {
+    fn unify_with(&self, other: &Self) -> Result<Substitution> {
+        match (self, other) {
+            (Type::Void, Type::Void) | (Type::Int, Type::Int) | (Type::Bool, Type::Bool) | (Type::Char, Type::Char) => Ok(Substitution::new()),
+            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
+                let subst_l = l1.unify_with(l2)?;
+                let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
+                Ok(subst_r.compose(&subst_l))
+            }
+            (Type::Array(t1), Type::Array(t2)) => t1.unify_with(t2),
+            (Type::Function(a1, b1), Type::Function(a2, b2)) => {
+                let subst_a = a1.unify_with(a2)?;
+                let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
+                Ok(subst_b.compose(&subst_a))
+            }
+            (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
+            (t1, t2) => Err(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() })
+        }
+    }
+
     /// Returns a type into a vector of the argument types and the return type
     fn unfold(&self) -> Vec<Self> {
         match self {
@@ -109,41 +128,6 @@ impl FromStr for Type {
         Ok(arg_types
             .into_iter()
             .rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret))))
-    }
-}
-
-trait Union {
-    fn unify_with(&self, other: &Self) -> Result<Substitution>;
-}
-
-impl Union for Type {
-    fn unify_with(&self, other: &Self) -> Result<Substitution> {
-        match (self, other) {
-            (Type::Void, Type::Void) | (Type::Int, Type::Int) | (Type::Bool, Type::Bool) | (Type::Char, Type::Char) => Ok(Substitution::new()),
-            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
-                let subst_l = l1.unify_with(l2)?;
-                let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
-                Ok(subst_r.compose(&subst_l))
-            }
-            (Type::Array(t1), Type::Array(t2)) => t1.unify_with(t2),
-            (Type::Function(a1, b1), Type::Function(a2, b2)) => {
-                let subst_a = a1.unify_with(a2)?;
-                let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
-                Ok(subst_b.compose(&subst_a))
-            }
-            (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
-            (t1, t2) => Err(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() })
-        }
-    }
-}
-
-impl Union for Option<Type> {
-    fn unify_with(&self, other: &Self) -> Result<Substitution> {
-        if let (Some(t1), Some(t2)) = (self, other) {
-            t1.unify_with(&t2)
-        } else {
-            Ok(Substitution::new())
-        }
     }
 }
 
@@ -422,7 +406,7 @@ pub trait InferMut {
 }
 
 pub trait TryInfer {
-    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<Type>)>;
+    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<(Type, bool)>)>;
 }
 
 impl InferMut for SPL {
@@ -521,10 +505,14 @@ impl InferMut for FunDecl {
             .collect::<Result<Vec<Type>>>()?;
 
         // Infer types in inner statements
-        let (subst_i, inferred) = self.stmts.try_infer_type(&local, gen)?;
+        let (subst_i, result) = self.stmts.try_infer_type(&local, gen)?;
 
         // Check return type
-        let subst_r = ret_type.unify_with(&inferred.unwrap_or(Type::Void))?;
+        let (inferred, complete) = result.unwrap_or((Type::Void, true));
+        if !complete {
+            return Err(TypeError::Incomplete(self.id.clone()));
+        }
+        let subst_r = ret_type.unify_with(&inferred)?;
 
         // Generalize function
         *env = env.apply(&subst_r.compose(&subst_i));
@@ -536,29 +524,44 @@ impl InferMut for FunDecl {
     }
 }
 
+trait Combine {
+    fn combine_with(&self, other: &Self, both: bool) -> Result<(Substitution, Option<(Type, bool)>)>;
+}
+
+impl Combine for Option<(Type, bool)> {
+    fn combine_with(&self, other: &Self, both: bool) -> Result<(Substitution, Option<(Type, bool)>)> {
+        match (self, other) {
+            (Some((t1, b1)), Some((t2, b2))) => {
+                Ok((t1.unify_with(t2)?, Some((t1.clone(), if both { *b1 && *b2 } else { *b1 || *b2 }))))
+            }
+            (Some((t, b)), None) | (None, Some((t, b))) => {
+                Ok((Substitution::new(), Some((t.clone(), if both { false } else { *b }))))
+            }
+            _ => Ok((Substitution::new(), None))
+        }
+    }
+}
+
 impl TryInfer for Vec<Stmt> {
-    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<Type>)> {
+    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<(Type, bool)>)> {
         let mut env = env.clone();
-        let mut current = None;
+        let mut current: Option<(Type, bool)> = None;
 
         let subst = self
             .iter()
             .fold(Ok(Substitution::new()), |acc, stmt| {
                 let subst_a = acc?;
 
-                let (subst_i, inferred) = stmt.try_infer_type(&env, gen)?;
+                let (subst_i, result) = stmt.try_infer_type(&env, gen)?;
 
-                let subst_u = current.unify_with(&inferred)?;
+                let (subst_u, new) = current.combine_with(&result, false)?;
 
                 let subst = subst_u.compose(&subst_i.compose(&subst_a));
                 env = env.apply(&subst);
 
-                if inferred.is_some() && current.is_none() {
-                    current = inferred;
-                }
-
-                if let Some(t) = &current {
-                    current = Some(t.apply(&subst));
+                current = new;
+                if let Some((t, b)) = &current {
+                    current = Some((t.apply(&subst), *b));
                 }
 
                 Ok(subst)
@@ -569,7 +572,7 @@ impl TryInfer for Vec<Stmt> {
 }
 
 impl TryInfer for Stmt {
-    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<Type>)> {
+    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<(Type, bool)>)> {
         match self {
             Stmt::If(c, t, e) => {
                 let (subst_i, inferred) = c.infer_type(env, gen)?;
@@ -582,14 +585,13 @@ impl TryInfer for Stmt {
 
                 let (subst_e, ret_e) = e.try_infer_type(env, gen)?;
 
-                let subst_r = ret_e.unify_with(&ret_t)?;
+                let (subst_r, mut ret_type) = ret_t.combine_with(&ret_e, true)?;
 
                 let subst = subst_r.compose(&subst_e.compose(&subst_t.compose(&subst)));
-                let ret_type = if let (Some(_), Some(t)) = (ret_t, ret_e) {
-                    Some(t.apply(&subst))
-                } else {
-                    None
-                };
+
+                if let Some((t, b)) = &ret_type {
+                    ret_type = Some((t.apply(&subst), *b));
+                }
 
                 Ok((subst, ret_type))
             }
@@ -602,7 +604,7 @@ impl TryInfer for Stmt {
                 let (subst_t, ret_t) = t.try_infer_type(env, gen)?;
 
                 let subst = subst_t.compose(&subst);
-                let ret_type = ret_t.map(|t| t.apply(&subst));
+                let ret_type = ret_t.map(|(t, b)| (t.apply(&subst), b));
 
                 Ok((subst, ret_type))
             }
@@ -659,10 +661,10 @@ impl TryInfer for Stmt {
                 Ok((subst, None))
             }
             Stmt::Return(e) => match e {
-                None => Ok((Substitution::new(), Some(Type::Void))),
+                None => Ok((Substitution::new(), Some((Type::Void, true)))),
                 Some(exp) => {
                     let (subst, inferred) = exp.infer_type(env, gen)?;
-                    Ok((subst, Some(inferred)))
+                    Ok((subst, Some((inferred, true))))
                 }
             }
         }
@@ -757,6 +759,7 @@ pub mod error {
         Unbound(Id),
         Conflict(Id),
         Recursive(TypeVariable, Type),
+        Incomplete(Id)
     }
 
     impl fmt::Display for TypeError {
@@ -766,6 +769,7 @@ pub mod error {
                 TypeError::Unbound(id) => write!(f, "Unbound variable {:?}", id),
                 TypeError::Conflict(id) => write!(f, "Variable {:?} is defined more than once", id),
                 TypeError::Recursive(v, t) => write!(f, "Occur check fails: {:?} vs {:?}", v, t),
+                TypeError::Incomplete(id) => write!(f, "Function {:?} does not return a correct value in all paths", id),
             }
         }
     }

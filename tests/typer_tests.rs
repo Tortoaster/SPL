@@ -75,7 +75,7 @@ fn return_type() -> Result<(), CompileError> {
     let stmts = Stmt::parse_many(&mut "x = x + 1; if(x < 5) { return True; } else { return False; } x = x + 2;".tokenize()?.peekable());
     let (_, ret_type) = stmts.try_infer_type(&mut env, &mut gen)?;
 
-    assert_eq!(Some(Type::Bool), ret_type);
+    assert_eq!(Some((Type::Bool, true)), ret_type);
 
     Ok(())
 }
@@ -90,7 +90,7 @@ fn no_return() -> Result<(), CompileError> {
     let stmts = Stmt::parse_many(&mut "x = x + 1; if(x < 5) { return True; } else {  } x = x + 2;".tokenize()?.peekable());
     let (_, ret_type) = stmts.try_infer_type(&mut env, &mut gen)?;
 
-    assert_eq!(None, ret_type);
+    assert_eq!(Some((Type::Bool, false)), ret_type);
 
     Ok(())
 }
@@ -105,7 +105,7 @@ fn bad_return() -> Result<(), CompileError> {
     let stmts = Stmt::parse_many(&mut "x = x + 1; if(x < 5) { return True; } else { return 1; } x = x + 2;".tokenize()?.peekable());
     let result = stmts.try_infer_type(&mut env, &mut gen);
 
-    assert_eq!(Err(TypeError::Mismatch { expected: Type::Int, found: Type::Bool }), result);
+    assert_eq!(Err(TypeError::Mismatch { expected: Type::Bool, found: Type::Int }), result);
 
     Ok(())
 }
