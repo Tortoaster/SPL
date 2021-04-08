@@ -247,9 +247,7 @@ fn strict_overloading() -> Result<(), CompileError> {
     let program = SPL::parse(&mut "main(x, y) { return x > 'a' && y < True; }".tokenize()?.peekable())?;
     let result = program.infer_type_mut(&mut env, &mut gen);
 
-    if let Ok(_) = result {
-        panic!("Type classes fail");
-    }
+    assert_eq!(Err(TypeError::TypeClass { found: Type::Bool, class: Id("Ord".to_owned()) }), result);
 
     Ok(())
 }

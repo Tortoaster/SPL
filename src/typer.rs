@@ -22,6 +22,12 @@ impl TypeVariable {
             }
         }
 
+        for class in &self.1 {
+            if !to.implements(class)? {
+                return Err(TypeError::TypeClass { found: to.clone(), class: class.clone() });
+            }
+        }
+
         if to.free_vars().contains(self) {
             return Err(TypeError::Recursive(self.clone(), to.clone()));
         }
@@ -82,9 +88,47 @@ impl Type {
                 let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
                 Ok(subst_b.compose(&subst_a))
             }
+            (Type::Polymorphic(v1), Type::Polymorphic(v2)) => {
+                let combined: HashSet<Id> = v1.1
+                    .iter()
+                    .cloned()
+                    .chain(v2.1.clone())
+                    .collect();
+                let new = Type::Polymorphic(TypeVariable(v2.0, combined.into_iter().collect()));
+                // TODO: Bind old value of v2 to new value of v2?
+                Ok(v1.bind(&new)?.compose(&v2.bind(&new)?))
+            },
             (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
             (t1, t2) => Err(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() })
         }
+    }
+
+    fn implements(&self, class: &Id) -> Result<bool> {
+        if let Type::Polymorphic(var) = self {
+            if var.1.contains(class) {
+                return Ok(true);
+            }
+        }
+
+        let result = match class.0.as_str() {
+            "Eq" => match self {
+                Type::Int | Type::Bool | Type::Char => true,
+                _ => false
+            }
+            "Ord" => match self {
+                Type::Int | Type::Char => true,
+                _ => false
+            }
+            "Show" => match self {
+                Type::Int | Type::Char | Type::Bool => true,
+                Type::Tuple(l, r) => l.implements(class)? && r.implements(class)?,
+                Type::Array(a) => a.implements(class)?,
+                _ => false
+            }
+            _ => return Err(TypeError::UndefinedClass(class.clone()))
+        };
+
+        Ok(result)
     }
 
     /// Returns a type into a vector of the argument types and the return type
@@ -119,12 +163,15 @@ pub struct PolyType {
     pub inner: Type,
 }
 
-// TODO: Functions may not yet be generalized when they are called, which may change their type, and that is wrong. Can this be solved with topological sorting? Or do I need to remove generalizations/instantiations?
+// TODO: Functions may not yet be generalized when they are called, which may change their type, and that is wrong. Can this be solved with topological sorting?
 
 impl PolyType {
     pub fn instantiate(&self, gen: &mut Generator) -> Type {
-        let fresh = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()));
-        let subst = Substitution(self.variables.iter().cloned().zip(fresh).collect());
+        let subst = Substitution(self.variables
+            .iter()
+            .cloned()
+            .map(|var| (var.clone(), Type::Polymorphic(gen.fresh_with(var.1))))
+            .collect());
         self.inner.apply(&subst)
     }
 }
@@ -699,20 +746,27 @@ pub mod error {
             expected: Type,
             found: Type,
         },
+        TypeClass {
+            found: Type,
+            class: Id
+        },
         Unbound(Id),
         Conflict(Id),
         Recursive(TypeVariable, Type),
-        Incomplete(Id)
+        Incomplete(Id),
+        UndefinedClass(Id),
     }
 
     impl fmt::Display for TypeError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 TypeError::Mismatch { expected, found } => write!(f, "Type mismatch: expected {:?}, found {:?}", expected, found),
+                TypeError::TypeClass { found, class } => write!(f, "Type {:?} does not implement {:?}", found, class),
                 TypeError::Unbound(id) => write!(f, "Unbound variable {:?}", id),
                 TypeError::Conflict(id) => write!(f, "Variable {:?} is defined more than once", id),
                 TypeError::Recursive(v, t) => write!(f, "Occur check fails: {:?} vs {:?}", v, t),
                 TypeError::Incomplete(id) => write!(f, "Function {:?} does not return a correct value in all paths", id),
+                TypeError::UndefinedClass(id) => write!(f, "Type class {:?} not found", id),
             }
         }
     }

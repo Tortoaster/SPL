@@ -1,6 +1,7 @@
-use crate::lexer::Field;
-use crate::typer::{Generator, TypeVariable, PolyType, Type};
 use std::collections::HashMap;
+
+use crate::lexer::Field;
+use crate::typer::{Generator, PolyType, Type, TypeVariable};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL {
@@ -170,8 +171,9 @@ impl RetType {
 mod printer {
     use std::fmt;
 
-    use super::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
     use crate::lexer::Field;
+
+    use super::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
 
     const TAB_SIZE: usize = 4;
 
