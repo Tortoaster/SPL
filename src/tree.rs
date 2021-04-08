@@ -1,4 +1,6 @@
 use crate::lexer::Field;
+use crate::typer::{Generator, TypeVariable, PolyType, Type};
+use std::collections::HashMap;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL {
@@ -91,6 +93,79 @@ pub struct FunCall {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Id(pub String);
+
+impl FunType {
+    pub fn transform(&self, gen: &mut Generator) -> PolyType {
+        let class_names = self.type_classes
+            .iter()
+            .map(|a| (a.var.clone(), a.class.clone()))
+            .fold(HashMap::new(), |mut acc, (var, class)| {
+                acc.entry(var).or_insert(Vec::new()).push(class);
+                acc
+            });
+
+        let mut poly_names = HashMap::new();
+
+        let arg_types: Vec<Type> = self.arg_types
+            .iter()
+            .map(|t| t.transform(gen, &mut poly_names, &class_names))
+            .collect();
+
+        let ret_type = self.ret_type.transform(gen, &mut poly_names, &class_names);
+
+        PolyType {
+            variables: poly_names
+                .values()
+                .cloned()
+                .collect(),
+            inner: arg_types
+                .into_iter()
+                .rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret)))
+        }
+    }
+}
+
+impl TypeAnnotation {
+    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>, class_names: &HashMap<Id, Vec<Id>>) -> Type {
+        match self {
+            TypeAnnotation::Int => Type::Int,
+            TypeAnnotation::Bool => Type::Bool,
+            TypeAnnotation::Char => Type::Char,
+            TypeAnnotation::Tuple(l, r) => Type::Tuple(Box::new(l.transform(generator, poly_names, class_names)), Box::new(r.transform(generator, poly_names, class_names))),
+            TypeAnnotation::Array(a) => Type::Array(Box::new(a.transform(generator, poly_names, class_names))),
+            TypeAnnotation::Polymorphic(id) => {
+                match poly_names.get(id) {
+                    None => {
+                        let var = generator.fresh_with(class_names.get(id).unwrap_or(&Vec::new()).clone());
+                        poly_names.insert(id.clone(), var.clone());
+                        Type::Polymorphic(var)
+                    }
+                    Some(var) => {
+                        Type::Polymorphic(var.clone())
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl VarType {
+    pub fn transform(&self, generator: &mut Generator) -> Type {
+        match self {
+            VarType::Var => Type::Polymorphic(generator.fresh()),
+            VarType::Type(t) => t.transform(generator, &mut HashMap::new(), &HashMap::new())
+        }
+    }
+}
+
+impl RetType {
+    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>, class_names: &HashMap<Id, Vec<Id>>) -> Type {
+        match self {
+            RetType::Type(t) => t.transform(generator, poly_names, class_names),
+            RetType::Void => Type::Void
+        }
+    }
+}
 
 mod printer {
     use std::fmt;
