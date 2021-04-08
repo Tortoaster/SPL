@@ -109,28 +109,6 @@ impl Type {
     }
 }
 
-impl FromStr for Type {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let fun_type = FunType::parse(&mut s.tokenize().unwrap().peekable())?;
-
-        let mut gen = Generator::new();
-        let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
-
-        let arg_types: Vec<Type> = fun_type.arg_types
-            .iter()
-            .map(|t| t.transform(&mut gen, &mut poly_names))
-            .collect();
-
-        let ret_type = fun_type.ret_type.transform(&mut gen, &mut poly_names);
-
-        Ok(arg_types
-            .into_iter()
-            .rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret))))
-    }
-}
-
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct PolyType {
     pub variables: Vec<TypeVariable>,
@@ -153,6 +131,34 @@ impl From<Type> for PolyType {
             variables: Vec::new(),
             inner,
         }
+    }
+}
+
+impl FromStr for PolyType {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let fun_type = FunType::parse(&mut s.tokenize().unwrap().peekable())?;
+
+        let mut gen = Generator::new();
+        let mut poly_names: HashMap<Id, TypeVariable> = HashMap::new();
+
+        let arg_types: Vec<Type> = fun_type.arg_types
+            .iter()
+            .map(|t| t.transform(&mut gen, &mut poly_names))
+            .collect();
+
+        let ret_type = fun_type.ret_type.transform(&mut gen, &mut poly_names);
+
+        Ok(PolyType {
+            variables: poly_names
+                .values()
+                .copied()
+                .collect(),
+            inner: arg_types
+                .into_iter()
+                .rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret)))
+        })
     }
 }
 
@@ -186,24 +192,23 @@ impl Environment {
             ("tl", "[a] -> [a]"),
             ("fst", "(a, b) -> a"),
             ("snd", "(a, b) -> b"),
-            ("!", "Bool -> Bool"),
-            ("+", "Int Int -> Int"),
-            ("-", "Int Int -> Int"),
-            ("*", "Int Int -> Int"),
-            ("/", "Int Int -> Int"),
-            ("%", "Int Int -> Int"),
-            ("==", "a a -> Bool"),
-            ("!=", "a a -> Bool"),
-            ("<", "Int Int -> Bool"),
-            (">", "Int Int -> Bool"),
-            ("<=", "Int Int -> Bool"),
-            (">=", "Int Int -> Bool"),
-            ("&&", "Bool Bool -> Bool"),
-            ("||", "Bool Bool -> Bool"),
-            (":", "a [a] -> [a]"),
+            ("not", "Bool -> Bool"),
+            ("add", "Int Int -> Int"),
+            ("sub", "Int Int -> Int"),
+            ("mul", "Int Int -> Int"),
+            ("div", "Int Int -> Int"),
+            ("mod", "Int Int -> Int"),
+            ("eq", "a a -> Bool"),
+            ("ne", "a a -> Bool"),
+            ("lt", "Int Int -> Bool"),
+            ("gt", "Int Int -> Bool"),
+            ("le", "Int Int -> Bool"),
+            ("ge", "Int Int -> Bool"),
+            ("and", "Bool Bool -> Bool"),
+            ("or", "Bool Bool -> Bool"),
+            ("cons", "a [a] -> [a]"),
         ] {
-            let t = env.generalize(&annotation.parse().unwrap());
-            env.insert((Id(name.to_owned()), Space::Fun), t);
+            env.insert((Id(name.to_owned()), Space::Fun), annotation.parse().unwrap());
         }
         env
     }
