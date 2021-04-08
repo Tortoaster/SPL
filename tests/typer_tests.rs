@@ -229,6 +229,32 @@ fn generalized_in_time() -> Result<(), CompileError> {
 }
 
 #[test]
+fn allowed_overloading() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new();
+
+    let program = SPL::parse(&mut "main(x, y) { return x > 'a' && y < 10; }".tokenize()?.peekable())?;
+    program.infer_type_mut(&mut env, &mut gen)?;
+
+    Ok(())
+}
+
+#[test]
+fn strict_overloading() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new();
+
+    let program = SPL::parse(&mut "main(x, y) { return x > 'a' && y < True; }".tokenize()?.peekable())?;
+    let result = program.infer_type_mut(&mut env, &mut gen);
+
+    if let Ok(_) = result {
+        panic!("Type classes fail");
+    }
+
+    Ok(())
+}
+
+#[test]
 fn type_check_files() -> Result<(), CompileError> {
     let mut errors = 0;
 
