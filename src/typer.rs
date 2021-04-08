@@ -617,7 +617,7 @@ impl TryInfer for Stmt {
                     .clone();
 
                 let mut current = remembered;
-                let subst_f = f.fields
+                let subst_f = f
                     .iter()
                     .fold(Ok(Substitution::new()), |acc, field| {
                         let subst = acc?;

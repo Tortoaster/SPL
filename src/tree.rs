@@ -59,7 +59,7 @@ pub enum TypeAnnotation {
 pub enum Stmt {
     If(Exp, Vec<Stmt>, Vec<Stmt>),
     While(Exp, Vec<Stmt>),
-    Assignment(Id, Fields, Exp),
+    Assignment(Id, Vec<Field>, Exp),
     FunCall(FunCall),
     Return(Option<Exp>),
 }
@@ -76,11 +76,6 @@ pub enum Exp {
     Tuple(Box<Exp>, Box<Exp>),
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct Fields {
-    pub fields: Vec<Field>
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunCall {
     pub id: Id,
@@ -93,7 +88,8 @@ pub struct Id(pub String);
 mod printer {
     use std::fmt;
 
-    use super::{Decl, Exp, Fields, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+    use super::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+    use crate::lexer::Field;
 
     const TAB_SIZE: usize = 4;
 
@@ -217,12 +213,12 @@ mod printer {
                     f += body.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
                     f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
                 }
-                Stmt::Assignment(id, field, value) => format!("{:indent$}{}{} = {};\n",
-                                                              "",
-                                                              id.fmt_pretty(indent),
-                                                              field.fmt_pretty(indent),
-                                                              value.fmt_pretty(indent),
-                                                              indent = indent * TAB_SIZE
+                Stmt::Assignment(id, fields, value) => format!("{:indent$}{}{} = {};\n",
+                                                               "",
+                                                               id.fmt_pretty(indent),
+                                                               fields.fmt_pretty(indent),
+                                                               value.fmt_pretty(indent),
+                                                               indent = indent * TAB_SIZE
                 ),
                 Stmt::FunCall(fun_call) => format!("{:indent$}{};\n",
                                                    "",
@@ -252,9 +248,9 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for Fields {
+    impl PrettyPrintable for Vec<Field> {
         fn fmt_pretty(&self, _: usize) -> String {
-            self.fields.iter().map(|field| ".".to_owned() + format!("{}", field).as_str()).collect::<Vec<String>>().join("")
+            self.iter().map(|field| ".".to_owned() + format!("{}", field).as_str()).collect::<Vec<String>>().join("")
         }
     }
 

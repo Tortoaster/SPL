@@ -2,8 +2,8 @@ use std::iter::Peekable;
 
 use error::Result;
 
-use crate::lexer::{Lexer, Operator, Token};
-use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, Fields, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+use crate::lexer::{Lexer, Operator, Token, Field};
+use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
 use crate::parser::error::ParseError;
 use crate::char_iterator::Positioned;
 
@@ -268,7 +268,7 @@ impl Parsable for Stmt {
 
                     Stmt::FunCall(FunCall { id, args })
                 } else {
-                    let selector = Fields::parse(tokens)?;
+                    let selector = <Vec<Field>>::parse(tokens)?;
                     munch(tokens, &Token::Assign)?;
                     let exp = Exp::parse(tokens)?;
                     munch(tokens, &Token::Semicolon)?;
@@ -300,8 +300,8 @@ impl Exp {
                     munch(tokens, &Token::CloseParen)?;
                     Exp::FunCall(fun_call)
                 } else {
-                    let selector = Fields::parse(tokens)?;
-                    selector.fields.into_iter().fold(Exp::Variable(id), |e, f| Exp::FunCall(FunCall { id: Id(format!("{}", f)), args: vec![e] }))
+                    let fields = <Vec<Field>>::parse(tokens)?;
+                    fields.into_iter().fold(Exp::Variable(id), |e, f| Exp::FunCall(FunCall { id: Id(format!("{}", f)), args: vec![e] }))
                 }
             }
             Positioned { inner: Token::Operator(op), row, col, .. } => {
@@ -399,7 +399,7 @@ impl Parsable for Exp {
     }
 }
 
-impl Parsable for Fields {
+impl Parsable for Vec<Field> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let mut fields = Vec::new();
 
@@ -410,7 +410,7 @@ impl Parsable for Fields {
             }
         }
 
-        Ok(Fields { fields })
+        Ok(fields)
     }
 }
 
