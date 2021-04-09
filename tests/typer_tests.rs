@@ -253,6 +253,36 @@ fn strict_overloading() -> Result<(), CompileError> {
 }
 
 #[test]
+fn flow_overloading() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let program = SPL::parse(&mut "main(x) { return x == x; }".tokenize()?.peekable())?;
+    program.infer_type_mut(&mut env, &mut gen)?;
+
+    let result = env.get(&(Id("main".to_owned()), Space::Fun)).unwrap();
+
+    assert_eq!("Eq a => (a -> Bool)", format!("{}", result));
+
+    Ok(())
+}
+
+#[test]
+fn no_alias() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let program = SPL::parse(&mut "var x = []; var y = x; main() { y = 1 : y; }".tokenize()?.peekable())?;
+    program.infer_type_mut(&mut env, &mut gen)?;
+
+    let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
+
+    assert_eq!("[a]", format!("{}", result));
+
+    Ok(())
+}
+
+#[test]
 fn type_check_files() -> Result<(), CompileError> {
     let mut errors = 0;
 
