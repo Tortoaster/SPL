@@ -188,11 +188,28 @@ impl From<Type> for PolyType {
 impl fmt::Display for PolyType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let poly_names: HashMap<TypeVariable, char> = self.variables
-            .clone()
-            .into_iter()
+            .iter()
+            .cloned()
             .zip('a'..'z')
             .collect();
-        write!(f, "{}", self.inner.format(&poly_names))
+        let mut type_classes: Vec<String> = self.variables
+            .iter()
+            .cloned()
+            .filter(|var| !var.1.is_empty())
+            .flat_map(|var| {
+                let poly_names = &poly_names;
+                var.1.clone().into_iter().map(move |class| format!("{} {}", class.0, poly_names.get(&var).unwrap()))
+            })
+            .collect();
+        let x = if type_classes.is_empty() {
+            String::new()
+        } else {
+            type_classes.sort();
+            let mut s: String = type_classes.join(", ");
+            s.push_str(" => ");
+            s
+        };
+        write!(f, "{}{}", x, self.inner.format(&poly_names))
     }
 }
 
