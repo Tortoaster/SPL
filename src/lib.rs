@@ -4,3 +4,4 @@ pub mod parser;
 pub mod tree;
 pub mod typer;
 pub mod compiler;
+pub mod call_graph;

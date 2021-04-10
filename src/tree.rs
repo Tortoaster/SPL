@@ -1,33 +1,33 @@
 use std::collections::HashMap;
 
 use crate::lexer::Field;
-use crate::typer::{Generator, PolyType, Type, TypeVariable};
+use crate::typer::{Generator, PolyType, Type, TypeVariable, Space};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL {
     pub decls: Vec<Decl>
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub enum Decl {
     VarDecl(VarDecl),
     FunDecl(FunDecl),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub struct VarDecl {
     pub var_type: VarType,
     pub id: Id,
     pub exp: Exp,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub enum VarType {
     Var,
     Type(TypeAnnotation),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub struct FunDecl {
     pub id: Id,
     pub args: Vec<Id>,
@@ -36,26 +36,26 @@ pub struct FunDecl {
     pub stmts: Vec<Stmt>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub struct FunType {
     pub type_classes: Vec<ClassAnnotation>,
     pub arg_types: Vec<TypeAnnotation>,
     pub ret_type: RetType,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub enum RetType {
     Type(TypeAnnotation),
     Void,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub struct ClassAnnotation {
     pub class: Id,
     pub var: Id
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub enum TypeAnnotation {
     Int,
     Bool,
@@ -65,7 +65,7 @@ pub enum TypeAnnotation {
     Polymorphic(Id),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub enum Stmt {
     If(Exp, Vec<Stmt>, Vec<Stmt>),
     While(Exp, Vec<Stmt>),
@@ -74,7 +74,7 @@ pub enum Stmt {
     Return(Option<Exp>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Exp {
     Variable(Id),
     Number(i32),
@@ -86,13 +86,13 @@ pub enum Exp {
     Tuple(Box<Exp>, Box<Exp>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct FunCall {
     pub id: Id,
     pub args: Vec<Exp>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Id(pub String);
 
 impl FunType {
@@ -122,6 +122,22 @@ impl FunType {
             inner: arg_types
                 .into_iter()
                 .rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret)))
+        }
+    }
+}
+
+impl Decl {
+    pub fn id(&self) -> Id {
+        match self {
+            Decl::VarDecl(decl) => decl.id.clone(),
+            Decl::FunDecl(decl) => decl.id.clone()
+        }
+    }
+
+    pub fn space(&self) -> Space {
+        match self {
+            Decl::VarDecl(_) => Space::Var,
+            Decl::FunDecl(_) => Space::Fun
         }
     }
 }

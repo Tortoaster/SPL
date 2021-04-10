@@ -88,7 +88,7 @@ impl fmt::Display for Operator {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Field {
     Head,
     Tail,

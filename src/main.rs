@@ -7,6 +7,7 @@ mod parser;
 mod typer;
 mod tree;
 mod compiler;
+mod call_graph;
 
 fn main() -> Result<(), CompileError> {
     let args: Vec<String> = env::args().collect();
