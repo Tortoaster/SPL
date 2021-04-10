@@ -1,36 +1,118 @@
-use std::collections::{HashSet, HashMap, BTreeSet};
-use crate::tree::{SPL, Id, FunDecl, VarDecl, Stmt, Decl, Exp};
+use std::collections::{BTreeSet, HashMap, HashSet};
+
+use petgraph::Graph;
+use petgraph::prelude::*;
+
+use crate::tree::{Decl, Exp, FunDecl, Id, SPL, Stmt, VarDecl};
 use crate::typer::Space;
 
-pub struct CallGraph {
-    pub fun_calls: HashMap<(Id, Space), BTreeSet<Id>>,
-    pub references: HashMap<(Id, Space), BTreeSet<Id>>,
-    pub assignments: HashMap<Id, BTreeSet<Id>>,
+type Node = usize;
+
+struct Identifier {
+    assigned: HashMap<(Id, Space), usize>,
+    current: usize,
 }
 
-impl CallGraph {
-    pub fn new(ast: &SPL) -> Self {
-        let fun_calls = ast.decls
-            .iter()
-            .map(|decl| ((decl.id(), decl.space()), decl.fun_calls()))
-            .collect();
-
-        let references = ast.decls
-            .iter()
-            .map(|decl| ((decl.id(), decl.space()), decl.references(&HashSet::new())))
-            .collect();
-
-        let assignments = ast.decls
-            .iter()
-            .map(|decl| (decl.id(), decl.assignments(&HashSet::new())))
-            .collect();
-
-        CallGraph {
-            fun_calls,
-            references,
-            assignments,
+impl Identifier {
+    fn new() -> Self {
+        Identifier {
+            assigned: HashMap::new(),
+            current: 0,
         }
     }
+
+    fn get(&mut self, index: &(Id, Space)) -> usize {
+        let found = self.assigned.get(index);
+        match found {
+            None => {
+                self.current += 1;
+                self.assigned.insert(index.clone(), self.current);
+                self.current
+            }
+            Some(n) => *n
+        }
+    }
+}
+
+pub fn ordered_scc(ast: &SPL) -> Vec<Vec<(Id, Space)>> {
+    let mut ids = Identifier::new();
+
+    let nodes: Vec<Node> = ast.decls
+        .iter()
+        .map(|decl| ids.get(&(decl.id(), decl.space())))
+        .collect();
+
+    let fun_calls: HashMap<Node, BTreeSet<Node>> = ast.decls
+        .iter()
+        .map(|decl| (ids.get(&(decl.id(), decl.space())), decl
+            .fun_calls()
+            .into_iter()
+            .map(|id| ids.get(&(id, Space::Fun)))
+            .collect())
+        )
+        .collect();
+
+    let references: HashMap<Node, BTreeSet<Node>> = ast.decls
+        .iter()
+        .map(|decl| (ids.get(&(decl.id(), decl.space())), decl
+            .references(&HashSet::new())
+            .into_iter()
+            .map(|id| ids.get(&(id, Space::Var)))
+            .collect())
+        )
+        .collect();
+
+    let assignments: HashMap<Node, BTreeSet<Node>> = ast.decls
+        .iter()
+        .map(|decl| (ids.get(&(decl.id(), Space::Fun)), decl
+            .assignments(&HashSet::new())
+            .into_iter()
+            .map(|id| ids.get(&(id, Space::Var)))
+            .collect())
+        )
+        .collect();
+
+    let mut graph = Graph::<Node, ()>::new();
+
+    let indices: HashMap<Node, NodeIndex> = nodes
+        .iter()
+        .map(|n| (*n, graph.add_node(*n)))
+        .collect();
+
+    fun_calls
+        .into_iter()
+        .chain(references)
+        .chain(assignments)
+        .for_each(|(n, es)| graph
+            .extend_with_edges(std::iter::repeat(indices[&n])
+                .zip(es
+                    .into_iter()
+                    .flat_map(|e| indices.get(&e).copied())
+                )
+            )
+        );
+
+    let inv_indices: HashMap<NodeIndex, Node> = indices
+        .into_iter()
+        .map(|(k, v)| (v, k))
+        .collect();
+
+    let inv_ids: HashMap<Node, (Id, Space)> = ids.assigned
+        .into_iter()
+        .map(|(k, v)| (v, k))
+        .collect();
+
+    petgraph::algo::tarjan_scc(&graph)
+        .into_iter()
+        .map(|scc| scc
+            .into_iter()
+            .map(|index| {
+                let node = inv_indices[&index];
+                inv_ids[&node].clone()
+            })
+            .collect()
+        )
+        .collect()
 }
 
 trait Calls {

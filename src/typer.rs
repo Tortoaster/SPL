@@ -10,7 +10,7 @@ use crate::lexer::{Lexable, Field};
 use crate::parser::Parsable;
 use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, SPL, Stmt, VarDecl};
 use crate::typer::error::TypeError;
-use crate::call_graph::CallGraph;
+use crate::call_graph;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable(usize, Vec<Id>);
@@ -422,7 +422,7 @@ pub trait TryInfer {
 
 impl InferMut for SPL {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
-        let graph = CallGraph::new(self);
+        let graph = call_graph::ordered_scc(self);
 
         Ok(Type::Void)
     }
