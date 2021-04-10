@@ -1,10 +1,9 @@
 use spl::compiler::error::CompileError;
 use spl::lexer::Lexable;
 use spl::parser::Parsable;
-use spl::tree::{Exp, Stmt, VarDecl, Id, SPL};
-use spl::typer::{Environment, Generator, Infer, Type, InferMut, TryInfer, Space};
+use spl::tree::{Exp, Id, SPL};
+use spl::typer::{Environment, Generator, Infer, Type, InferMut, Space};
 use spl::typer::error::TypeError;
-use spl::typer::Typed;
 use std::fs;
 use spl::compiler;
 
@@ -49,14 +48,12 @@ fn invalid_list() -> Result<(), CompileError> {
 
 #[test]
 fn assignment() -> Result<(), CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
-
-    let decl = VarDecl::parse(&mut "var x = [];".tokenize()?.peekable())?;
-    decl.infer_type_mut(&mut env, &mut gen)?;
-    let assignment = Stmt::parse(&mut "x = 1 : x;".tokenize()?.peekable())?;
-    let (subst, _) = assignment.try_infer_type(&mut env, &mut gen)?;
-    env = env.apply(&subst);
+    let (_, env) = type_check("
+    var x = [];
+    f() {
+        x = 1 : x;
+    }
+    ")?;
 
     let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
@@ -67,43 +64,56 @@ fn assignment() -> Result<(), CompileError> {
 
 #[test]
 fn return_type() -> Result<(), CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let (result, _) = type_check("
+    f() {
+        var x = 1;
+        x = x + 1;
+        if(x < 5) {
+            return True;
+        } else {
+            return False;
+        }
+        x = x + 2;
+    }
+    ")?;
 
-    let decl = VarDecl::parse(&mut "var x = 1;".tokenize()?.peekable())?;
-    decl.infer_type_mut(&mut env, &mut gen)?;
-    let stmts = Stmt::parse_many(&mut "x = x + 1; if(x < 5) { return True; } else { return False; } x = x + 2;".tokenize()?.peekable());
-    let (_, ret_type) = stmts.try_infer_type(&mut env, &mut gen)?;
-
-    assert_eq!(Some((Type::Bool, true)), ret_type);
+    assert_eq!(Ok(Type::Void), result);
 
     Ok(())
 }
 
 #[test]
 fn no_return() -> Result<(), CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let (result, _) = type_check("
+    f() {
+        var x = 1;
+        x = x + 1;
+        if(x < 5) {
+            return True;
+        } else {}
+        x = x + 2;
+    }
+    ")?;
 
-    let decl = VarDecl::parse(&mut "var x = 1;".tokenize()?.peekable())?;
-    decl.infer_type_mut(&mut env, &mut gen)?;
-    let stmts = Stmt::parse_many(&mut "x = x + 1; if(x < 5) { return True; } else {  } x = x + 2;".tokenize()?.peekable());
-    let (_, ret_type) = stmts.try_infer_type(&mut env, &mut gen)?;
-
-    assert_eq!(Some((Type::Bool, false)), ret_type);
+    assert_eq!(Err(TypeError::Incomplete(Id("f".to_owned()))), result);
 
     Ok(())
 }
 
 #[test]
 fn bad_return() -> Result<(), CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
-
-    let decl = VarDecl::parse(&mut "var x = 1;".tokenize()?.peekable())?;
-    decl.infer_type_mut(&mut env, &mut gen)?;
-    let stmts = Stmt::parse_many(&mut "x = x + 1; if(x < 5) { return True; } else { return 1; } x = x + 2;".tokenize()?.peekable());
-    let result = stmts.try_infer_type(&mut env, &mut gen);
+    let (result, _) = type_check("
+    f() {
+        var x = 1;
+        x = x + 1;
+        if(x < 5) {
+            return True;
+        } else {
+            return 1;
+        }
+        x = x + 2;
+    }
+    ")?;
 
     assert_eq!(Err(TypeError::Mismatch { expected: Type::Bool, found: Type::Int }), result);
 
@@ -112,14 +122,12 @@ fn bad_return() -> Result<(), CompileError> {
 
 #[test]
 fn fields() -> Result<(), CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
-
-    let decl = VarDecl::parse(&mut "var x = [];".tokenize()?.peekable())?;
-    decl.infer_type_mut(&mut env, &mut gen)?;
-    let stmt = Stmt::parse(&mut "x.tl.hd.fst.snd = True;".tokenize()?.peekable())?;
-    let (subst, _) = stmt.try_infer_type(&mut env, &mut gen)?;
-    env = env.apply(&subst);
+    let (_, env) = type_check("
+    var x = [];
+    f() {
+        x.tl.hd.fst.snd = True;
+    }
+    ")?;
 
     let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
@@ -216,14 +224,16 @@ fn generalized_in_time() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new(&mut gen);
 
-    let program = SPL::parse(&mut "main(x) { return id(x) + 1; } id(x) { return x; }".tokenize()?.peekable())?;
+    let program = SPL::parse(&mut "id1(x) { return x; } main(x) { id1(x); return id2(x + 1) + 1; } id2(x) { return x; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
     let result_main = env.get(&(Id("main".to_owned()), Space::Fun)).unwrap();
-    let result_id = env.get(&(Id("id".to_owned()), Space::Fun)).unwrap();
+    let result_id1 = env.get(&(Id("id1".to_owned()), Space::Fun)).unwrap();
+    let result_id2 = env.get(&(Id("id2".to_owned()), Space::Fun)).unwrap();
 
     assert_eq!("(Int -> Int)", format!("{}", result_main));
-    assert_eq!("(a -> a)", format!("{}", result_id));
+    assert_eq!("(a -> a)", format!("{}", result_id1));
+    assert_eq!("(a -> a)", format!("{}", result_id2));
 
     Ok(())
 }
@@ -267,6 +277,8 @@ fn flow_overloading() -> Result<(), CompileError> {
     Ok(())
 }
 
+// TODO: Decide what to do when this happens
+#[ignore]
 #[test]
 fn no_alias() -> Result<(), CompileError> {
     let mut gen = Generator::new();
@@ -280,6 +292,15 @@ fn no_alias() -> Result<(), CompileError> {
     assert_eq!("[a]", format!("{}", result));
 
     Ok(())
+}
+
+fn type_check(code: &str) -> Result<(Result<Type, TypeError>, Environment), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let program = SPL::parse(&mut code.tokenize()?.peekable())?;
+
+    Ok((program.infer_type_mut(&mut env, &mut gen), env))
 }
 
 #[test]

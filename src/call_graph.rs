@@ -34,7 +34,8 @@ impl Identifier {
     }
 }
 
-pub fn ordered_scc(ast: &SPL) -> Vec<Vec<(Id, Space)>> {
+// TODO: Simplify
+pub fn topsorted_sccs(ast: &SPL) -> Option<Vec<Vec<&Decl>>> {
     let mut ids = Identifier::new();
 
     let nodes: Vec<Node> = ast.decls
@@ -64,13 +65,17 @@ pub fn ordered_scc(ast: &SPL) -> Vec<Vec<(Id, Space)>> {
 
     let assignments: HashMap<Node, BTreeSet<Node>> = ast.decls
         .iter()
-        .map(|decl| (ids.get(&(decl.id(), Space::Fun)), decl
+        .map(|decl| (ids.get(&(decl.id(), decl.space())), decl
             .assignments(&HashSet::new())
             .into_iter()
             .map(|id| ids.get(&(id, Space::Var)))
             .collect())
         )
         .collect();
+
+    // TODO: Variables also depend on their assignments, not just the other way around?
+    // Are functions with parameters dependent on their callers?
+    // Maybe only if they are used in an assignment to a global variable?
 
     let mut graph = Graph::<Node, ()>::new();
 
@@ -84,11 +89,10 @@ pub fn ordered_scc(ast: &SPL) -> Vec<Vec<(Id, Space)>> {
         .chain(references)
         .chain(assignments)
         .for_each(|(n, es)| graph
-            .extend_with_edges(std::iter::repeat(indices[&n])
-                .zip(es
-                    .into_iter()
-                    .flat_map(|e| indices.get(&e).copied())
-                )
+            .extend_with_edges(es
+                .into_iter()
+                .flat_map(|e| indices.get(&e).copied())
+                .zip(std::iter::repeat(indices[&n]))
             )
         );
 
@@ -102,19 +106,35 @@ pub fn ordered_scc(ast: &SPL) -> Vec<Vec<(Id, Space)>> {
         .map(|(k, v)| (v, k))
         .collect();
 
-    petgraph::algo::tarjan_scc(&graph)
+    let sccs = petgraph::algo::tarjan_scc(&graph)
         .into_iter()
         .map(|scc| scc
             .into_iter()
             .map(|index| {
-                let node = inv_indices[&index];
-                inv_ids[&node].clone()
+                let node = inv_indices.get(&index)?;
+                Some(inv_ids.get(&node)?.clone())
             })
             .collect()
         )
-        .collect()
+        .collect::<Option<Vec<Vec<(Id, Space)>>>>()?;
+
+    let decls: HashMap<(Id, Space), &Decl> = ast.decls
+        .iter()
+        .map(|decl| ((decl.id(), decl.space()), decl))
+        .collect();
+
+    sccs
+        .into_iter()
+        .map(|scc| scc
+            .into_iter()
+            .map(|node| decls.get(&node).map(|decl| *decl))
+            .collect()
+        )
+        .rev()
+        .collect::<Option<Vec<Vec<&Decl>>>>()
 }
 
+// TODO: Return iterators
 trait Calls {
     fn fun_calls(&self) -> BTreeSet<Id>;
 
@@ -140,7 +160,7 @@ impl Calls for Decl {
 
     fn assignments(&self, exclude: &HashSet<Id>) -> BTreeSet<Id> {
         match self {
-            Decl::VarDecl(decl) => decl.assignments(exclude),
+            Decl::VarDecl(_) => BTreeSet::new(),
             Decl::FunDecl(decl) => decl.assignments(exclude)
         }
     }
@@ -198,8 +218,7 @@ impl Calls for VarDecl {
     }
 
     fn assignments(&self, _: &HashSet<Id>) -> BTreeSet<Id> {
-        // Variables cannot assign values to other variables
-        BTreeSet::new()
+        panic!("VarDecls cannot assign values to other variables")
     }
 }
 
@@ -343,7 +362,6 @@ impl Calls for Exp {
     }
 
     fn assignments(&self, _: &HashSet<Id>) -> BTreeSet<Id> {
-        // Expressions cannot assign values to other variables
-        BTreeSet::new()
+        panic!("Expressions cannot assign values to other variables")
     }
 }

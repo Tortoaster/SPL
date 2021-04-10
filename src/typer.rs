@@ -164,8 +164,6 @@ pub struct PolyType {
     pub inner: Type,
 }
 
-// TODO: Functions may not yet be generalized when they are called, which may change their type, and that is wrong. Can this be solved with topological sorting?
-
 impl PolyType {
     pub fn instantiate(&self, gen: &mut Generator) -> Type {
         let subst = Substitution(self.variables
@@ -422,91 +420,106 @@ pub trait TryInfer {
 
 impl InferMut for SPL {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
-        let graph = call_graph::ordered_scc(self);
+        // TODO: Check for duplicate definitions
+        let sccs = call_graph::topsorted_sccs(self).ok_or(TypeError::Conflict(Id("Some".to_owned())))?;
+
+        for scc in sccs {
+            // First add all members of this scc to the environment
+            for decl in &scc {
+                match decl {
+                    Decl::VarDecl(decl) => {
+                        if env.insert((decl.id.clone(), Space::Var), decl.var_type.transform(gen).into()).is_some() {
+                            return Err(TypeError::Conflict(decl.id.clone()));
+                        }
+                    }
+                    Decl::FunDecl(decl) => {
+                        let inner = match &decl.fun_type {
+                            None => {
+                                let args: Vec<Type> = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()))
+                                    .take(decl.args.len())
+                                    .collect();
+                                args
+                                    .into_iter()
+                                    .rfold(Type::Polymorphic(gen.fresh()), |t, annotation| Type::Function(Box::new(annotation), Box::new(t)))
+                            }
+                            Some(fun_type) => {
+                                fun_type.transform(gen).inner
+                            }
+                        };
+                        if env.insert((decl.id.clone(), Space::Fun), inner.into()).is_some() {
+                            return Err(TypeError::Conflict(decl.id.clone()));
+                        }
+                    }
+                };
+            }
+
+            // Then infer their types
+            for decl in &scc {
+                let (subst, _) = decl.infer_type(env, gen)?;
+                *env = env.apply(&subst);
+            }
+
+            // And finally generalize them, so their type does change anymore
+            for decl in &scc {
+                // // TODO: Generalize variables as well? Requires more extensive call graph analysis
+                // let old = env.remove(&(decl.id(), decl.space())).unwrap();
+                // let new = env.generalize(&old.instantiate(gen));
+                // env.insert((decl.id(), decl.space()), new);
+                if let Decl::FunDecl(decl) = decl {
+                    let old = env.remove(&(decl.id.clone(), Space::Fun)).unwrap();
+                    // TODO: Instantiate?
+                    let new = env.generalize(&old.instantiate(gen));
+                    env.insert((decl.id.clone(), Space::Fun), new);
+                }
+            }
+        }
 
         Ok(Type::Void)
     }
 }
 
-// impl InferMut for SPL {
-//     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
-//         // Add global variables and functions to scope
-//         self.decls.iter()
-//             .map(|decl| match decl {
-//                 Decl::VarDecl(decl) => {
-//                     // TODO: These are re-inserted in VarDecl
-//                     if env.insert((decl.id.clone(), Space::Var), decl.var_type.transform(gen).into()).is_some() {
-//                         Err(TypeError::Conflict(decl.id.clone()))
-//                     } else {
-//                         Ok(())
-//                     }
-//                 }
-//                 Decl::FunDecl(decl) => {
-//                     let inner = match &decl.fun_type {
-//                         None => {
-//                             let args: Vec<Type> = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()))
-//                                 .take(decl.args.len())
-//                                 .collect();
-//                             args
-//                                 .into_iter()
-//                                 .rfold(Type::Polymorphic(gen.fresh()), |t, annotation| Type::Function(Box::new(annotation), Box::new(t)))
-//                         }
-//                         Some(fun_type) => {
-//                             fun_type.transform(gen).inner
-//                         }
-//                     };
-//                     if env.insert((decl.id.clone(), Space::Fun), inner.into()).is_some() {
-//                         Err(TypeError::Conflict(decl.id.clone()))
-//                     } else {
-//                         Ok(())
-//                     }
-//                 }
-//             }).collect::<Result<()>>()?;
-//
-//         // Infer types of inner declarations
-//         self.decls
-//             .iter()
-//             .map(|decl| decl.infer_type_mut(env, gen))
-//             .collect::<Result<Vec<Type>>>()?;
-//
-//         Ok(Type::Void)
-//     }
-// }
-
-impl InferMut for Decl {
-    fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
+impl Infer for Decl {
+    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
         match self {
-            Decl::VarDecl(var_decl) => var_decl.infer_type_mut(env, gen),
-            Decl::FunDecl(fun_decl) => fun_decl.infer_type_mut(env, gen)
+            Decl::VarDecl(var_decl) => var_decl.infer_type(env, gen),
+            Decl::FunDecl(fun_decl) => fun_decl.infer_type(env, gen)
         }
     }
 }
 
-impl InferMut for VarDecl {
-    fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
+impl Infer for VarDecl {
+    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
+        // Get current type
+        let var_type = env
+            .get(&(self.id.clone(), Space::Var))
+            .ok_or(TypeError::Unbound(self.id.clone()))?;
+
+        // Infer new type
         let (subst_i, inferred) = self.exp.infer_type(env, gen)?;
-        let subst_u = inferred.unify_with(&self.var_type.transform(gen))?;
-        // TODO: Variables should be generalized after topologically sorting, otherwise local variables might override global values
-        let t = PolyType { variables: vec![], inner: inferred.apply(&subst_u.compose(&subst_i)) };
-        env.insert((self.id.clone(), Space::Var), t);
-        Ok(Type::Void)
+
+        // Check if new type is compatible with old type
+        // TODO: Instantiate?
+        let subst_u = inferred.unify_with(&var_type.instantiate(gen))?;
+
+        Ok((subst_u.compose(&subst_i), Type::Void))
     }
 }
 
-impl InferMut for FunDecl {
-    fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
-        // TODO: check for doubly defined variables in functions
-        // TODO: namespace for functions and variables
+// TODO: check for doubly defined arguments and variables
+impl Infer for FunDecl {
+    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
         // Create local scope
-        let mut local = env.clone();
-        let mut arg_types = local
+        let mut env = env.clone();
+
+        // Get current type
+        let mut arg_types = env
             .get(&(self.id.clone(), Space::Fun))
             .ok_or(TypeError::Unbound(self.id.clone()))?.inner
             .unfold();
         let ret_type = arg_types.pop().unwrap();
 
         // Add arguments to local scope
-        local.extend(self.args
+        env.extend(self.args
             .iter()
             .cloned()
             .map(|id| (id, Space::Var))
@@ -515,13 +528,20 @@ impl InferMut for FunDecl {
                 .map(|arg| arg.into())));
 
         // Add variable declarations to local scope
-        self.var_decls
+        let subst_v = self.var_decls
             .iter()
-            .map(|decl| decl.infer_type_mut(&mut local, gen))
-            .collect::<Result<Vec<Type>>>()?;
+            .fold(Ok(Substitution::new()), |acc, decl| {
+                let subst_a = acc?;
+                env.insert((decl.id.clone(), Space::Var), decl.var_type.transform(gen).into());
+                let (subst_i, _) = decl.infer_type(&env, gen)?;
+                // TODO: Subst too big?
+                let subst = subst_i.compose(&subst_a);
+                env = env.apply(&subst);
+                Ok(subst)
+            })?;
 
         // Infer types in inner statements
-        let (subst_i, result) = self.stmts.try_infer_type(&local, gen)?;
+        let (subst_i, result) = self.stmts.try_infer_type(&env, gen)?;
 
         // Check return type
         let (inferred, complete) = result.unwrap_or((Type::Void, true));
@@ -530,13 +550,7 @@ impl InferMut for FunDecl {
         }
         let subst_r = ret_type.unify_with(&inferred)?;
 
-        // Generalize function
-        *env = env.apply(&subst_r.compose(&subst_i));
-        let t = env.remove(&(self.id.clone(), Space::Fun)).unwrap();
-        let new = env.generalize(&t.inner);
-        env.insert((self.id.clone(), Space::Fun), new);
-
-        Ok(Type::Void)
+        Ok((subst_r.compose(&subst_i.compose(&subst_v)), Type::Void))
     }
 }
 
@@ -631,7 +645,9 @@ impl TryInfer for Stmt {
                 let env = env.apply(&subst_i);
                 let remembered = env
                     .get(&(x.clone(), Space::Var))
-                    .ok_or(TypeError::Unbound(x.clone()))?.inner
+                    // TODO: Instantiate?
+                    .ok_or(TypeError::Unbound(x.clone()))?
+                    .instantiate(gen)
                     .clone();
 
                 let mut current = remembered;
