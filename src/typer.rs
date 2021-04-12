@@ -98,16 +98,16 @@ impl Infer for VarDecl {
             .clone();
 
         // Check if new type is compatible with old type
-        // TODO: Fix copy
         let subst_u = var_type.unify_with(&inferred)?;
 
         Ok((subst_u.compose(&subst_i), Type::Void))
     }
 }
 
-// TODO: check for doubly defined arguments and variables
 impl Infer for FunDecl {
     fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
+        // TODO: check for doubly defined arguments and variables
+
         // Create local scope
         let mut env = env.clone();
 
@@ -278,7 +278,6 @@ impl TryInfer for Stmt {
                         }
                     })?;
 
-                // TODO: Fix copy
                 let subst_u = current.unify_with(&inferred)?;
 
                 Ok((subst_u.compose(&subst_f.compose(&subst_i)), None))
@@ -303,8 +302,7 @@ impl Infer for Exp {
         match self {
             Exp::Variable(id) => match env.get(&(id.clone(), Space::Var)) {
                 None => Err(TypeError::Unbound(id.clone())),
-                // TODO: Ugly way to actually instantiate ungeneralized variable?
-                Some(t) => Ok((Substitution::new(), t.instantiate(gen)))
+                Some(t) => Ok((Substitution::new(), t.inner.clone()))
             }
             Exp::Number(_) => Ok((Substitution::new(), Type::Int)),
             Exp::Character(_) => Ok((Substitution::new(), Type::Char)),
@@ -357,8 +355,8 @@ impl Infer for FunCall {
             .zip(&arg_types)
             .fold(Ok(Substitution::new()), |acc, (inferred, required)| {
                 let subst = acc?;
-                let s = inferred.unify_with(&required.apply(&subst))?;
-                Ok(s.compose(&subst))
+                let subst_u = inferred.unify_with(&required.apply(&subst))?;
+                Ok(subst_u.compose(&subst))
             })?;
 
         let subst = subst_u.compose(&subst_i);
