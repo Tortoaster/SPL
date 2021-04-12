@@ -3,9 +3,10 @@ use std::path::Path;
 
 use error::Result;
 
+use crate::algorithm_w::{Environment, Generator};
 use crate::lexer::Lexable;
 use crate::tree::SPL;
-use crate::typer::{Environment, Generator, InferMut};
+use crate::typer::InferMut;
 
 pub fn compile<P: AsRef<Path>>(path: P) -> Result<(SPL, Environment)> {
     let code = fs::read_to_string(path).expect("File inaccessible");

@@ -1,11 +1,13 @@
+use std::fs;
+
+use spl::algorithm_w::{Environment, Generator, Space, Type};
+use spl::compiler;
 use spl::compiler::error::CompileError;
 use spl::lexer::Lexable;
 use spl::parser::Parsable;
 use spl::tree::{Exp, Id, SPL};
-use spl::typer::{Environment, Generator, Infer, Type, InferMut, Space};
+use spl::typer::{Infer, InferMut};
 use spl::typer::error::TypeError;
-use std::fs;
-use spl::compiler;
 
 #[test]
 fn simple_exp() -> Result<(), CompileError> {
@@ -57,7 +59,7 @@ fn assignment() -> Result<(), CompileError> {
 
     let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
-    assert_eq!(&env.generalize(&Type::Array(Box::new(Type::Int))), result);
+    assert_eq!(Type::Array(Box::new(Type::Int)).generalize(&env), *result);
 
     Ok(())
 }
@@ -277,19 +279,48 @@ fn flow_overloading() -> Result<(), CompileError> {
     Ok(())
 }
 
-// TODO: Decide what to do when this happens
 #[ignore]
 #[test]
-fn no_alias() -> Result<(), CompileError> {
+fn copy_assignment() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new(&mut gen);
 
-    let program = SPL::parse(&mut "var x = []; var y = x; main() { y = 1 : y; }".tokenize()?.peekable())?;
+    let program = SPL::parse(&mut "var x = []; var y = []; main() { y = 1 : x; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
     let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
-    assert_eq!("[a]", format!("{}", result));
+    assert_eq!("[?]", format!("{}", result));
+
+    Ok(())
+}
+
+#[ignore]
+#[test]
+fn copy_var() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let program = SPL::parse(&mut "var x = []; var y = 1 : x;".tokenize()?.peekable())?;
+    program.infer_type_mut(&mut env, &mut gen)?;
+
+    let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
+
+    assert_eq!("[?]", format!("{}", result));
+
+    Ok(())
+}
+
+#[ignore]
+#[test]
+fn lenient_annotation() -> Result<(), CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new(&mut gen);
+
+    let program = SPL::parse(&mut "f(x) :: a -> Void { a = a + 1; }".tokenize()?.peekable())?;
+    let error = program.infer_type_mut(&mut env, &mut gen).err().unwrap();
+
+    assert_eq!("Type annotation of f is too general: specified (a -> Void), found (Int -> Void)", format!("{}", error));
 
     Ok(())
 }

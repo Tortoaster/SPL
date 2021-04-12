@@ -3,8 +3,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::Graph;
 use petgraph::prelude::*;
 
+use crate::algorithm_w::Space;
 use crate::tree::{Decl, Exp, FunDecl, Id, SPL, Stmt, VarDecl};
-use crate::typer::Space;
 
 type Node = usize;
 
@@ -72,10 +72,6 @@ pub fn topsorted_sccs(ast: &SPL) -> Option<Vec<Vec<&Decl>>> {
             .collect())
         )
         .collect();
-
-    // TODO: Variables also depend on their assignments, not just the other way around?
-    // Are functions with parameters dependent on their callers?
-    // Maybe only if they are used in an assignment to a global variable?
 
     let mut graph = Graph::<Node, ()>::new();
 

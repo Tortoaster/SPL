@@ -366,7 +366,7 @@ pub mod error {
             row: usize,
             col: usize,
             code: String,
-        }
+        },
     }
 
     impl fmt::Display for LexError {

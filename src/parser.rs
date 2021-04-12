@@ -2,10 +2,10 @@ use std::iter::Peekable;
 
 use error::Result;
 
-use crate::lexer::{Lexer, Operator, Token, Field};
-use crate::tree::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType, ClassAnnotation};
-use crate::parser::error::ParseError;
 use crate::char_iterator::Positioned;
+use crate::lexer::{Field, Lexer, Operator, Token};
+use crate::parser::error::ParseError;
+use crate::tree::{ClassAnnotation, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
 
 pub trait Parsable: Sized {
     /**
@@ -448,10 +448,11 @@ impl Parsable for Id {
 }
 
 pub mod error {
-    use crate::lexer::{Token, Operator};
+    use std::error::Error;
     use std::fmt;
     use std::fmt::Debug;
-    use std::error::Error;
+
+    use crate::lexer::{Operator, Token};
 
     pub type Result<T, E = ParseError> = std::result::Result<T, E>;
 

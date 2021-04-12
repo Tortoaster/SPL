@@ -7,7 +7,7 @@ pub struct Positioned<'a, K: Clone + Debug> {
     pub row: usize,
     pub col: usize,
     pub code: &'a str,
-    pub inner: K
+    pub inner: K,
 }
 
 impl<'a, K: Clone + Debug> Positioned<'a, K> {
@@ -16,7 +16,7 @@ impl<'a, K: Clone + Debug> Positioned<'a, K> {
             row: self.row,
             col: self.col,
             code: self.code,
-            inner
+            inner,
         }
     }
 }
@@ -47,7 +47,7 @@ impl<'a> CharIterable<'a> for &'a str {
             row: 1,
             col: 1,
             code: self,
-            inner: self.chars()
+            inner: self.chars(),
         }
     }
 }
@@ -70,7 +70,7 @@ impl<'a> Iterator for CharIterator<'a> {
             row: self.row,
             col: self.col,
             code: self.code,
-            inner: next
+            inner: next,
         })
     }
 }

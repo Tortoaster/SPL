@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::fmt;
 
+use crate::algorithm_w::{Generator, PolyType, Space, Type, TypeVariable};
 use crate::lexer::Field;
-use crate::typer::{Generator, PolyType, Type, TypeVariable, Space};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL {
@@ -52,7 +53,7 @@ pub enum RetType {
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct ClassAnnotation {
     pub class: Id,
-    pub var: Id
+    pub var: Id,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -95,6 +96,12 @@ pub struct FunCall {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Id(pub String);
 
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl FunType {
     pub fn transform(&self, gen: &mut Generator) -> PolyType {
         let class_names = self.type_classes
@@ -121,7 +128,7 @@ impl FunType {
                 .collect(),
             inner: arg_types
                 .into_iter()
-                .rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret)))
+                .rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret))),
         }
     }
 }

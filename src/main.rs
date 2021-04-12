@@ -1,5 +1,6 @@
-use crate::compiler::error::CompileError;
 use std::env;
+
+use crate::compiler::error::CompileError;
 
 mod char_iterator;
 mod lexer;
@@ -8,6 +9,7 @@ mod typer;
 mod tree;
 mod compiler;
 mod call_graph;
+mod algorithm_w;
 
 fn main() -> Result<(), CompileError> {
     let args: Vec<String> = env::args().collect();
