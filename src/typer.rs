@@ -355,7 +355,7 @@ impl Infer for FunCall {
             .zip(&arg_types)
             .fold(Ok(Substitution::new()), |acc, (inferred, required)| {
                 let subst = acc?;
-                let subst_u = inferred.unify_with(&required.apply(&subst))?;
+                let subst_u = required.apply(&subst).unify_with(&inferred)?;
                 Ok(subst_u.compose(&subst))
             })?;
 

@@ -43,7 +43,7 @@ fn invalid_list() -> Result<(), CompileError> {
     let exp = Exp::parse(&mut "1 : 'a' : []".tokenize()?.peekable())?;
     let result = exp.infer_type(&env, &mut gen).err().unwrap();
 
-    assert_eq!(TypeError::Mismatch { expected: Type::Char, found: Type::Int }, result);
+    assert_eq!(TypeError::Mismatch { expected: Type::Int, found: Type::Char }, result);
 
     Ok(())
 }
@@ -182,7 +182,7 @@ fn conflict_function() -> Result<(), CompileError> {
     let program = SPL::parse(&mut "test(x) :: Bool -> Void { x = x + 1; }".tokenize()?.peekable())?;
     let result = program.infer_type_mut(&mut env, &mut gen);
 
-    assert_eq!(Err(TypeError::Mismatch { expected: Type::Bool, found: Type::Int }), result);
+    assert_eq!(Err(TypeError::Mismatch { expected: Type::Int, found: Type::Bool }), result);
 
     Ok(())
 }
@@ -260,20 +260,6 @@ fn flow_overloading() -> Result<(), CompileError> {
     let result = env.get(&(Id("main".to_owned()), Space::Fun)).unwrap();
 
     assert_eq!("Eq a => (a -> Bool)", format!("{}", result));
-
-    Ok(())
-}
-
-#[ignore]
-#[test]
-fn lenient_annotation() -> Result<(), CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
-
-    let program = SPL::parse(&mut "f(x) :: a -> Void { x = x + 1; }".tokenize()?.peekable())?;
-    let error = program.infer_type_mut(&mut env, &mut gen).err().unwrap();
-
-    assert_eq!("Type annotation of f is too general: specified (a -> Void), found (Int -> Void)", format!("{}", error));
 
     Ok(())
 }
