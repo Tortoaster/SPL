@@ -175,21 +175,6 @@ fn infer_poly_function() -> Result<(), CompileError> {
 }
 
 #[test]
-fn check_function() -> Result<(), CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
-
-    let program = SPL::parse(&mut "test(x) :: a -> Void { x = x + 1; }".tokenize()?.peekable())?;
-    program.infer_type_mut(&mut env, &mut gen)?;
-
-    let result = env.get(&(Id("test".to_owned()), Space::Fun)).unwrap();
-
-    assert_eq!("(Int -> Void)", format!("{}", result));
-
-    Ok(())
-}
-
-#[test]
 fn conflict_function() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new(&mut gen);
@@ -285,7 +270,7 @@ fn lenient_annotation() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new(&mut gen);
 
-    let program = SPL::parse(&mut "f(x) :: a -> Void { a = a + 1; }".tokenize()?.peekable())?;
+    let program = SPL::parse(&mut "f(x) :: a -> Void { x = x + 1; }".tokenize()?.peekable())?;
     let error = program.infer_type_mut(&mut env, &mut gen).err().unwrap();
 
     assert_eq!("Type annotation of f is too general: specified (a -> Void), found (Int -> Void)", format!("{}", error));

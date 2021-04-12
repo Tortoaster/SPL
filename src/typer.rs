@@ -22,6 +22,7 @@ impl InferMut for SPL {
     fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
         // TODO: Check for duplicate definitions
         let sccs = call_graph::topsorted_sccs(self).ok_or(TypeError::Conflict(Id("Some".to_owned())))?;
+        // TODO: Check variable cycles
 
         for scc in sccs {
             // First add all members of this scc to the environment
@@ -371,7 +372,7 @@ pub mod error {
     use std::fmt;
     use std::fmt::Debug;
 
-    use crate::algorithm_w::{PolyType, Type, TypeVariable};
+    use crate::algorithm_w::{Type, TypeVariable};
     use crate::tree::Id;
 
     pub type Result<T, E = TypeError> = std::result::Result<T, E>;
@@ -386,11 +387,6 @@ pub mod error {
             found: Type,
             class: Id,
         },
-        Lenient {
-            decl: Id,
-            annotation: PolyType,
-            found: PolyType,
-        },
         Unbound(Id),
         Conflict(Id),
         Recursive(TypeVariable, Type),
@@ -403,8 +399,6 @@ pub mod error {
             match self {
                 TypeError::Mismatch { expected, found } => write!(f, "Type mismatch: expected {:?}, found {:?}", expected, found),
                 TypeError::TypeClass { found, class } => write!(f, "Type {:?} does not implement {:?}", found, class),
-                TypeError::Lenient { decl, annotation, found } =>
-                    write!(f, "Type annotation of {} is too general: specified {}, found {}", decl, annotation, found),
                 TypeError::Unbound(id) => write!(f, "Unbound variable {:?}", id),
                 TypeError::Conflict(id) => write!(f, "Variable {:?} is defined more than once", id),
                 TypeError::Recursive(v, t) => write!(f, "Occur check fails: {:?} vs {:?}", v, t),
