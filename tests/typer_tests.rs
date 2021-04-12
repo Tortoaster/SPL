@@ -281,38 +281,6 @@ fn flow_overloading() -> Result<(), CompileError> {
 
 #[ignore]
 #[test]
-fn copy_assignment() -> Result<(), CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
-
-    let program = SPL::parse(&mut "var x = []; var y = []; main() { y = 1 : x; }".tokenize()?.peekable())?;
-    program.infer_type_mut(&mut env, &mut gen)?;
-
-    let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
-
-    assert_eq!("[?]", format!("{}", result));
-
-    Ok(())
-}
-
-#[ignore]
-#[test]
-fn copy_var() -> Result<(), CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
-
-    let program = SPL::parse(&mut "var x = []; var y = 1 : x;".tokenize()?.peekable())?;
-    program.infer_type_mut(&mut env, &mut gen)?;
-
-    let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
-
-    assert_eq!("[?]", format!("{}", result));
-
-    Ok(())
-}
-
-#[ignore]
-#[test]
 fn lenient_annotation() -> Result<(), CompileError> {
     let mut gen = Generator::new();
     let mut env = Environment::new(&mut gen);

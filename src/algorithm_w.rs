@@ -180,16 +180,6 @@ impl PolyType {
             .collect();
         self.inner.apply(&subst)
     }
-
-    pub fn refresh(&self, gen: &mut Generator) -> Type {
-        // Environment::new(&mut Generator::new()).generalize(self).instantiate(gen)
-        let subst = self
-            .free_vars()
-            .difference(&self.variables.iter().cloned().collect())
-            .map(|var| (var.clone(), Type::Polymorphic(gen.fresh_with(var.1.clone()))))
-            .collect();
-        self.inner.apply(&subst)
-    }
 }
 
 impl From<Type> for PolyType {
