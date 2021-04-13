@@ -229,7 +229,7 @@ impl TryInfer for Stmt {
                 let (subst_t, ret_t) = t.try_infer_type(env, gen)?;
 
                 let subst = subst_t.compose(&subst);
-                let ret_type = ret_t.map(|(t, b)| (t.apply(&subst), b));
+                let ret_type = ret_t.map(|(t, _)| (t.apply(&subst), false));
 
                 Ok((subst, ret_type))
             }
