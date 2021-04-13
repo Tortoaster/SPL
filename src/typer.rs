@@ -143,7 +143,7 @@ impl Infer for FunDecl {
 
         // Check return type
         let (inferred, complete) = result.unwrap_or((Type::Void, true));
-        if !complete {
+        if !complete && inferred != Type::Void {
             return Err(TypeError::Incomplete(self.id.clone()));
         }
         let subst_r = ret_type.unify_with(&inferred)?;

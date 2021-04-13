@@ -92,12 +92,30 @@ fn no_return() -> Result<(), CompileError> {
         x = x + 1;
         if(x < 5) {
             return True;
-        } else {}
+        }
         x = x + 2;
     }
     ")?;
 
     assert_eq!(Err(TypeError::Incomplete(Id("f".to_owned()))), result);
+
+    Ok(())
+}
+
+#[test]
+fn void_return() -> Result<(), CompileError> {
+    let (result, _) = type_check("
+    f() {
+        var x = 1;
+        x = x + 1;
+        if(x < 5) {
+            return;
+        }
+        x = x + 2;
+    }
+    ")?;
+
+    assert_eq!(Ok(Type::Void), result);
 
     Ok(())
 }
