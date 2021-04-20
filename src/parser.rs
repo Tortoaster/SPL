@@ -59,13 +59,7 @@ fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
     if *found == *expected {
         Ok(())
     } else {
-        Err(ParseError::BadToken {
-            found: (*found).clone(),
-            row: found.row,
-            col: found.col,
-            code: found.code.to_owned(),
-            expected: format!("{:?}", expected),
-        })
+        Err(found.into_bad_token_err(format!("{:?}", expected)))
     }
 }
 
@@ -220,13 +214,7 @@ impl Parsable for TypeAnnotation {
                 TypeAnnotation::Array(Box::new(t))
             }
             Token::Identifier(_) => TypeAnnotation::Polymorphic(Id::parse(tokens)?),
-            _ => return Err(ParseError::BadToken {
-                found: (**token).clone(),
-                row: token.row,
-                col: token.col,
-                code: token.code.to_owned(),
-                expected: "type".to_owned(),
-            })
+            _ => return Err(token.clone().into_bad_token_err("type"))
         };
 
         Ok(t)
@@ -294,13 +282,7 @@ impl Parsable for Stmt {
                     Stmt::Assignment(id, selector, exp)
                 }
             }
-            _ => return Err(ParseError::BadToken {
-                found: (*token).clone(),
-                row: token.row,
-                col: token.col,
-                code: token.code.to_owned(),
-                expected: "statement".to_owned(),
-            })
+            _ => return Err(token.into_bad_token_err("statement"))
         };
 
         Ok(t)
@@ -344,13 +326,7 @@ impl Exp {
                 }
             }
             Positioned { inner: Token::Nil, .. } => Exp::Nil,
-            token => return Err(ParseError::BadToken {
-                found: (*token).clone(),
-                row: token.row,
-                col: token.col,
-                code: token.code.to_owned(),
-                expected: "expression".to_owned(),
-            })
+            token => return Err(token.into_bad_token_err("expression"))
         };
 
         while let Some(Positioned { inner: Token::Operator(op), row, col, .. }) = tokens.peek() {
@@ -436,13 +412,7 @@ impl Parsable for Id {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         match tokens.next().ok_or(ParseError::EOF { expected: "identifier".to_owned() })? {
             Positioned { inner: Token::Identifier(s), .. } => Ok(Id(s)),
-            token => return Err(ParseError::BadToken {
-                found: (*token).clone(),
-                row: token.row,
-                col: token.col,
-                code: token.code.to_owned(),
-                expected: "identifier".to_owned(),
-            })
+            token => Err(token.into_bad_token_err("identifier"))
         }
     }
 }

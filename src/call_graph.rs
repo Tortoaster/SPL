@@ -73,6 +73,8 @@ pub fn topsorted_sccs(ast: &SPL) -> Option<Vec<Vec<&Decl>>> {
         )
         .collect();
 
+    // TODO: Detect cyclic initialization for variables
+
     let mut graph = Graph::<Node, ()>::new();
 
     let indices: HashMap<Node, NodeIndex> = nodes
