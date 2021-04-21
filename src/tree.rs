@@ -55,6 +55,7 @@ pub enum Exp {
 pub struct FunCall {
     pub id: Id,
     pub args: Vec<Exp>,
+    pub call_type: Option<Type>
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

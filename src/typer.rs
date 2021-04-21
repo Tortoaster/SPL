@@ -18,11 +18,15 @@ pub trait TryInfer {
     fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<(Type, bool)>)>;
 }
 
-impl InferMut for SPL {
-    fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type> {
+impl SPL {
+    pub fn infer_types(&mut self, env: &mut Environment, gen: &mut Generator) -> Result<()> {
         // TODO: Check for duplicate definitions
-        let sccs = call_graph::topsorted_sccs(self).ok_or(TypeError::Conflict(Id("Some".to_owned())))?;
+        let sccs = call_graph::topsorted_sccs(&self).ok_or(TypeError::Conflict(Id("Some".to_owned())))?;
         // TODO: Check variable cycles
+
+        let decorated = SPL {
+            decls: Vec::new()
+        };
 
         for scc in sccs {
             // First add all members of this scc to the environment
@@ -65,7 +69,9 @@ impl InferMut for SPL {
             }
         }
 
-        Ok(Type::Void)
+        *self = decorated;
+
+        Ok(())
     }
 }
 

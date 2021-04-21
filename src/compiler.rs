@@ -6,18 +6,17 @@ use error::Result;
 use crate::algorithm_w::{Environment, Generator};
 use crate::lexer::Lexable;
 use crate::tree::SPL;
-use crate::typer::InferMut;
 
 pub fn compile<P: AsRef<Path>>(path: P) -> Result<(SPL, Environment)> {
     let code = fs::read_to_string(path).expect("File inaccessible");
 
     let lexer = code.as_str().tokenize()?;
-    let ast = SPL::new(lexer.peekable())?;
+    let mut ast = SPL::new(lexer.peekable())?;
 
     let mut gen = Generator::new();
     let mut env = Environment::new();
 
-    ast.infer_type_mut(&mut env, &mut gen)?;
+    ast.infer_types(&mut env, &mut gen)?;
 
     Ok((ast, env))
 }
