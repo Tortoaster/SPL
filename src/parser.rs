@@ -1,11 +1,29 @@
+use std::collections::HashMap;
 use std::iter::Peekable;
 
 use error::Result;
 
+use crate::algorithm_w::{Generator, Type, TypeVariable};
 use crate::char_iterator::Positioned;
 use crate::lexer::{Field, Lexer, Operator, Token};
 use crate::parser::error::ParseError;
-use crate::tree::{ClassAnnotation, Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl, VarType};
+
+trait Consume {
+    fn munch<T: AsRef<Token>>(&mut self, expected: T) -> Result<()>;
+}
+
+impl Consume for Peekable<Lexer<'_>> {
+    fn munch<T: AsRef<Token>>(&mut self, expected: T) -> Result<()> {
+        let found = self.next().ok_or(ParseError::EOF { expected: format!("{:?}", expected.as_ref()) })?;
+
+        if *found == *expected.as_ref() {
+            Ok(())
+        } else {
+            Err(found.into_bad_token_err(format!("{:?}", expected.as_ref())))
+        }
+    }
+}
 
 pub trait Parsable: Sized {
     /**
@@ -39,27 +57,17 @@ pub trait Parsable: Sized {
     /**
     Parses as many instances of this parsable after each other as possible, separated by separator.
     **/
-    fn parse_many_sep(tokens: &mut Peekable<Lexer>, separator: &Token) -> Result<Vec<Self>> {
+    fn parse_many_sep<T: AsRef<Token>>(tokens: &mut Peekable<Lexer>, separator: T) -> Result<Vec<Self>> {
         let mut parsed = Vec::new();
         while let Ok(p) = Self::try_parse(tokens) {
             parsed.push(p);
             match tokens.peek() {
                 None => break,
-                Some(s) => if *separator != **s { break; }
+                Some(s) => if *separator.as_ref() != **s { break; }
             }
-            munch(tokens, separator)?;
+            tokens.munch(&separator)?;
         }
         Ok(parsed)
-    }
-}
-
-fn munch(tokens: &mut Peekable<Lexer>, expected: &Token) -> Result<()> {
-    let found = tokens.next().ok_or(ParseError::EOF { expected: format!("{:?}", expected) })?;
-
-    if *found == *expected {
-        Ok(())
-    } else {
-        Err(found.into_bad_token_err(format!("{:?}", expected)))
     }
 }
 
@@ -97,9 +105,9 @@ impl Parsable for VarDecl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let var_type = VarType::parse(tokens)?;
         let id = Id::parse(tokens)?;
-        munch(tokens, &Token::Assign)?;
+        tokens.munch(Token::Assign)?;
         let exp = Exp::parse(tokens)?;
-        munch(tokens, &Token::Semicolon)?;
+        tokens.munch(Token::Semicolon)?;
 
         Ok(VarDecl { var_type, id, exp })
     }
@@ -108,21 +116,21 @@ impl Parsable for VarDecl {
 impl Parsable for FunDecl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let id = Id::parse(tokens)?;
-        munch(tokens, &Token::OpenParen)?;
-        let args = Id::parse_many_sep(tokens, &Token::Comma)?;
-        munch(tokens, &Token::CloseParen)?;
+        tokens.munch(Token::OpenParen)?;
+        let args = Id::parse_many_sep(tokens, Token::Comma)?;
+        tokens.munch(Token::CloseParen)?;
 
         let fun_type = if let Some(Positioned { inner: Token::HasType, .. }) = tokens.peek() {
-            munch(tokens, &Token::HasType)?;
-            Some(FunType::parse(tokens)?)
+            tokens.munch(Token::HasType)?;
+            Some(Type::parse_function(tokens, &mut Generator::new(), &mut HashMap::new())?)
         } else {
             None
         };
 
-        munch(tokens, &Token::OpenBracket)?;
+        tokens.munch(Token::OpenBracket)?;
         let var_decls = VarDecl::parse_many(tokens);
         let stmts = Stmt::parse_many(tokens);
-        munch(tokens, &Token::CloseBracket)?;
+        tokens.munch(Token::CloseBracket)?;
 
         Ok(FunDecl { id, args, fun_type, var_decls, stmts })
     }
@@ -132,92 +140,112 @@ impl Parsable for VarType {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let var_type = match **tokens.peek().ok_or(ParseError::EOF { expected: "variable type".to_owned() })? {
             Token::Var => {
-                munch(tokens, &Token::Var)?;
+                tokens.munch(Token::Var)?;
                 VarType::Var
             }
-            _ => VarType::Type(TypeAnnotation::parse(tokens)?)
+            _ => {
+                // TODO: Check not Void or type variable
+                VarType::Type(Type::parse_basic(tokens, &mut Generator::new(), &mut HashMap::new())?)
+            }
         };
 
         Ok(var_type)
     }
 }
 
-impl Parsable for RetType {
+/// Parsable for many type class annotations
+impl Parsable for Vec<(Id, Id)> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let ret_type = match **tokens.peek().ok_or(ParseError::EOF { expected: "return type".to_owned() })? {
-            Token::Void => {
-                munch(tokens, &Token::Void)?;
-                RetType::Void
-            }
-            _ => RetType::Type(TypeAnnotation::parse(tokens)?)
-        };
-
-        Ok(ret_type)
-    }
-}
-
-impl Parsable for FunType {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let type_classes = <Vec<ClassAnnotation>>::try_parse(tokens).unwrap_or(Vec::new());
-        let arg_types = TypeAnnotation::parse_many(tokens);
-        munch(tokens, &Token::To)?;
-        let ret_type = RetType::parse(tokens)?;
-        Ok(FunType { type_classes, arg_types, ret_type })
-    }
-}
-
-impl Parsable for Vec<ClassAnnotation> {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let type_classes = ClassAnnotation::parse_many_sep(tokens, &Token::Comma)?;
-        munch(tokens, &Token::DoubleArrow)?;
+        let type_classes = <(Id, Id)>::parse_many_sep(tokens, Token::Comma)?;
+        tokens.munch(Token::DoubleArrow)?;
         Ok(type_classes)
     }
 }
 
-impl Parsable for ClassAnnotation {
+/// Parsable for type class annotations
+impl Parsable for (Id, Id) {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let class = Id::parse(tokens)?;
         let var = Id::parse(tokens)?;
 
-        Ok(ClassAnnotation { class, var })
+        Ok((class, var))
     }
 }
 
-impl Parsable for TypeAnnotation {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+impl AsRef<Token> for Token {
+    fn as_ref(&self) -> &Token {
+        &self
+    }
+}
+
+impl Type {
+    /// Parses any type other than a function
+    fn parse_basic(tokens: &mut Peekable<Lexer>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<Self> {
         let token = tokens.peek().ok_or(ParseError::EOF { expected: "type".to_owned() })?;
         let t = match **token {
+            Token::Void => {
+                tokens.munch(Token::Void)?;
+                Type::Void
+            }
             Token::Int => {
-                munch(tokens, &Token::Int)?;
-                TypeAnnotation::Int
+                tokens.munch(Token::Int)?;
+                Type::Int
             }
             Token::Bool => {
-                munch(tokens, &Token::Bool)?;
-                TypeAnnotation::Bool
+                tokens.munch(Token::Bool)?;
+                Type::Bool
             }
             Token::Char => {
-                munch(tokens, &Token::Char)?;
-                TypeAnnotation::Char
+                tokens.munch(Token::Char)?;
+                Type::Char
             }
             Token::OpenParen => {
-                munch(tokens, &Token::OpenParen)?;
-                let l = TypeAnnotation::parse(tokens)?;
-                munch(tokens, &Token::Comma)?;
-                let r = TypeAnnotation::parse(tokens)?;
-                munch(tokens, &Token::CloseParen)?;
-                TypeAnnotation::Tuple(Box::new(l), Box::new(r))
+                tokens.munch(Token::OpenParen)?;
+                let l = Type::parse_basic(tokens, gen, poly_names)?;
+                tokens.munch(Token::Comma)?;
+                let r = Type::parse_basic(tokens, gen, poly_names)?;
+                tokens.munch(Token::CloseParen)?;
+                Type::Tuple(Box::new(l), Box::new(r))
             }
             Token::OpenArr => {
-                munch(tokens, &Token::OpenArr)?;
-                let t = TypeAnnotation::parse(tokens)?;
-                munch(tokens, &Token::CloseArr)?;
-                TypeAnnotation::Array(Box::new(t))
+                tokens.munch(Token::OpenArr)?;
+                let t = Type::parse_basic(tokens, gen, poly_names)?;
+                tokens.munch(Token::CloseArr)?;
+                Type::Array(Box::new(t))
             }
-            Token::Identifier(_) => TypeAnnotation::Polymorphic(Id::parse(tokens)?),
+            Token::Identifier(_) => {
+                let id = Id::parse(tokens)?;
+                Type::Polymorphic(poly_names.entry(id).or_insert(gen.fresh()).clone())
+            }
             _ => return Err(token.clone().into_bad_token_err("type"))
         };
 
         Ok(t)
+    }
+
+    /// Parses a function type, including type class constraints
+    pub fn parse_function(tokens: &mut Peekable<Lexer>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<Self> {
+        // Read optional type class constraints
+        let type_classes = <Vec<(Id, Id)>>::try_parse(tokens).unwrap_or(Vec::new());
+        for (class, var) in type_classes {
+            poly_names.entry(var).or_insert(gen.fresh()).impose(class);
+        }
+
+        let mut arg_types = Vec::new();
+        loop {
+            let token = tokens.peek().ok_or(ParseError::EOF { expected: "type".to_owned() })?;
+            match **token {
+                Token::To => break,
+                _ => arg_types.push(Type::parse_basic(tokens, gen, poly_names)?)
+            }
+        }
+        tokens.munch(Token::To)?;
+        let ret_type = Type::parse_basic(tokens, gen, poly_names)?;
+        let fun_type = arg_types
+            .into_iter()
+            .rfold(ret_type, |res, arg| Type::Function(Box::new(arg), Box::new(res)));
+
+        Ok(fun_type)
     }
 }
 
@@ -226,17 +254,17 @@ impl Parsable for Stmt {
         let token = tokens.next().ok_or(ParseError::EOF { expected: "statement".to_owned() })?;
         let t = match &*token {
             Token::If => {
-                munch(tokens, &Token::OpenParen)?;
+                tokens.munch(Token::OpenParen)?;
                 let condition = Exp::parse(tokens)?;
-                munch(tokens, &Token::CloseParen)?;
-                munch(tokens, &Token::OpenBracket)?;
+                tokens.munch(Token::CloseParen)?;
+                tokens.munch(Token::OpenBracket)?;
                 let then = Stmt::parse_many(tokens);
-                munch(tokens, &Token::CloseBracket)?;
+                tokens.munch(Token::CloseBracket)?;
                 let otherwise = if let Some(Positioned { inner: Token::Else, .. }) = tokens.peek() {
-                    munch(tokens, &Token::Else)?;
-                    munch(tokens, &Token::OpenBracket)?;
+                    tokens.munch(Token::Else)?;
+                    tokens.munch(Token::OpenBracket)?;
                     let result = Stmt::parse_many(tokens);
-                    munch(tokens, &Token::CloseBracket)?;
+                    tokens.munch(Token::CloseBracket)?;
                     result
                 } else {
                     Vec::new()
@@ -245,12 +273,12 @@ impl Parsable for Stmt {
                 Stmt::If(condition, then, otherwise)
             }
             Token::While => {
-                munch(tokens, &Token::OpenParen)?;
+                tokens.munch(Token::OpenParen)?;
                 let condition = Exp::parse(tokens)?;
-                munch(tokens, &Token::CloseParen)?;
-                munch(tokens, &Token::OpenBracket)?;
+                tokens.munch(Token::CloseParen)?;
+                tokens.munch(Token::OpenBracket)?;
                 let repeat = Stmt::parse_many(tokens);
-                munch(tokens, &Token::CloseBracket)?;
+                tokens.munch(Token::CloseBracket)?;
 
                 Stmt::While(condition, repeat)
             }
@@ -260,24 +288,24 @@ impl Parsable for Stmt {
                 } else {
                     Some(Exp::parse(tokens)?)
                 };
-                munch(tokens, &Token::Semicolon)?;
+                tokens.munch(Token::Semicolon)?;
 
                 Stmt::Return(value)
             }
             Token::Identifier(s) => {
                 let id = Id(s.clone());
                 if let Some(Positioned { inner: Token::OpenParen, .. }) = tokens.peek() {
-                    munch(tokens, &Token::OpenParen)?;
-                    let args = Exp::parse_many_sep(tokens, &Token::Comma)?;
-                    munch(tokens, &Token::CloseParen)?;
-                    munch(tokens, &Token::Semicolon)?;
+                    tokens.munch(Token::OpenParen)?;
+                    let args = Exp::parse_many_sep(tokens, Token::Comma)?;
+                    tokens.munch(Token::CloseParen)?;
+                    tokens.munch(Token::Semicolon)?;
 
                     Stmt::FunCall(FunCall { id, args })
                 } else {
                     let selector = <Vec<Field>>::parse(tokens)?;
-                    munch(tokens, &Token::Assign)?;
+                    tokens.munch(Token::Assign)?;
                     let exp = Exp::parse(tokens)?;
-                    munch(tokens, &Token::Semicolon)?;
+                    tokens.munch(Token::Semicolon)?;
 
                     Stmt::Assignment(id, selector, exp)
                 }
@@ -295,9 +323,9 @@ impl Exp {
             Positioned { inner: Token::Identifier(s), .. } => {
                 let id = Id(s);
                 if let Some(Positioned { inner: Token::OpenParen, .. }) = tokens.peek() {
-                    munch(tokens, &Token::OpenParen)?;
-                    let fun_call = FunCall { id, args: Exp::parse_many_sep(tokens, &Token::Comma)? };
-                    munch(tokens, &Token::CloseParen)?;
+                    tokens.munch(Token::OpenParen)?;
+                    let fun_call = FunCall { id, args: Exp::parse_many_sep(tokens, Token::Comma)? };
+                    tokens.munch(Token::CloseParen)?;
                     Exp::FunCall(fun_call)
                 } else {
                     let fields = <Vec<Field>>::parse(tokens)?;
@@ -316,12 +344,12 @@ impl Exp {
             Positioned { inner: Token::OpenParen, .. } => {
                 let lhs = Self::parse_exp(tokens, 0)?;
                 if let Some(Positioned { inner: Token::CloseParen, .. }) = tokens.peek() {
-                    munch(tokens, &Token::CloseParen)?;
+                    tokens.munch(Token::CloseParen)?;
                     lhs
                 } else {
-                    munch(tokens, &Token::Comma)?;
+                    tokens.munch(Token::Comma)?;
                     let rhs = Self::parse_exp(tokens, 0)?;
-                    munch(tokens, &Token::CloseParen)?;
+                    tokens.munch(Token::CloseParen)?;
                     Exp::Tuple(Box::new(lhs), Box::new(rhs))
                 }
             }

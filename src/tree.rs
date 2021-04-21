@@ -1,7 +1,6 @@
-use std::collections::HashMap;
 use std::fmt;
 
-use crate::algorithm_w::{Generator, PolyType, Space, Type, TypeVariable};
+use crate::algorithm_w::{Generator, Space, Type, Environment};
 use crate::lexer::Field;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -25,45 +24,16 @@ pub struct VarDecl {
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum VarType {
     Var,
-    Type(TypeAnnotation),
+    Type(Type),
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct FunDecl {
     pub id: Id,
     pub args: Vec<Id>,
-    pub fun_type: Option<FunType>,
+    pub fun_type: Option<Type>,
     pub var_decls: Vec<VarDecl>,
     pub stmts: Vec<Stmt>,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub struct FunType {
-    pub type_classes: Vec<ClassAnnotation>,
-    pub arg_types: Vec<TypeAnnotation>,
-    pub ret_type: RetType,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub enum RetType {
-    Type(TypeAnnotation),
-    Void,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub struct ClassAnnotation {
-    pub class: Id,
-    pub var: Id,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub enum TypeAnnotation {
-    Int,
-    Bool,
-    Char,
-    Tuple(Box<TypeAnnotation>, Box<TypeAnnotation>),
-    Array(Box<TypeAnnotation>),
-    Polymorphic(Id),
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -102,37 +72,6 @@ impl fmt::Display for Id {
     }
 }
 
-impl FunType {
-    pub fn transform(&self, gen: &mut Generator) -> PolyType {
-        let class_names = self.type_classes
-            .iter()
-            .map(|a| (a.var.clone(), a.class.clone()))
-            .fold(HashMap::new(), |mut acc, (var, class)| {
-                acc.entry(var).or_insert(Vec::new()).push(class);
-                acc
-            });
-
-        let mut poly_names = HashMap::new();
-
-        let arg_types: Vec<Type> = self.arg_types
-            .iter()
-            .map(|t| t.transform(gen, &mut poly_names, &class_names))
-            .collect();
-
-        let ret_type = self.ret_type.transform(gen, &mut poly_names, &class_names);
-
-        PolyType {
-            variables: poly_names
-                .values()
-                .cloned()
-                .collect(),
-            inner: arg_types
-                .into_iter()
-                .rfold(ret_type, |ret, arg| Type::Function(Box::new(arg), Box::new(ret))),
-        }
-    }
-}
-
 impl Decl {
     pub fn id(&self) -> Id {
         match self {
@@ -149,44 +88,11 @@ impl Decl {
     }
 }
 
-impl TypeAnnotation {
-    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>, class_names: &HashMap<Id, Vec<Id>>) -> Type {
-        match self {
-            TypeAnnotation::Int => Type::Int,
-            TypeAnnotation::Bool => Type::Bool,
-            TypeAnnotation::Char => Type::Char,
-            TypeAnnotation::Tuple(l, r) => Type::Tuple(Box::new(l.transform(generator, poly_names, class_names)), Box::new(r.transform(generator, poly_names, class_names))),
-            TypeAnnotation::Array(a) => Type::Array(Box::new(a.transform(generator, poly_names, class_names))),
-            TypeAnnotation::Polymorphic(id) => {
-                match poly_names.get(id) {
-                    None => {
-                        let var = generator.fresh_with(class_names.get(id).unwrap_or(&Vec::new()).clone());
-                        poly_names.insert(id.clone(), var.clone());
-                        Type::Polymorphic(var)
-                    }
-                    Some(var) => {
-                        Type::Polymorphic(var.clone())
-                    }
-                }
-            }
-        }
-    }
-}
-
 impl VarType {
-    pub fn transform(&self, generator: &mut Generator) -> Type {
+    pub fn transform(&self, env: &Environment, gen: &mut Generator) -> Type {
         match self {
-            VarType::Var => Type::Polymorphic(generator.fresh()),
-            VarType::Type(t) => t.transform(generator, &mut HashMap::new(), &HashMap::new())
-        }
-    }
-}
-
-impl RetType {
-    pub fn transform(&self, generator: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>, class_names: &HashMap<Id, Vec<Id>>) -> Type {
-        match self {
-            RetType::Type(t) => t.transform(generator, poly_names, class_names),
-            RetType::Void => Type::Void
+            VarType::Var => Type::Polymorphic(gen.fresh()),
+            VarType::Type(t) => t.generalize(env).instantiate(gen)
         }
     }
 }
@@ -196,7 +102,8 @@ mod printer {
 
     use crate::lexer::Field;
 
-    use super::{Decl, Exp, FunCall, FunDecl, FunType, Id, RetType, SPL, Stmt, TypeAnnotation, VarDecl, VarType};
+    use super::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl, VarType};
+    use crate::algorithm_w::{Type, Environment};
 
     const TAB_SIZE: usize = 4;
 
@@ -255,43 +162,22 @@ mod printer {
                                 indent = indent * TAB_SIZE
             );
             if let Some(fun_type) = &self.fun_type {
-                f += fun_type.fmt_pretty(indent).as_str();
+                f += format!(":: ").as_str();
+                match fun_type {
+                    Type::Function(_, _) => f += fun_type.fmt_pretty(indent).as_str(),
+                    _ => f += format!("-> {}", fun_type.fmt_pretty(indent)).as_str()
+                }
             }
-            f += format!("{{\n").as_str();
+            f += format!(" {{\n").as_str();
             f += self.var_decls.iter().map(|var| var.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
             f += self.stmts.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
             f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
         }
     }
 
-    impl PrettyPrintable for FunType {
+    impl PrettyPrintable for Type {
         fn fmt_pretty(&self, indent: usize) -> String {
-            format!(":: {}-> {} ",
-                    self.arg_types.iter().map(|t| t.fmt_pretty(indent) + " ").collect::<Vec<String>>().join(""),
-                    self.ret_type.fmt_pretty(indent)
-            )
-        }
-    }
-
-    impl PrettyPrintable for RetType {
-        fn fmt_pretty(&self, indent: usize) -> String {
-            match self {
-                RetType::Type(t) => t.fmt_pretty(indent),
-                RetType::Void => String::from("Void"),
-            }
-        }
-    }
-
-    impl PrettyPrintable for TypeAnnotation {
-        fn fmt_pretty(&self, indent: usize) -> String {
-            match self {
-                TypeAnnotation::Int => format!("Int"),
-                TypeAnnotation::Bool => format!("Bool"),
-                TypeAnnotation::Char => format!("Char"),
-                TypeAnnotation::Tuple(l, r) => format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
-                TypeAnnotation::Array(t) => format!("[{}]", t.fmt_pretty(indent)),
-                TypeAnnotation::Polymorphic(t) => t.fmt_pretty(indent),
-            }
+            format!("{:indent$}{}", "", self.generalize(&Environment::new()), indent = indent * TAB_SIZE)
         }
     }
 

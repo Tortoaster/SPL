@@ -15,7 +15,7 @@ pub fn compile<P: AsRef<Path>>(path: P) -> Result<(SPL, Environment)> {
     let ast = SPL::new(lexer.peekable())?;
 
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     ast.infer_type_mut(&mut env, &mut gen)?;
 

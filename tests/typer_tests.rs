@@ -12,7 +12,7 @@ use spl::typer::error::TypeError;
 #[test]
 fn simple_exp() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let env = Environment::new(&mut gen);
+    let env = Environment::new();
 
     let exp = Exp::parse(&mut "1 + 1".tokenize()?.peekable())?;
     let (_, inferred) = exp.infer_type(&env, &mut gen)?;
@@ -25,7 +25,7 @@ fn simple_exp() -> Result<(), CompileError> {
 #[test]
 fn list_exp() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let env = Environment::new(&mut gen);
+    let env = Environment::new();
 
     let exp = Exp::parse(&mut "'a' : []".tokenize()?.peekable())?;
     let (_, inferred) = exp.infer_type(&env, &mut gen)?;
@@ -38,7 +38,7 @@ fn list_exp() -> Result<(), CompileError> {
 #[test]
 fn invalid_list() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let env = Environment::new(&mut gen);
+    let env = Environment::new();
 
     let exp = Exp::parse(&mut "1 : 'a' : []".tokenize()?.peekable())?;
     let result = exp.infer_type(&env, &mut gen).err().unwrap();
@@ -165,14 +165,14 @@ fn fields() -> Result<(), CompileError> {
 #[test]
 fn infer_mono_function() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "test(x) { x = x + 1; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
     let result = env.get(&(Id("test".to_owned()), Space::Fun)).unwrap();
 
-    assert_eq!("(Int -> Void)", format!("{}", result));
+    assert_eq!("Int -> Void", format!("{}", result));
 
     Ok(())
 }
@@ -180,14 +180,14 @@ fn infer_mono_function() -> Result<(), CompileError> {
 #[test]
 fn infer_poly_function() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "id(x) { return x; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
     let result = env.get(&(Id("id".to_owned()), Space::Fun)).unwrap();
 
-    assert_eq!("(a -> a)", format!("{}", result));
+    assert_eq!("a -> a", format!("{}", result));
 
     Ok(())
 }
@@ -195,7 +195,7 @@ fn infer_poly_function() -> Result<(), CompileError> {
 #[test]
 fn conflict_function() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "test(x) :: Bool -> Void { x = x + 1; }".tokenize()?.peekable())?;
     let result = program.infer_type_mut(&mut env, &mut gen);
@@ -208,7 +208,7 @@ fn conflict_function() -> Result<(), CompileError> {
 #[test]
 fn mut_rec() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "a(x) { return b(x); } b(x) { return c(x + 1); } c(x) { return a(x) + 1; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
@@ -217,9 +217,9 @@ fn mut_rec() -> Result<(), CompileError> {
     let result_b = env.get(&(Id("b".to_owned()), Space::Fun)).unwrap();
     let result_c = env.get(&(Id("c".to_owned()), Space::Fun)).unwrap();
 
-    assert_eq!("(Int -> Int)", format!("{}", result_a));
-    assert_eq!("(Int -> Int)", format!("{}", result_b));
-    assert_eq!("(Int -> Int)", format!("{}", result_c));
+    assert_eq!("Int -> Int", format!("{}", result_a));
+    assert_eq!("Int -> Int", format!("{}", result_b));
+    assert_eq!("Int -> Int", format!("{}", result_c));
 
     Ok(())
 }
@@ -227,7 +227,7 @@ fn mut_rec() -> Result<(), CompileError> {
 #[test]
 fn generalized_in_time() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "id1(x) { return x; } main(x) { id1(x); return id2(x + 1) + 1; } id2(x) { return x; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
@@ -236,9 +236,9 @@ fn generalized_in_time() -> Result<(), CompileError> {
     let result_id1 = env.get(&(Id("id1".to_owned()), Space::Fun)).unwrap();
     let result_id2 = env.get(&(Id("id2".to_owned()), Space::Fun)).unwrap();
 
-    assert_eq!("(Int -> Int)", format!("{}", result_main));
-    assert_eq!("(a -> a)", format!("{}", result_id1));
-    assert_eq!("(a -> a)", format!("{}", result_id2));
+    assert_eq!("Int -> Int", format!("{}", result_main));
+    assert_eq!("a -> a", format!("{}", result_id1));
+    assert_eq!("a -> a", format!("{}", result_id2));
 
     Ok(())
 }
@@ -246,7 +246,7 @@ fn generalized_in_time() -> Result<(), CompileError> {
 #[test]
 fn allowed_overloading() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "main(x, y) { return x > 'a' && y < 10; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
@@ -257,7 +257,7 @@ fn allowed_overloading() -> Result<(), CompileError> {
 #[test]
 fn strict_overloading() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "main(x, y) { return x > 'a' && y < True; }".tokenize()?.peekable())?;
     let result = program.infer_type_mut(&mut env, &mut gen);
@@ -270,21 +270,21 @@ fn strict_overloading() -> Result<(), CompileError> {
 #[test]
 fn flow_overloading() -> Result<(), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut "main(x) { return x == x; }".tokenize()?.peekable())?;
     program.infer_type_mut(&mut env, &mut gen)?;
 
     let result = env.get(&(Id("main".to_owned()), Space::Fun)).unwrap();
 
-    assert_eq!("Eq a => (a -> Bool)", format!("{}", result));
+    assert_eq!("Eq a => a -> Bool", format!("{}", result));
 
     Ok(())
 }
 
 fn type_check(code: &str) -> Result<(Result<Type, TypeError>, Environment), CompileError> {
     let mut gen = Generator::new();
-    let mut env = Environment::new(&mut gen);
+    let mut env = Environment::new();
 
     let program = SPL::parse(&mut code.tokenize()?.peekable())?;
 

@@ -27,31 +27,27 @@ impl InferMut for SPL {
         for scc in sccs {
             // First add all members of this scc to the environment
             for decl in &scc {
-                match decl {
-                    Decl::VarDecl(decl) => {
-                        if env.insert((decl.id.clone(), Space::Var), decl.var_type.transform(gen).into()).is_some() {
-                            return Err(TypeError::Conflict(decl.id.clone()));
-                        }
-                    }
+                let inner = match decl {
+                    Decl::VarDecl(decl) => decl.var_type.transform(env, gen),
                     Decl::FunDecl(decl) => {
-                        let inner = match &decl.fun_type {
+                        match &decl.fun_type {
                             None => {
                                 let args: Vec<Type> = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()))
                                     .take(decl.args.len())
                                     .collect();
                                 args
                                     .into_iter()
-                                    .rfold(Type::Polymorphic(gen.fresh()), |t, annotation| Type::Function(Box::new(annotation), Box::new(t)))
+                                    .rfold(Type::Polymorphic(gen.fresh()), |res, arg| Type::Function(Box::new(arg), Box::new(res)))
                             }
                             Some(fun_type) => {
-                                fun_type.transform(gen).inner
+                                fun_type.generalize(env).instantiate(gen)
                             }
-                        };
-                        if env.insert((decl.id.clone(), Space::Fun), inner.into()).is_some() {
-                            return Err(TypeError::Conflict(decl.id.clone()));
                         }
                     }
                 };
+                if env.insert((decl.id(), decl.space()), inner.into()).is_some() {
+                    return Err(TypeError::Conflict(decl.id()));
+                }
             }
 
             // Then infer their types
@@ -132,7 +128,8 @@ impl Infer for FunDecl {
             .iter()
             .fold(Ok(Substitution::new()), |acc, decl| {
                 let subst_a = acc?;
-                env.insert((decl.id.clone(), Space::Var), decl.var_type.transform(gen).into());
+                let inner = decl.var_type.transform(&env, gen);
+                env.insert((decl.id.clone(), Space::Var), inner.into());
                 let (subst_i, _) = decl.infer_type(&env, gen)?;
                 env = env.apply(&subst_i);
                 Ok(subst_i.compose(&subst_a))

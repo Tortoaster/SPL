@@ -4,11 +4,11 @@ use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 
 use crate::lexer::Lexable;
-use crate::parser::Parsable;
-use crate::tree::{FunType, Id};
+use crate::tree::Id;
 use crate::typer::error::Result;
 use crate::typer::error::TypeError;
 
+// TODO: Replace Vec with BTreeSet
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable(usize, Vec<Id>);
 
@@ -33,6 +33,10 @@ impl TypeVariable {
         let mut s = Substitution::new();
         s.insert(self.clone(), to.clone());
         Ok(s)
+    }
+
+    pub fn impose(&mut self, class: Id) {
+        self.1.push(class)
     }
 }
 
@@ -59,7 +63,7 @@ impl Generator {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub enum Type {
     Void,
     Int,
@@ -160,7 +164,10 @@ impl Type {
             Type::Char => format!("Char"),
             Type::Tuple(l, r) => format!("({}, {})", l.format(poly_names), r.format(poly_names)),
             Type::Array(a) => format!("[{}]", a.format(poly_names)),
-            Type::Function(a, b) => format!("({} -> {})", a.format(poly_names), b.format(poly_names)),
+            Type::Function(a, b) => match **b {
+                Type::Function(_, _) => format!("{} {}", a.format(poly_names), b.format(poly_names)),
+                _ => format!("{} -> {}", a.format(poly_names), b.format(poly_names))
+            }
             Type::Polymorphic(v) => format!("{}", poly_names.get(&v).unwrap_or(&'?'))
         }
     }
@@ -229,7 +236,7 @@ pub enum Space {
 pub struct Environment(HashMap<(Id, Space), PolyType>);
 
 impl Environment {
-    pub fn new(gen: &mut Generator) -> Self {
+    pub fn new() -> Self {
         let mut env = Environment(HashMap::new());
         for (name, annotation) in vec![
             ("print", "Show a => a -> Void"),
@@ -254,8 +261,9 @@ impl Environment {
             ("or", "Bool Bool -> Bool"),
             ("cons", "a [a] -> [a]"),
         ] {
-            let fun_type = FunType::parse(&mut annotation.tokenize().unwrap().peekable()).unwrap();
-            env.insert((Id(name.to_owned()), Space::Fun), fun_type.transform(gen));
+            let fun_type = Type::parse_function(&mut annotation.tokenize().unwrap().peekable(), &mut Generator::new(), &mut HashMap::new()).unwrap();
+            let scheme = fun_type.generalize(&mut env);
+            env.insert((Id(name.to_owned()), Space::Fun), scheme);
         }
         env
     }
