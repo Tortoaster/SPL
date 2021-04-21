@@ -138,18 +138,20 @@ impl Parsable for FunDecl {
 
 impl Parsable for VarType {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let var_type = match **tokens.peek().ok_or(ParseError::EOF { expected: "variable type".to_owned() })? {
+        match **tokens.peek().ok_or(ParseError::EOF { expected: "variable type".to_owned() })? {
             Token::Var => {
                 tokens.munch(Token::Var)?;
-                VarType::Var
+                Ok(VarType::Var)
             }
             _ => {
-                // TODO: Check not Void or type variable
-                VarType::Type(Type::parse_basic(tokens, &mut Generator::new(), &mut HashMap::new())?)
+                let parsed = Type::parse_basic(tokens, &mut Generator::new(), &mut HashMap::new())?;
+                match parsed {
+                    Type::Int | Type::Bool | Type::Char | Type::Tuple(_, _) | Type::Array(_) => Ok(VarType::Type(parsed)),
+                    Type::Polymorphic(_) => Err(ParseError::PolyVar),
+                    _ => Err(ParseError::InvalidAnnotation)
+                }
             }
-        };
-
-        Ok(var_type)
+        }
     }
 }
 
@@ -473,6 +475,8 @@ pub mod error {
             col: usize,
             code: String,
         },
+        InvalidAnnotation,
+        PolyVar,
     }
 
     impl fmt::Display for ParseError {
@@ -501,6 +505,8 @@ pub mod error {
                     "^",
                     indent = col - 1
                 ),
+                ParseError::InvalidAnnotation => write!(f, "Variables cannot have a function or void type"),
+                ParseError::PolyVar => write!(f, "Use the 'var' keyword to indicate a polymorphic variable")
             }
         }
     }
