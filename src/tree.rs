@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::algorithm_w::{Generator, Space, Type, Environment};
+use crate::algorithm_w::{Space, Type};
 use crate::lexer::Field;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -16,15 +16,9 @@ pub enum Decl {
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct VarDecl {
-    pub var_type: VarType,
+    pub var_type: Option<Type>,
     pub id: Id,
     pub exp: Exp,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub enum VarType {
-    Var,
-    Type(Type),
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -88,21 +82,12 @@ impl Decl {
     }
 }
 
-impl VarType {
-    pub fn transform(&self, env: &Environment, gen: &mut Generator) -> Type {
-        match self {
-            VarType::Var => Type::Polymorphic(gen.fresh()),
-            VarType::Type(t) => t.generalize(env).instantiate(gen)
-        }
-    }
-}
-
 mod printer {
     use std::fmt;
 
     use crate::lexer::Field;
 
-    use super::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl, VarType};
+    use super::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
     use crate::algorithm_w::{Type, Environment};
 
     const TAB_SIZE: usize = 4;
@@ -144,11 +129,12 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for VarType {
+    /// Pretty printer for variable type annotations
+    impl PrettyPrintable for Option<Type> {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
-                VarType::Var => String::from("var"),
-                VarType::Type(t) => t.fmt_pretty(indent),
+                None => String::from("var"),
+                Some(t) => t.fmt_pretty(indent),
             }
         }
     }

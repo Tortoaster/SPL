@@ -28,21 +28,20 @@ impl InferMut for SPL {
             // First add all members of this scc to the environment
             for decl in &scc {
                 let inner = match decl {
-                    Decl::VarDecl(decl) => decl.var_type.transform(env, gen),
-                    Decl::FunDecl(decl) => {
-                        match &decl.fun_type {
-                            None => {
-                                let args: Vec<Type> = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()))
-                                    .take(decl.args.len())
-                                    .collect();
-                                args
-                                    .into_iter()
-                                    .rfold(Type::Polymorphic(gen.fresh()), |res, arg| Type::Function(Box::new(arg), Box::new(res)))
-                            }
-                            Some(fun_type) => {
-                                fun_type.generalize(env).instantiate(gen)
-                            }
+                    Decl::VarDecl(decl) => match &decl.var_type {
+                        None => Type::Polymorphic(gen.fresh()),
+                        Some(var_type) => var_type.generalize(env).instantiate(gen)
+                    },
+                    Decl::FunDecl(decl) => match &decl.fun_type {
+                        None => {
+                            let args: Vec<Type> = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()))
+                                .take(decl.args.len())
+                                .collect();
+                            args
+                                .into_iter()
+                                .rfold(Type::Polymorphic(gen.fresh()), |res, arg| Type::Function(Box::new(arg), Box::new(res)))
                         }
+                        Some(fun_type) => fun_type.generalize(env).instantiate(gen)
                     }
                 };
                 if env.insert((decl.id(), decl.space()), inner.into()).is_some() {
@@ -128,7 +127,10 @@ impl Infer for FunDecl {
             .iter()
             .fold(Ok(Substitution::new()), |acc, decl| {
                 let subst_a = acc?;
-                let inner = decl.var_type.transform(&env, gen);
+                let inner = match &decl.var_type {
+                    None => Type::Polymorphic(gen.fresh()),
+                    Some(var_type) => var_type.generalize(&env).instantiate(gen)
+                };
                 env.insert((decl.id.clone(), Space::Var), inner.into());
                 let (subst_i, _) = decl.infer_type(&env, gen)?;
                 env = env.apply(&subst_i);

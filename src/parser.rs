@@ -7,7 +7,7 @@ use crate::algorithm_w::{Generator, Type, TypeVariable};
 use crate::char_iterator::Positioned;
 use crate::lexer::{Field, Lexer, Operator, Token};
 use crate::parser::error::ParseError;
-use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl, VarType};
+use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 
 trait Consume {
     fn munch<T: AsRef<Token>>(&mut self, expected: T) -> Result<()>;
@@ -103,7 +103,7 @@ impl Parsable for Decl {
 
 impl Parsable for VarDecl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let var_type = VarType::parse(tokens)?;
+        let var_type = <Option<Type>>::parse(tokens)?;
         let id = Id::parse(tokens)?;
         tokens.munch(Token::Assign)?;
         let exp = Exp::parse(tokens)?;
@@ -136,17 +136,18 @@ impl Parsable for FunDecl {
     }
 }
 
-impl Parsable for VarType {
+/// Parsable for variable type annotations
+impl Parsable for Option<Type> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         match **tokens.peek().ok_or(ParseError::EOF { expected: "variable type".to_owned() })? {
             Token::Var => {
                 tokens.munch(Token::Var)?;
-                Ok(VarType::Var)
+                Ok(None)
             }
             _ => {
                 let parsed = Type::parse_basic(tokens, &mut Generator::new(), &mut HashMap::new())?;
                 match parsed {
-                    Type::Int | Type::Bool | Type::Char | Type::Tuple(_, _) | Type::Array(_) => Ok(VarType::Type(parsed)),
+                    Type::Int | Type::Bool | Type::Char | Type::Tuple(_, _) | Type::Array(_) => Ok(Some(parsed)),
                     Type::Polymorphic(_) => Err(ParseError::PolyVar),
                     _ => Err(ParseError::InvalidAnnotation)
                 }
