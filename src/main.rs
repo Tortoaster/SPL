@@ -10,6 +10,8 @@ mod tree;
 mod compiler;
 mod call_graph;
 mod algorithm_w;
+mod generator;
+mod ssm;
 
 fn main() -> Result<(), CompileError> {
     let args: Vec<String> = env::args().collect();
@@ -18,9 +20,8 @@ fn main() -> Result<(), CompileError> {
         return Err(CompileError::InsufficientArguments);
     }
 
-    let (ast, env) = compiler::compile(&args[1])?;
+    let env = compiler::compile(&args[1])?;
 
-    println!("{}", ast);
     env
         .iter()
         .filter(|((id, _), _)|

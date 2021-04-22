@@ -5,6 +5,7 @@ use crate::call_graph;
 use crate::lexer::Field;
 use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 use crate::typer::error::TypeError;
+use std::ops::Deref;
 
 pub trait Infer {
     fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)>;
@@ -18,15 +19,21 @@ pub trait TryInfer {
     fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<(Type, bool)>)>;
 }
 
+pub struct DecoratedSPL(SPL);
+
+impl Deref for DecoratedSPL {
+    type Target = SPL;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl SPL {
-    pub fn infer_types(&mut self, env: &mut Environment, gen: &mut Generator) -> Result<()> {
+    pub fn infer_types(self, env: &mut Environment, gen: &mut Generator) -> Result<DecoratedSPL> {
         // TODO: Check for duplicate definitions
         let sccs = call_graph::topsorted_sccs(&self).ok_or(TypeError::Conflict(Id("Some".to_owned())))?;
         // TODO: Check variable cycles
-
-        let decorated = SPL {
-            decls: Vec::new()
-        };
 
         for scc in sccs {
             // First add all members of this scc to the environment
@@ -69,9 +76,9 @@ impl SPL {
             }
         }
 
-        *self = decorated;
+        // TODO: Decorate SPL
 
-        Ok(())
+        Ok(DecoratedSPL(self))
     }
 }
 

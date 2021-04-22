@@ -6,3 +6,5 @@ pub mod typer;
 pub mod compiler;
 pub mod call_graph;
 pub mod algorithm_w;
+pub mod generator;
+pub mod ssm;

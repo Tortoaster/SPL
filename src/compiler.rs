@@ -7,18 +7,19 @@ use crate::algorithm_w::{Environment, Generator};
 use crate::lexer::Lexable;
 use crate::tree::SPL;
 
-pub fn compile<P: AsRef<Path>>(path: P) -> Result<(SPL, Environment)> {
+pub fn compile<P: AsRef<Path>>(path: P) -> Result<Environment> {
     let code = fs::read_to_string(path).expect("File inaccessible");
 
     let lexer = code.as_str().tokenize()?;
-    let mut ast = SPL::new(lexer.peekable())?;
+    let ast = SPL::new(lexer.peekable())?;
 
     let mut gen = Generator::new();
     let mut env = Environment::new();
 
-    ast.infer_types(&mut env, &mut gen)?;
+    let decorated = ast.infer_types(&mut env, &mut gen)?;
+    let _ = decorated.generate_code()?;
 
-    Ok((ast, env))
+    Ok(env)
 }
 
 pub mod error {
@@ -29,6 +30,7 @@ pub mod error {
     use crate::lexer::error::LexError;
     use crate::parser::error::ParseError;
     use crate::typer::error::TypeError;
+    use crate::generator::error::GenError;
 
     pub type Result<T, E = CompileError> = std::result::Result<T, E>;
 
@@ -36,6 +38,7 @@ pub mod error {
         LexError(Vec<LexError>),
         ParseError(ParseError),
         TypeError(TypeError),
+        GenError(GenError),
         InsufficientArguments,
     }
 
@@ -45,6 +48,7 @@ pub mod error {
                 CompileError::LexError(e) => write!(f, "Lexer error:\n{}", e.iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n")),
                 CompileError::ParseError(e) => write!(f, "Parse error:\n{}", e),
                 CompileError::TypeError(e) => write!(f, "Type error:\n{}", e),
+                CompileError::GenError(e) => write!(f, "Generator error:\n{}", e),
                 CompileError::InsufficientArguments => write!(f, "Not enough arguments")
             }
         }
@@ -71,6 +75,12 @@ pub mod error {
     impl From<TypeError> for CompileError {
         fn from(e: TypeError) -> Self {
             CompileError::TypeError(e)
+        }
+    }
+
+    impl From<GenError> for CompileError {
+        fn from(e: GenError) -> Self {
+            CompileError::GenError(e)
         }
     }
 
