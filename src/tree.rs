@@ -16,6 +16,7 @@ pub enum Decl {
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct VarDecl {
+    // TODO: PolyType instead?
     pub var_type: Option<Type>,
     pub id: Id,
     pub exp: Exp,

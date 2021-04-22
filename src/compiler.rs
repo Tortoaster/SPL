@@ -7,6 +7,8 @@ use crate::algorithm_w::{Environment, Generator};
 use crate::lexer::Lexable;
 use crate::tree::SPL;
 
+const OUT: &str = "./out/out.ssm";
+
 pub fn compile<P: AsRef<Path>>(path: P) -> Result<Environment> {
     let code = fs::read_to_string(path).expect("File inaccessible");
 
@@ -17,7 +19,9 @@ pub fn compile<P: AsRef<Path>>(path: P) -> Result<Environment> {
     let mut env = Environment::new();
 
     let decorated = ast.infer_types(&mut env, &mut gen)?;
-    let _ = decorated.generate_code()?;
+    let program = decorated.generate_code()?;
+
+    fs::write(OUT, format!("{}", program)).expect("Unable to write file");
 
     Ok(env)
 }
