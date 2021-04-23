@@ -1,9 +1,10 @@
 use std::fmt;
 
 pub mod prelude {
-    pub use crate::ssm::Instruction::*;
-    pub use crate::ssm::Register::*;
-    pub use crate::ssm::Trap::*;
+    pub use super::Instruction::*;
+    pub use super::Register::*;
+    pub use super::Color::*;
+    pub use super::Trap::*;
 }
 
 pub enum Register {
@@ -42,7 +43,7 @@ impl fmt::Display for Register {
     }
 }
 
-pub struct Label(pub String);
+pub struct Label(String);
 
 impl Label {
     pub fn new(name: &str) -> Self {
@@ -92,42 +93,65 @@ pub enum Instruction {
     LoadAddress { address: usize },
     /// Loads multiple values at address, pushed to stack.
     LoadMultiAddress { address: usize, length: usize },
-    // ldaa
-    // sta
-    // stma
+    /// Adds an offset to the address on top of the stack.
+    ChangeAddress { offset: isize },
+    /// Pops an address and a value, then stores that value on the address offset by [`offset`].
+    StoreByAddress { offset: isize },
+    /// Pops an address and [`length`] values, then stores those values on the address offset by [`offset`].
+    StoreMultiByAddress { offset: isize, length: usize },
 
     // Registers
 
-    /// Pushes value from register on the stack.
-    LoadRegister { register: Register },
-    /// Copies a value from one register to the other.
+    /// Pushes value from reg on the stack.
+    LoadRegister { reg: Register },
+    /// Copies a value from one reg to the other.
     LoadRegisterFromRegister { to: Register, from: Register },
-    /// Pops stack into [`register`].
-    StoreRegister { register: Register },
-    // swp
-    // swpr
-    // swprr
+    /// Pops stack into [`reg`].
+    StoreRegister { reg: Register },
 
-    // ???
+    // Swapping
+
+    /// Swaps the top two values on the stack.
+    Swap,
+    /// Swaps the top value on the stack with the value in [`reg`].
+    SwapRegister { reg: Register },
+    /// Swaps the values of two regs.
+    SwapRegisters { reg1: Register, reg2: Register },
+
+    // Adjust stack
 
     /// Adds offset to the SP.
     AdjustStack { offset: isize },
 
     // Operations
 
+    /// Adds top two stack values, pushes the result.
     Add,
+    /// Multiplies top two stack values, pushes the result.
     Mul,
+    /// Subtracts top stack value from the value after it, pushes the result.
     Sub,
+    /// Divides top two stack values (top value being the divider), pushes the result.
     Div,
+    /// Modulo of top two stack values (top value being the modulus), pushes the result.
     Mod,
+    /// Performs and operation on the top two values on the stack, pushes the result.
     And,
+    /// Performs or operation on the top two values on the stack, pushes the result.
     Or,
+    /// Performs exclusive-or operation on the top two values on the stack, pushes the result.
     Xor,
+    /// Performs equals operation on the top two values on the stack, pushes the result.
     Eq,
+    /// Performs unequals operation on the top two values on the stack, pushes the result.
     Ne,
+    /// Performs less-than operation on the top two values on the stack, pushes the result.
     Lt,
+    /// Performs less-equals operation on the top two values on the stack, pushes the result.
     Le,
+    /// Performs greater-than operation on the top two values on the stack, pushes the result.
     Gt,
+    /// Performs greater-equal operation on the top two values on the stack, pushes the result.
     Ge,
     /// Negates top value on stack.
     Neg,
@@ -136,33 +160,53 @@ pub enum Instruction {
 
     // Branching and subroutines
 
+    /// Move to a label, remembering the current address.
     BranchSubroutine { label: Label },
-    /// Move to a label without remembering current address
+    /// Move to a label without remembering the current address.
     Branch { label: Label },
-    // brf
-    // brt
+    /// Pops a boolean of the stack, jumps to [`label`] if it's false.
+    BranchFalse { label: Label },
+    /// Pops a boolean of the stack, jumps to [`label`] if it's true.
+    BranchTrue { label: Label },
     /// Moves to the address on top of the stack.
     JumpSubroutine,
-    /// Pops previous PC from the stack and jumps to it.
+    /// Pops remembered address from the stack and jumps to it.
     Return,
 
     // Linking
 
-    /// Reserves [`length`] spaces for local variables
+    /// Reserves [`length`] spaces for local variables.
     Link { length: usize },
-    /// Removes local variables
+    /// Removes local variables.
     Unlink,
 
-    // nop
-    Halt,
-    Trap { trap: Trap },
-    // annote
-    // ldh
-    // ldmh
-    // sth
-    // stmh
+    // Miscellaneous
 
-    Labeled(Label, Box<Instruction>)
+    /// Does nothing.
+    Nop,
+    /// Stops the program.
+    Halt,
+    /// Used for input and output, behavior depends on the [`trap`].
+    Trap { trap: Trap },
+    /// Annotates the values from the address in [`reg`] offset by [`from`],
+    /// until the same address offset by [`to`].
+    Annotate { reg: Register, from: isize, to: isize, color: Color, desc: String },
+
+    // Heap
+
+    /// Pushes heap value on the stack.
+    LoadHeap { offset: isize },
+    /// Pushes multiple heap values on the stack.
+    LoadMultiHeap { offset: isize, length: usize },
+    /// Pops a value from the stack and stores it on the heap, pushes the address.
+    StoreHeap { offset: isize },
+    /// Pops [`length`] values from the stack and stores them on the heap, pushes the last address.
+    StoreMultiHeap { offset: isize, length: usize },
+
+    // Labels
+
+    /// Adds a label to an instruction.
+    Labeled(Label, Box<Instruction>),
 }
 
 impl fmt::Display for Instruction {
@@ -182,9 +226,19 @@ impl fmt::Display for Instruction {
             Instruction::StoreMultiLocal { offset, length } => write!(f, "stml {} {}", offset, length),
             Instruction::LoadLocalAddress { offset } => write!(f, "ldla {}", offset),
 
-            Instruction::LoadRegister { register } => write!(f, "ldr {}", register),
+            Instruction::LoadAddress { address } => write!(f, "lda {}", address),
+            Instruction::LoadMultiAddress { address, length } => write!(f, "ldma {} {}", address, length),
+            Instruction::ChangeAddress { offset } => write!(f, "ldaa {}", offset),
+            Instruction::StoreByAddress { offset } => write!(f, "sta {}", offset),
+            Instruction::StoreMultiByAddress { offset, length } => write!(f, "stma {} {}", offset, length),
+
+            Instruction::LoadRegister { reg } => write!(f, "ldr {}", reg),
             Instruction::LoadRegisterFromRegister { to, from } => write!(f, "ldrr {} {}", to, from),
-            Instruction::StoreRegister { register } => write!(f, "str {}", register),
+            Instruction::StoreRegister { reg } => write!(f, "str {}", reg),
+
+            Instruction::Swap => write!(f, "swp"),
+            Instruction::SwapRegister { reg } => write!(f, "swpr {}", reg),
+            Instruction::SwapRegisters { reg1, reg2 } => write!(f, "swprr {} {}", reg1, reg2),
 
             Instruction::AdjustStack { offset } => write!(f, "ajs {}", offset),
 
@@ -205,24 +259,66 @@ impl fmt::Display for Instruction {
             Instruction::Neg => write!(f, "neg"),
             Instruction::Not => write!(f, "not"),
 
-            Instruction::LoadAddress { address } => write!(f, "lda {}", address),
-            Instruction::LoadMultiAddress { address, length } => write!(f, "ldma {} {}", address, length),
-
             Instruction::BranchSubroutine { label } => write!(f, "bsr {}", label),
             Instruction::Branch { label } => write!(f, "bra {}", label),
+            Instruction::BranchFalse { label } => write!(f, "brf {}", label),
+            Instruction::BranchTrue { label } => write!(f, "brt {}", label),
             Instruction::JumpSubroutine => write!(f, "jsr"),
             Instruction::Return => write!(f, "ret"),
 
             Instruction::Link { length } => write!(f, "link {}", length),
             Instruction::Unlink => write!(f, "unlink"),
 
+            Instruction::Nop => write!(f, "nop"),
             Instruction::Halt => write!(f, "halt"),
             Instruction::Trap { trap } => write!(f, "trap {}", trap),
+            Instruction::Annotate { reg, from, to, color, desc } =>
+                write!(f, "annote {} {} {} {} {}", reg, from, to, color, desc),
 
-            Instruction::Labeled(label, instruction) => write!(f, "{}: {}", label, instruction),
+            Instruction::LoadHeap { offset } => write!(f, "ldh, {}", offset),
+            Instruction::LoadMultiHeap { offset, length } => write!(f, "ldmh, {} {}", offset, length),
+            Instruction::StoreHeap { offset } => write!(f, "sth, {}", offset),
+            Instruction::StoreMultiHeap { offset, length } => write!(f, "stmh, {} {}", offset, length),
+
+            Instruction::Labeled(label, instruction) => write!(f, "{}: {}", label, instruction)
         }
     }
 }
+
+pub enum Color {
+    Black,
+    Blue,
+    Cyan,
+    DarkGray,
+    Gray,
+    Green,
+    LightGray,
+    Magenta,
+    Orange,
+    Pink,
+    Red,
+    Yellow,
+}
+
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Color::Black => write!(f, "black"),
+            Color::Blue => write!(f, "blue"),
+            Color::Cyan => write!(f, "cyan"),
+            Color::DarkGray => write!(f, "darkGray"),
+            Color::Gray => write!(f, "gray"),
+            Color::Green => write!(f, "green"),
+            Color::LightGray => write!(f, "lightGray"),
+            Color::Magenta => write!(f, "magenta"),
+            Color::Orange => write!(f, "orange"),
+            Color::Pink => write!(f, "pink"),
+            Color::Red => write!(f, "red"),
+            Color::Yellow => write!(f, "yellow")
+        }
+    }
+}
+
 
 pub enum Trap {
     /// Pop a value from the stack and print it as an integer.
@@ -244,7 +340,7 @@ pub enum Trap {
     /// Pop a character and a file pointer and write it to the file.
     WriteToFile,
     /// Pop a file pointer and close that file.
-    CloseFile
+    CloseFile,
 }
 
 impl fmt::Display for Trap {

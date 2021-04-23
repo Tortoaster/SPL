@@ -43,7 +43,7 @@ impl Gen for SPL {
             Add,
             LoadLocal { offset: 1 },
             Add,
-            StoreRegister { register: RR },
+            StoreRegister { reg: RR },
             Unlink,
             Return,
 
@@ -51,7 +51,7 @@ impl Gen for SPL {
             LoadConstant(8),
             BranchSubroutine { label: Label::new("f") },
             AdjustStack { offset: -2 },
-            LoadRegister { register: RR },
+            LoadRegister { reg: RR },
             Trap { trap: PrintInt },
             Halt,
         ])
