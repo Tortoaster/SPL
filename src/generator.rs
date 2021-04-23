@@ -32,36 +32,13 @@ trait Gen {
 
 impl Gen for SPL {
     fn generate(&self) -> Result<Vec<Instruction>> {
-        Ok(vec![
-            Branch { label: Label::new("m") },
-
-            Labeled(Label::new("f"), Box::new(Link { length: 1 })),
-            LoadConstant(4),
-            StoreLocal { offset: 1 },
-            LoadLocal { offset: -3 },
-            LoadLocal { offset: -2 },
-            Add,
-            LoadLocal { offset: 1 },
-            Add,
-            StoreRegister { reg: RR },
-            Unlink,
-            Return,
-
-            Labeled(Label::new("m"), Box::new(LoadConstant(30))),
-            LoadConstant(8),
-            BranchSubroutine { label: Label::new("f") },
-            AdjustStack { offset: -2 },
-            LoadRegister { reg: RR },
-            Trap { trap: PrintInt },
-            Halt,
-        ])
-        // Ok(self.decls
-        //     .iter()
-        //     .map(|decl| decl.generate())
-        //     .collect::<Result<Vec<Vec<Instruction>>>>()?
-        //     .into_iter()
-        //     .flatten()
-        //     .collect())
+        Ok(self.decls
+            .iter()
+            .map(|decl| decl.generate())
+            .collect::<Result<Vec<Vec<Instruction>>>>()?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 }
 

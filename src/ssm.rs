@@ -1,10 +1,15 @@
 use std::fmt;
 
 pub mod prelude {
-    pub use super::Instruction::*;
-    pub use super::Register::*;
+    pub use super::Call;
+    pub use super::Call::*;
+    pub use super::Color;
     pub use super::Color::*;
-    pub use super::Trap::*;
+    pub use super::Instruction;
+    pub use super::Instruction::*;
+    pub use super::Label;
+    pub use super::Register;
+    pub use super::Register::*;
 }
 
 pub enum Register {
@@ -57,6 +62,37 @@ impl fmt::Display for Label {
     }
 }
 
+/// Type-safe set of instructions for the Simple Stack Machine.
+///
+/// # Examples
+///
+/// ```
+/// use spl::ssm::prelude::*;
+///
+/// let example: Vec<Instruction> = vec![
+///     Branch { label: Label::new("m") },
+///
+///     Labeled(Label::new("f"), Box::new(Link { length: 1 })),
+///     LoadConstant(4),
+///     StoreLocal { offset: 1 },
+///     LoadLocal { offset: -3 },
+///     LoadLocal { offset: -2 },
+///     Add,
+///     LoadLocal { offset: 1 },
+///     Add,
+///     StoreRegister { reg: RR },
+///     Unlink,
+///     Return,
+///
+///     Labeled(Label::new("m"), Box::new(LoadConstant(30))),
+///     LoadConstant(8),
+///     BranchSubroutine { label: Label::new("f") },
+///     AdjustStack { offset: -2 },
+///     LoadRegister { reg: RR },
+///     Trap { call: PrintInt },
+///     Halt,
+/// ];
+/// ```
 pub enum Instruction {
     // Stack instructions
 
@@ -187,7 +223,7 @@ pub enum Instruction {
     /// Stops the program.
     Halt,
     /// Used for input and output, behavior depends on the [`trap`].
-    Trap { trap: Trap },
+    Trap { call: Call },
     /// Annotates the values from the address in [`reg`] offset by [`from`],
     /// until the same address offset by [`to`].
     Annotate { reg: Register, from: isize, to: isize, color: Color, desc: String },
@@ -271,7 +307,7 @@ impl fmt::Display for Instruction {
 
             Instruction::Nop => write!(f, "nop"),
             Instruction::Halt => write!(f, "halt"),
-            Instruction::Trap { trap } => write!(f, "trap {}", trap),
+            Instruction::Trap { call: trap } => write!(f, "trap {}", trap),
             Instruction::Annotate { reg, from, to, color, desc } =>
                 write!(f, "annote {} {} {} {} {}", reg, from, to, color, desc),
 
@@ -320,7 +356,7 @@ impl fmt::Display for Color {
 }
 
 
-pub enum Trap {
+pub enum Call {
     /// Pop a value from the stack and print it as an integer.
     PrintInt,
     /// Pop a value from the stack and print it as a character.
@@ -343,19 +379,19 @@ pub enum Trap {
     CloseFile,
 }
 
-impl fmt::Display for Trap {
+impl fmt::Display for Call {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Trap::PrintInt => write!(f, "0"),
-            Trap::PrintChar => write!(f, "1"),
-            Trap::ReadInt => write!(f, "10"),
-            Trap::ReadChar => write!(f, "11"),
-            Trap::ReadString => write!(f, "12"),
-            Trap::OpenReadFile => write!(f, "20"),
-            Trap::OpenWriteFile => write!(f, "21"),
-            Trap::ReadFromFile => write!(f, "22"),
-            Trap::WriteToFile => write!(f, "23"),
-            Trap::CloseFile => write!(f, "24")
+            Call::PrintInt => write!(f, "0"),
+            Call::PrintChar => write!(f, "1"),
+            Call::ReadInt => write!(f, "10"),
+            Call::ReadChar => write!(f, "11"),
+            Call::ReadString => write!(f, "12"),
+            Call::OpenReadFile => write!(f, "20"),
+            Call::OpenWriteFile => write!(f, "21"),
+            Call::ReadFromFile => write!(f, "22"),
+            Call::WriteToFile => write!(f, "23"),
+            Call::CloseFile => write!(f, "24")
         }
     }
 }
