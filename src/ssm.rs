@@ -12,6 +12,7 @@ pub mod prelude {
     pub use super::Register::*;
 }
 
+#[allow(dead_code)]
 pub enum Register {
     PC,
     SP,
@@ -93,6 +94,7 @@ impl fmt::Display for Label {
 ///     Halt,
 /// ];
 /// ```
+#[allow(dead_code)]
 pub enum Instruction {
     // Stack instructions
 
@@ -321,6 +323,7 @@ impl fmt::Display for Instruction {
     }
 }
 
+#[allow(dead_code)]
 pub enum Color {
     Black,
     Blue,
@@ -355,7 +358,7 @@ impl fmt::Display for Color {
     }
 }
 
-
+#[allow(dead_code)]
 pub enum Call {
     /// Pop a value from the stack and print it as an integer.
     PrintInt,
