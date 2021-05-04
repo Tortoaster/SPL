@@ -104,15 +104,15 @@ pub enum Instruction {
     /// Pushes a value on the stack.
     LoadConstant(i32),
 
-    /// Pushes item elsewhere on top.
+    /// Pushes item relative to the stack-pointer on top.
     LoadStack { offset: isize },
-    /// Pushes multiple items elsewhere on top.
+    /// Pushes multiple items relative to the stack-pointer on top.
     LoadMultiStack { offset: isize, length: usize },
-    /// Moves topmost item elsewhere.
+    /// Moves topmost item elsewhere relative to the stack-pointer.
     StoreStack { offset: isize },
-    /// Moves top n items elsewhere.
+    /// Moves top n items elsewhere relative to the stack-pointer.
     StoreMultiStack { offset: isize, length: usize },
-    /// Pushes address of item elsewhere.
+    /// Pushes the address of an item relative to the stack-pointer.
     LoadStackAddress { offset: isize },
 
     // Local instructions

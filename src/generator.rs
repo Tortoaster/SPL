@@ -115,6 +115,9 @@ impl Gen for SPL {
         // Keep generating necessary variants until all are done
         while !variants.is_empty() {}
 
+        // Generate core functions
+        instructions.append(&mut core::core());
+
         Ok((instructions, variants))
     }
 }
@@ -226,6 +229,134 @@ impl Gen for Exp {
 impl FunCall {
     fn identifier(&self) -> &str {
         self.id.0.as_str()
+    }
+}
+
+mod core {
+    use crate::ssm::prelude::*;
+
+    pub fn core() -> Vec<Instruction> {
+        std::iter::empty()
+            .chain(print_char())
+            .chain(print_int())
+            .chain(print_bool())
+            .chain(eq_char())
+            .chain(eq_int())
+            .chain(eq_bool())
+            .chain(lt_char())
+            .chain(lt_int())
+            .chain(gt_char())
+            .chain(gt_int())
+            .chain(le_char())
+            .chain(le_int())
+            .chain(ge_char())
+            .chain(ge_int())
+            .collect()
+    }
+
+    fn print_char() -> Vec<Instruction> {
+        vec![
+            Labeled(Label::new("print$char"), Box::new(LoadStack { offset: -1 })),
+            Trap { call: PrintChar },
+            Return
+        ]
+    }
+
+    fn print_int() -> Vec<Instruction> {
+        vec![
+            Labeled(Label::new("print$int"), Box::new(LoadStack { offset: -1 })),
+            Trap { call: PrintInt },
+            Return
+        ]
+    }
+
+    fn print_bool() -> Vec<Instruction> {
+        vec![
+            Labeled(Label::new("print$int"), Box::new(LoadStack { offset: -1 })),
+            BranchFalse { label: Label::new("print$int-else1") },
+            LoadConstant('T' as i32),
+            Trap { call: PrintChar },
+            LoadConstant('r' as i32),
+            Trap { call: PrintChar },
+            LoadConstant('u' as i32),
+            Trap { call: PrintChar },
+            LoadConstant('e' as i32),
+            Trap { call: PrintChar },
+            Branch { label: Label::new("print$int-endif1") },
+            Labeled(Label::new("print$int-else1"), Box::new(LoadConstant('F' as i32))),
+            Trap { call: PrintChar },
+            LoadConstant('a' as i32),
+            Trap { call: PrintChar },
+            LoadConstant('l' as i32),
+            Trap { call: PrintChar },
+            LoadConstant('s' as i32),
+            Trap { call: PrintChar },
+            LoadConstant('e' as i32),
+            Trap { call: PrintChar },
+            Labeled(Label::new("print$int-endif1"), Box::new(Return)),
+        ]
+    }
+
+    fn eq_char() -> Vec<Instruction> {
+        vec![
+            Labeled(Label::new("eq$char"), Box::new(LoadStack { offset: -2 })),
+            LoadStack { offset: -2 },
+            Eq,
+            StoreRegister { reg: RR },
+            Return
+        ]
+    }
+
+    fn eq_int() -> Vec<Instruction> {
+        vec![
+            Labeled(Label::new("eq$int"), Box::new(LoadStack { offset: -2 })),
+            LoadStack { offset: -2 },
+            Eq,
+            StoreRegister { reg: RR },
+            Return
+        ]
+    }
+
+    fn eq_bool() -> Vec<Instruction> {
+        vec![
+            Labeled(Label::new("eq$bool"), Box::new(LoadStack { offset: -2 })),
+            LoadStack { offset: -2 },
+            Eq,
+            StoreRegister { reg: RR },
+            Return
+        ]
+    }
+
+    fn lt_char() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn lt_int() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn gt_char() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn gt_int() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn le_char() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn le_int() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn ge_char() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn ge_int() -> Vec<Instruction> {
+        vec![]
     }
 }
 
