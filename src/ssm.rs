@@ -13,6 +13,7 @@ pub mod prelude {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum Register {
     PC,
     SP,
@@ -49,6 +50,7 @@ impl fmt::Display for Register {
     }
 }
 
+#[derive(Clone)]
 pub struct Label(String);
 
 impl Label {
@@ -95,6 +97,7 @@ impl fmt::Display for Label {
 /// ];
 /// ```
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum Instruction {
     // Stack instructions
 
@@ -128,7 +131,7 @@ pub enum Instruction {
     // Address instructions
 
     /// Loads value at address, pushed to stack.
-    LoadAddress { address: usize },
+    LoadAddress { offset: isize },
     /// Loads multiple values at address, pushed to stack.
     LoadMultiAddress { address: usize, length: usize },
     /// Adds an offset to the address on top of the stack.
@@ -264,7 +267,7 @@ impl fmt::Display for Instruction {
             Instruction::StoreMultiLocal { offset, length } => write!(f, "stml {} {}", offset, length),
             Instruction::LoadLocalAddress { offset } => write!(f, "ldla {}", offset),
 
-            Instruction::LoadAddress { address } => write!(f, "lda {}", address),
+            Instruction::LoadAddress { offset } => write!(f, "lda {}", offset),
             Instruction::LoadMultiAddress { address, length } => write!(f, "ldma {} {}", address, length),
             Instruction::ChangeAddress { offset } => write!(f, "ldaa {}", offset),
             Instruction::StoreByAddress { offset } => write!(f, "sta {}", offset),
@@ -324,6 +327,7 @@ impl fmt::Display for Instruction {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum Color {
     Black,
     Blue,
@@ -359,6 +363,7 @@ impl fmt::Display for Color {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum Call {
     /// Pop a value from the stack and print it as an integer.
     PrintInt,

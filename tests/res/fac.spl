@@ -1,7 +1,20 @@
+var fac6 = fac(6);
+
 fac(n) :: Int -> Int {
     if (n < 2) {
         return 1;
     } else {
         return n * fac(n - 1);
+    }
+}
+
+main() {
+    var x = 3;
+    var facX = fac(x);
+    var facFacX = fac(facX);
+    if(facFacX == fac6) {
+        print('y':'a':'y':[]);
+    } else {
+        print('a':'w':'w':[]);
     }
 }
