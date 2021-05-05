@@ -1,7 +1,8 @@
 use std::fmt;
 
-use crate::algorithm_w::{Space, Type, PolyType};
+use crate::algorithm_w::{Space, Type, PolyType, TypeVariable};
 use crate::lexer::Field;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SPL {
@@ -56,7 +57,7 @@ pub enum Exp {
 pub struct FunCall {
     pub id: Id,
     pub args: Vec<Exp>,
-    pub call_type: Option<Type>
+    pub type_args: BTreeMap<TypeVariable, Type>
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::iter::Peekable;
 
 use error::Result;
@@ -303,7 +303,7 @@ impl Parsable for Stmt {
                     tokens.munch(Token::CloseParen)?;
                     tokens.munch(Token::Semicolon)?;
 
-                    Stmt::FunCall(FunCall { id, args, call_type: None })
+                    Stmt::FunCall(FunCall { id, args, type_args: BTreeMap::new() })
                 } else {
                     let selector = <Vec<Field>>::parse(tokens)?;
                     tokens.munch(Token::Assign)?;
@@ -327,18 +327,18 @@ impl Exp {
                 let id = Id(s);
                 if let Some(Positioned { inner: Token::OpenParen, .. }) = tokens.peek() {
                     tokens.munch(Token::OpenParen)?;
-                    let fun_call = FunCall { id, args: Exp::parse_many_sep(tokens, Token::Comma)?, call_type: None };
+                    let fun_call = FunCall { id, args: Exp::parse_many_sep(tokens, Token::Comma)?, type_args: BTreeMap::new() };
                     tokens.munch(Token::CloseParen)?;
                     Exp::FunCall(fun_call)
                 } else {
                     let fields = <Vec<Field>>::parse(tokens)?;
-                    fields.into_iter().fold(Exp::Variable(id), |e, f| Exp::FunCall(FunCall { id: Id(format!("{}", f)), args: vec![e], call_type: None }))
+                    fields.into_iter().fold(Exp::Variable(id), |e, f| Exp::FunCall(FunCall { id: Id(format!("{}", f)), args: vec![e], type_args: BTreeMap::new() }))
                 }
             }
             Positioned { inner: Token::Operator(op), row, col, .. } => {
                 let r_bp = op.prefix_binding_power(row, col)?;
                 let rhs = Self::parse_exp(tokens, r_bp)?;
-                Exp::FunCall(FunCall { id: Id(format!("{}", op)), args: vec![rhs], call_type: None })
+                Exp::FunCall(FunCall { id: Id(format!("{}", op)), args: vec![rhs], type_args: BTreeMap::new() })
             }
             Positioned { inner: Token::Number(n), .. } => Exp::Number(n),
             Positioned { inner: Token::Character(c), .. } => Exp::Character(c),
@@ -371,7 +371,7 @@ impl Exp {
             tokens.next();
             let rhs = Self::parse_exp(tokens, r_bp)?;
 
-            lhs = Exp::FunCall(FunCall { id: Id(format!("{}", op)), args: vec![lhs, rhs], call_type: None });
+            lhs = Exp::FunCall(FunCall { id: Id(format!("{}", op)), args: vec![lhs, rhs], type_args: BTreeMap::new() });
         }
 
         Ok(lhs)
