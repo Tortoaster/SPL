@@ -245,6 +245,7 @@ impl Environment {
             ("fst", "(a, b) -> a"),
             ("snd", "(a, b) -> b"),
             ("not", "Bool -> Bool"),
+            ("neg", "Int -> Int"),
             ("add", "Int Int -> Int"),
             ("sub", "Int Int -> Int"),
             ("mul", "Int Int -> Int"),

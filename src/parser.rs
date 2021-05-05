@@ -338,7 +338,7 @@ impl Exp {
             Positioned { inner: Token::Operator(op), row, col, .. } => {
                 let r_bp = op.prefix_binding_power(row, col)?;
                 let rhs = Self::parse_exp(tokens, r_bp)?;
-                Exp::FunCall(FunCall { id: Id(format!("{}", op)), args: vec![rhs], type_args: BTreeMap::new() })
+                Exp::FunCall(FunCall { id: op.prefix_id(row, col)?, args: vec![rhs], type_args: BTreeMap::new() })
             }
             Positioned { inner: Token::Number(n), .. } => Exp::Number(n),
             Positioned { inner: Token::Character(c), .. } => Exp::Character(c),
@@ -368,10 +368,12 @@ impl Exp {
             }
 
             let op = op.clone();
+            let row = *row;
+            let col = *col;
             tokens.next();
             let rhs = Self::parse_exp(tokens, r_bp)?;
 
-            lhs = Exp::FunCall(FunCall { id: Id(format!("{}", op)), args: vec![lhs, rhs], type_args: BTreeMap::new() });
+            lhs = Exp::FunCall(FunCall { id: op.infix_id(row, col)?, args: vec![lhs, rhs], type_args: BTreeMap::new() });
         }
 
         Ok(lhs)
@@ -383,8 +385,8 @@ impl Operator {
         let bp = match self {
             Operator::Minus => 17,
             Operator::Not => 7,
-            op => return Err(ParseError::Fixity {
-                found: op.clone(),
+            _ => return Err(ParseError::Fixity {
+                found: self.clone(),
                 prefix: true,
                 row,
                 col,
@@ -405,8 +407,8 @@ impl Operator {
             Operator::And => (6, 5),
             Operator::Or => (4, 3),
             Operator::Cons => (2, 1),
-            op => return Err(ParseError::Fixity {
-                found: op.clone(),
+            _ => return Err(ParseError::Fixity {
+                found: self.clone(),
                 prefix: false,
                 row,
                 col,
@@ -415,6 +417,50 @@ impl Operator {
         };
 
         Ok(bp)
+    }
+
+    pub fn prefix_id(&self, row: usize, col: usize) -> Result<Id> {
+        let name = match self {
+            Operator::Not => "not",
+            Operator::Minus => "neg",
+            _ => return Err(ParseError::Fixity {
+                found: self.clone(),
+                prefix: true,
+                row,
+                col,
+                code: "TODO".to_string()
+            })
+        };
+
+        Ok(Id(name.to_owned()))
+    }
+
+    pub fn infix_id(&self, row: usize, col: usize) -> Result<Id> {
+        let name = match self {
+            Operator::Plus => "add",
+            Operator::Minus => "sub",
+            Operator::Times => "mul",
+            Operator::Divide => "div",
+            Operator::Modulo => "mod",
+            Operator::Equals => "eq",
+            Operator::NotEqual => "ne",
+            Operator::Smaller => "lt",
+            Operator::Greater => "gt",
+            Operator::SmallerEqual => "le",
+            Operator::GreaterEqual => "ge",
+            Operator::And => "and",
+            Operator::Or => "or",
+            Operator::Cons => "cons",
+            _ => return Err(ParseError::Fixity {
+                found: self.clone(),
+                prefix: false,
+                row,
+                col,
+                code: "TODO".to_string()
+            })
+        };
+
+        Ok(Id(name.to_owned()))
     }
 }
 

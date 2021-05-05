@@ -66,28 +66,6 @@ pub enum Operator {
     Cons,
 }
 
-impl fmt::Display for Operator {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Operator::Not => write!(f, "not"),
-            Operator::Plus => write!(f, "add"),
-            Operator::Minus => write!(f, "sub"),
-            Operator::Times => write!(f, "mul"),
-            Operator::Divide => write!(f, "div"),
-            Operator::Modulo => write!(f, "mod"),
-            Operator::Equals => write!(f, "eq"),
-            Operator::NotEqual => write!(f, "ne"),
-            Operator::Smaller => write!(f, "lt"),
-            Operator::Greater => write!(f, "gt"),
-            Operator::SmallerEqual => write!(f, "le"),
-            Operator::GreaterEqual => write!(f, "ge"),
-            Operator::And => write!(f, "and"),
-            Operator::Or => write!(f, "or"),
-            Operator::Cons => write!(f, "cons"),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Field {
     Head,

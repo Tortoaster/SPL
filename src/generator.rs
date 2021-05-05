@@ -143,7 +143,7 @@ impl VarDecl {
     fn generate_local(&self, index: isize, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
         let offset = index + 1;
         // Initialization
-        let (mut instructions, deps) = self.exp.generate(scope)?;
+        let (instructions, deps) = self.exp.generate(scope)?;
 
         // Retrieving
         scope.locals.insert(self.id.clone(), vec![LoadLocal { offset }]);
@@ -251,6 +251,15 @@ mod core {
             .chain(le_int())
             .chain(ge_char())
             .chain(ge_int())
+            .chain(add())
+            .chain(sub())
+            .chain(mul())
+            .chain(div())
+            .chain(modulo())
+            .chain(neg())
+            .chain(and())
+            .chain(or())
+            .chain(not())
             .collect()
     }
 
@@ -272,8 +281,8 @@ mod core {
 
     fn print_bool() -> Vec<Instruction> {
         vec![
-            Labeled(Label::new("print$int"), Box::new(LoadStack { offset: -1 })),
-            BranchFalse { label: Label::new("print$int-else1") },
+            Labeled(Label::new("print$bool"), Box::new(LoadStack { offset: -1 })),
+            BranchFalse { label: Label::new("print$bool-else1") },
             LoadConstant('T' as i32),
             Trap { call: PrintChar },
             LoadConstant('r' as i32),
@@ -282,8 +291,8 @@ mod core {
             Trap { call: PrintChar },
             LoadConstant('e' as i32),
             Trap { call: PrintChar },
-            Branch { label: Label::new("print$int-endif1") },
-            Labeled(Label::new("print$int-else1"), Box::new(LoadConstant('F' as i32))),
+            Branch { label: Label::new("print$bool-endif1") },
+            Labeled(Label::new("print$bool-else1"), Box::new(LoadConstant('F' as i32))),
             Trap { call: PrintChar },
             LoadConstant('a' as i32),
             Trap { call: PrintChar },
@@ -293,7 +302,7 @@ mod core {
             Trap { call: PrintChar },
             LoadConstant('e' as i32),
             Trap { call: PrintChar },
-            Labeled(Label::new("print$int-endif1"), Box::new(Return)),
+            Labeled(Label::new("print$bool-endif1"), Box::new(Return)),
         ]
     }
 
@@ -358,6 +367,44 @@ mod core {
     fn ge_int() -> Vec<Instruction> {
         vec![]
     }
+
+    fn add() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn sub() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn mul() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn div() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn modulo() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn neg() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn and() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn or() -> Vec<Instruction> {
+        vec![]
+    }
+
+    fn not() -> Vec<Instruction> {
+        vec![]
+    }
+
+    // hd, tl, cons, fst, snd, isEmpty
 }
 
 pub mod error {
