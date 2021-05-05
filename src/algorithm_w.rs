@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeSet};
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
@@ -9,7 +9,7 @@ use crate::typer::error::Result;
 use crate::typer::error::TypeError;
 
 // TODO: Replace Vec with BTreeSet
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct TypeVariable(usize, Vec<Id>);
 
 impl TypeVariable {
@@ -173,9 +173,9 @@ impl Type {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct PolyType {
-    pub variables: Vec<TypeVariable>,
+    pub variables: BTreeSet<TypeVariable>,
     pub inner: Type,
 }
 
@@ -192,7 +192,7 @@ impl PolyType {
 impl From<Type> for PolyType {
     fn from(inner: Type) -> Self {
         PolyType {
-            variables: Vec::new(),
+            variables: BTreeSet::new(),
             inner,
         }
     }

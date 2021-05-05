@@ -3,7 +3,7 @@ use std::iter::Peekable;
 
 use error::Result;
 
-use crate::algorithm_w::{Generator, Type, TypeVariable};
+use crate::algorithm_w::{Generator, Type, TypeVariable, Environment};
 use crate::char_iterator::Positioned;
 use crate::lexer::{Field, Lexer, Operator, Token};
 use crate::parser::error::ParseError;
@@ -122,7 +122,7 @@ impl Parsable for FunDecl {
 
         let fun_type = if let Some(Positioned { inner: Token::HasType, .. }) = tokens.peek() {
             tokens.munch(Token::HasType)?;
-            Some(Type::parse_function(tokens, &mut Generator::new(), &mut HashMap::new())?)
+            Some(Type::parse_function(tokens, &mut Generator::new(), &mut HashMap::new())?.generalize(&Environment::new()))
         } else {
             None
         };

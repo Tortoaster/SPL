@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::algorithm_w::{Space, Type};
+use crate::algorithm_w::{Space, Type, PolyType};
 use crate::lexer::Field;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -26,7 +26,7 @@ pub struct VarDecl {
 pub struct FunDecl {
     pub id: Id,
     pub args: Vec<Id>,
-    pub fun_type: Option<Type>,
+    pub fun_type: Option<PolyType>,
     pub var_decls: Vec<VarDecl>,
     pub stmts: Vec<Stmt>,
 }
@@ -90,7 +90,7 @@ mod printer {
     use crate::lexer::Field;
 
     use super::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
-    use crate::algorithm_w::{Type, Environment};
+    use crate::algorithm_w::{Type, Environment, PolyType};
 
     const TAB_SIZE: usize = 4;
 
@@ -136,7 +136,7 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
                 None => String::from("var"),
-                Some(t) => t.fmt_pretty(indent),
+                Some(t) => t.generalize(&Environment::new()).fmt_pretty(indent),
             }
         }
     }
@@ -151,7 +151,7 @@ mod printer {
             );
             if let Some(fun_type) = &self.fun_type {
                 f += format!(":: ").as_str();
-                match fun_type {
+                match fun_type.inner {
                     Type::Function(_, _) => f += fun_type.fmt_pretty(indent).as_str(),
                     _ => f += format!("-> {}", fun_type.fmt_pretty(indent)).as_str()
                 }
@@ -163,9 +163,9 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for Type {
+    impl PrettyPrintable for PolyType {
         fn fmt_pretty(&self, indent: usize) -> String {
-            format!("{:indent$}{}", "", self.generalize(&Environment::new()), indent = indent * TAB_SIZE)
+            format!("{:indent$}{}", "", self, indent = indent * TAB_SIZE)
         }
     }
 

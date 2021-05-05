@@ -52,7 +52,7 @@ impl SPL {
                                 .into_iter()
                                 .rfold(Type::Polymorphic(gen.fresh()), |res, arg| Type::Function(Box::new(arg), Box::new(res)))
                         }
-                        Some(fun_type) => fun_type.generalize(env).instantiate(gen)
+                        Some(fun_type) => fun_type.instantiate(gen)
                     }
                 };
                 if env.insert((decl.id(), decl.space()), inner.into()).is_some() {
