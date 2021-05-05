@@ -6,8 +6,16 @@ const RES_DIR: &str = "tests/res/";
 
 #[test]
 fn fac() {
-    let code = fs::read_to_string(RES_DIR.to_owned() + "fac.spl").expect("File inaccessible");
-    let tokens: Vec<Token> = code.as_str().tokenize().expect("Failed to tokenize").map(|p| p.inner).collect();
+    let code = "
+    fac(n) :: Int -> Int {
+        if (n < 2) {
+            return 1;
+        } else {
+            return n * fac(n - 1);
+        }
+    }
+    ";
+    let tokens: Vec<Token> = code.tokenize().expect("Failed to tokenize").map(|p| p.inner).collect();
     let expected = vec![
         Token::Identifier("fac".into()),
         Token::OpenParen,
