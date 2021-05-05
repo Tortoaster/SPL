@@ -8,9 +8,8 @@ use crate::tree::Id;
 use crate::typer::error::Result;
 use crate::typer::error::TypeError;
 
-// TODO: Replace Vec with BTreeSet
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct TypeVariable(usize, Vec<Id>);
+pub struct TypeVariable(usize, BTreeSet<Id>);
 
 impl TypeVariable {
     fn bind(&self, to: &Type) -> Result<Substitution> {
@@ -36,7 +35,7 @@ impl TypeVariable {
     }
 
     pub fn impose(&mut self, class: Id) {
-        self.1.push(class)
+        self.1.insert(class);
     }
 }
 
@@ -53,10 +52,10 @@ impl Generator {
 
     pub fn fresh(&mut self) -> TypeVariable {
         self.current += 1;
-        TypeVariable(self.current, Vec::new())
+        TypeVariable(self.current, BTreeSet::new())
     }
 
-    pub fn fresh_with(&mut self, classes: Vec<Id>) -> TypeVariable {
+    pub fn fresh_with(&mut self, classes: BTreeSet<Id>) -> TypeVariable {
         let mut var = self.fresh();
         var.1 = classes;
         var
