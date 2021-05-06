@@ -18,6 +18,9 @@ struct Scope {
     locals: HashMap<Id, Vec<Instruction>>,
     arguments: HashMap<Id, Vec<Instruction>>,
     functions: HashMap<FunCall, Vec<Instruction>>,
+    current_label: Label,
+    ifs: usize,
+    whiles: usize,
 }
 
 impl Scope {
@@ -27,6 +30,9 @@ impl Scope {
             locals: HashMap::new(),
             arguments: HashMap::new(),
             functions: HashMap::new(),
+            current_label: Label::new(""),
+            ifs: 0,
+            whiles: 0
         }
     }
 
@@ -173,13 +179,98 @@ impl Gen for FunDecl {
 }
 
 impl Gen for Stmt {
-    fn generate(&self, _: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
+    fn generate(&self, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
         let instructions = match self {
-            Stmt::If(_, _, _) => vec![Nop],
-            Stmt::While(_, _) => vec![Nop],
+            Stmt::If(c, t, e) => {
+                scope.ifs += 1;
+                let else_label = scope.current_label
+                    .clone()
+                    .with_suffix(format!("else{}", scope.ifs));
+                let end_label = scope.current_label
+                    .clone()
+                    .with_suffix(format!("endif{}", scope.ifs));
+
+                let mut c = c.generate(scope)?.0;
+                c.push(BranchFalse { label: else_label.clone() });
+                let mut t: Vec<Instruction> = t
+                    .iter()
+                    .map(|stmt| stmt.generate(scope))
+                    .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+                    .into_iter()
+                    .flat_map(|(instructions, _)| instructions)
+                    .collect();
+                t.push(Branch { label: end_label.clone() });
+                let mut e: Vec<Instruction> = e
+                    .iter()
+                    .map(|stmt| stmt.generate(scope))
+                    .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+                    .into_iter()
+                    .flat_map(|(instructions, _)| instructions)
+                    .collect();
+                let labeled = Labeled(else_label, Box::new(e[0].clone()));
+                e[0] = labeled;
+                e.push(Labeled(end_label, Box::new(Nop)));
+                c.append(&mut t);
+                c.append(&mut e);
+                c
+            }
+            Stmt::While(c, t) => {
+                scope.whiles += 1;
+                let start_label = scope.current_label
+                    .clone()
+                    .with_suffix(format!("while{}", scope.ifs));
+                let end_label = scope.current_label
+                    .clone()
+                    .with_suffix(format!("endwhile{}", scope.ifs));
+
+                let mut c = c.generate(scope)?.0;
+                let labeled = Labeled(start_label.clone(), Box::new(c[0].clone()));
+                c[0] = labeled;
+                c.push(BranchFalse { label: end_label.clone() });
+                let mut t: Vec<Instruction> = t
+                    .iter()
+                    .map(|stmt| stmt.generate(scope))
+                    .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+                    .into_iter()
+                    .flat_map(|(instructions, _)| instructions)
+                    .collect();
+                t.push(Branch { label: start_label });
+                t.push(Labeled(end_label, Box::new(Nop)));
+                c.append(&mut t);
+                c
+            },
             Stmt::Assignment(_, _, _) => vec![Nop],
-            Stmt::FunCall(_) => vec![Nop],
-            Stmt::Return(_) => vec![Nop],
+            Stmt::FunCall(fun_call) => fun_call.args
+                .iter()
+                .map(|arg| arg.generate(scope))
+                .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+                .into_iter()
+                .flat_map(|(instructions, _)| instructions)
+                .chain(vec![
+                    // Branch to function
+                    BranchSubroutine { label: fun_call.label() },
+                    // Remove arguments
+                    AdjustStack { offset: -(fun_call.args.len() as isize) },
+                ])
+                .collect(),
+            Stmt::Return(ret) => {
+                match ret {
+                    None => vec![
+                        Unlink,
+                        Return
+                    ],
+                    Some(exp) => exp
+                        .generate(scope)?
+                        .0
+                        .into_iter()
+                        .chain(vec![
+                            StoreRegister { reg: RR },
+                            Unlink,
+                            Return
+                        ])
+                        .collect()
+                }
+            }
         };
 
         Ok((instructions, HashSet::new()))

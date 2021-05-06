@@ -51,17 +51,31 @@ impl fmt::Display for Register {
 }
 
 #[derive(Clone)]
-pub struct Label(String);
+pub struct Label {
+    name: String,
+    suffix: Option<String>,
+}
 
 impl Label {
     pub fn new<S: AsRef<str>>(name: S) -> Self {
-        Label(name.as_ref().to_owned())
+        Label {
+            name: name.as_ref().to_owned(),
+            suffix: None
+        }
+    }
+    pub fn with_suffix<S: AsRef<str>>(mut self, suffix: S) -> Self {
+        self.suffix = Some(suffix.as_ref().to_owned());
+        self
     }
 }
 
 impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.name)?;
+        if let Some(suffix) = &self.suffix {
+            write!(f, "-{}", suffix)?;
+        }
+        Ok(())
     }
 }
 
