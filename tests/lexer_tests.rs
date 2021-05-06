@@ -1,8 +1,4 @@
-use std::fs;
-
 use spl::lexer::{Lexable, Operator, Token};
-
-const RES_DIR: &str = "tests/res/";
 
 #[test]
 fn fac() {

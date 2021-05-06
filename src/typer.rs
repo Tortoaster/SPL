@@ -382,7 +382,7 @@ pub mod error {
     use std::fmt;
     use std::fmt::Debug;
 
-    use crate::algorithm_w::{Type, TypeVariable};
+    use crate::algorithm_w::{Type, TypeVariable, TypeClass};
     use crate::tree::Id;
 
     pub type Result<T, E = TypeError> = std::result::Result<T, E>;
@@ -395,13 +395,13 @@ pub mod error {
         },
         TypeClass {
             found: Type,
-            class: Id,
+            class: TypeClass,
         },
         Unbound(Id),
         Conflict(Id),
         Recursive(TypeVariable, Type),
         Incomplete(Id),
-        UndefinedClass(Id),
+        UndefinedClass(TypeClass),
     }
 
     impl fmt::Display for TypeError {
@@ -413,7 +413,7 @@ pub mod error {
                 TypeError::Conflict(id) => write!(f, "Variable {:?} is defined more than once", id),
                 TypeError::Recursive(v, t) => write!(f, "Occur check fails: {:?} vs {:?}", v, t),
                 TypeError::Incomplete(id) => write!(f, "Function {:?} does not return a correct value in all paths", id),
-                TypeError::UndefinedClass(id) => write!(f, "Type class {:?} not found", id),
+                TypeError::UndefinedClass(class) => write!(f, "Type class {:?} not found", class),
             }
         }
     }

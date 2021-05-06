@@ -3,7 +3,7 @@ use std::iter::Peekable;
 
 use error::Result;
 
-use crate::algorithm_w::{Generator, Type, TypeVariable, Environment};
+use crate::algorithm_w::{Generator, Type, TypeVariable, Environment, TypeClass};
 use crate::char_iterator::Positioned;
 use crate::lexer::{Field, Lexer, Operator, Token};
 use crate::parser::error::ParseError;
@@ -157,18 +157,24 @@ impl Parsable for Option<Type> {
 }
 
 /// Parsable for many type class annotations
-impl Parsable for Vec<(Id, Id)> {
+impl Parsable for Vec<(TypeClass, Id)> {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let type_classes = <(Id, Id)>::parse_many_sep(tokens, Token::Comma)?;
+        let type_classes = <(TypeClass, Id)>::parse_many_sep(tokens, Token::Comma)?;
         tokens.munch(Token::DoubleArrow)?;
         Ok(type_classes)
     }
 }
 
 /// Parsable for type class annotations
-impl Parsable for (Id, Id) {
+impl Parsable for (TypeClass, Id) {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let class = Id::parse(tokens)?;
+        let class = match Id::parse(tokens)?.0.as_str() {
+            "Any" => TypeClass::Any,
+            "Show" => TypeClass::Show,
+            "Eq" => TypeClass::Eq,
+            "Ord" => TypeClass::Ord,
+            _ => return Err(ParseError::InvalidAnnotation)
+        };
         let var = Id::parse(tokens)?;
 
         Ok((class, var))
@@ -229,7 +235,7 @@ impl Type {
     /// Parses a function type, including type class constraints
     pub fn parse_function(tokens: &mut Peekable<Lexer>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<Self> {
         // Read optional type class constraints
-        let type_classes = <Vec<(Id, Id)>>::try_parse(tokens).unwrap_or(Vec::new());
+        let type_classes = <Vec<(TypeClass, Id)>>::try_parse(tokens).unwrap_or(Vec::new());
         for (class, var) in type_classes {
             poly_names.entry(var).or_insert(gen.fresh()).impose(class);
         }

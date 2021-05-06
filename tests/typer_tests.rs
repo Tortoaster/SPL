@@ -1,12 +1,12 @@
 use std::fs;
 
-use spl::algorithm_w::{Environment, Generator, Space, Type};
+use spl::algorithm_w::{Environment, Generator, Space, Type, TypeClass};
 use spl::compiler::error::CompileError;
 use spl::lexer::Lexable;
 use spl::parser::Parsable;
 use spl::tree::{Exp, Id, SPL};
-use spl::typer::Infer;
 use spl::typer::error::TypeError;
+use spl::typer::Infer;
 
 #[test]
 fn simple_exp() -> Result<(), CompileError> {
@@ -266,7 +266,7 @@ fn strict_overloading() -> Result<(), CompileError> {
     let program = SPL::parse(&mut "main(x, y) { return x > 'a' && y < True; }".tokenize()?.peekable())?;
     let result = program.infer_types(&mut env, &mut gen);
 
-    assert_eq!(TypeError::TypeClass { found: Type::Bool, class: Id("Ord".to_owned()) }, result.err().unwrap());
+    assert_eq!(TypeError::TypeClass { found: Type::Bool, class: TypeClass::Ord }, result.err().unwrap());
 
     Ok(())
 }

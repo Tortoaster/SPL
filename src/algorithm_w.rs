@@ -9,7 +9,7 @@ use crate::typer::error::Result;
 use crate::typer::error::TypeError;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct TypeVariable(usize, BTreeSet<Id>);
+pub struct TypeVariable(usize, BTreeSet<TypeClass>);
 
 impl TypeVariable {
     fn bind(&self, to: &Type) -> Result<Substitution> {
@@ -34,7 +34,7 @@ impl TypeVariable {
         Ok(s)
     }
 
-    pub fn impose(&mut self, class: Id) {
+    pub fn impose(&mut self, class: TypeClass) {
         self.1.insert(class);
     }
 }
@@ -55,14 +55,14 @@ impl Generator {
         TypeVariable(self.current, BTreeSet::new())
     }
 
-    pub fn fresh_with(&mut self, classes: BTreeSet<Id>) -> TypeVariable {
+    pub fn fresh_with(&mut self, classes: BTreeSet<TypeClass>) -> TypeVariable {
         let mut var = self.fresh();
         var.1 = classes;
         var
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
 pub enum Type {
     Void,
     Int,
@@ -101,13 +101,8 @@ impl Type {
                 Ok(subst_b.compose(&subst_a))
             }
             (Type::Polymorphic(v1), Type::Polymorphic(v2)) => {
-                let combined: HashSet<Id> = v1.1
-                    .iter()
-                    .cloned()
-                    .chain(v2.1.clone())
-                    .collect();
-                let new = Type::Polymorphic(TypeVariable(v2.0, combined.into_iter().collect()));
-                // TODO: Bind old value of v2 to new value of v2?
+                let combined = v1.1.union(&v2.1).cloned().collect();
+                let new = Type::Polymorphic(TypeVariable(v2.0, combined));
                 Ok(v1.bind(&new)?.compose(&v2.bind(&new)?))
             }
             (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
@@ -115,29 +110,30 @@ impl Type {
         }
     }
 
-    fn implements(&self, class: &Id) -> Result<bool> {
+    fn implements(&self, class: &TypeClass) -> Result<bool> {
         if let Type::Polymorphic(var) = self {
             if var.1.contains(class) {
                 return Ok(true);
             }
         }
 
-        let result = match class.0.as_str() {
-            "Eq" => match self {
-                Type::Int | Type::Bool | Type::Char => true,
-                _ => false
-            }
-            "Ord" => match self {
-                Type::Int | Type::Char => true,
-                _ => false
-            }
-            "Show" => match self {
+        let result = match class {
+            TypeClass::Any => true,
+            TypeClass::Show => match self {
                 Type::Int | Type::Char | Type::Bool => true,
                 Type::Tuple(l, r) => l.implements(class)? && r.implements(class)?,
                 Type::Array(a) => a.implements(class)?,
                 _ => false
             }
-            _ => return Err(TypeError::UndefinedClass(class.clone()))
+            TypeClass::Eq => match self {
+                Type::Int | Type::Bool | Type::Char => true,
+                _ => false
+            }
+            TypeClass::Ord => match self {
+                Type::Int | Type::Char => true,
+                _ => false
+            }
+            // _ => return Err(TypeError::UndefinedClass(class.clone()))
         };
 
         Ok(result)
@@ -172,7 +168,52 @@ impl Type {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.format(&HashMap::new()))
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
+pub enum TypeClass {
+    Any,
+    Show,
+    Eq,
+    Ord
+}
+
+impl TypeClass {
+    fn dependencies(&self) -> BTreeSet<TypeClass> {
+        match self {
+            TypeClass::Any => BTreeSet::new(),
+            TypeClass::Show => Some(TypeClass::Any).into_iter().collect(),
+            TypeClass::Eq => Some(TypeClass::Any).into_iter().collect(),
+            TypeClass::Ord => Some(TypeClass::Eq).into_iter().collect(),
+        }
+    }
+
+    fn methods(&self) -> Vec<Id> {
+        match self {
+            TypeClass::Any => Vec::new(),
+            TypeClass::Show => vec![Id("show".to_owned())],
+            TypeClass::Eq => vec![Id("eq".to_owned()), Id("ne".to_owned())],
+            TypeClass::Ord => vec![Id("lt".to_owned()), Id("gt".to_owned()), Id("le".to_owned()), Id("ge".to_owned())],
+        }
+    }
+}
+
+impl fmt::Display for TypeClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TypeClass::Any => write!(f, "Any"),
+            TypeClass::Show => write!(f, "Show"),
+            TypeClass::Eq => write!(f, "Eq"),
+            TypeClass::Ord => write!(f, "Ord")
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
 pub struct PolyType {
     pub variables: BTreeSet<TypeVariable>,
     pub inner: Type,
@@ -210,7 +251,7 @@ impl fmt::Display for PolyType {
             .filter(|var| !var.1.is_empty())
             .flat_map(|var| {
                 let poly_names = &poly_names;
-                var.1.clone().into_iter().map(move |class| format!("{} {}", class.0, poly_names.get(&var).unwrap()))
+                var.1.clone().into_iter().map(move |class| format!("{} {}", class, poly_names.get(&var).unwrap()))
             })
             .collect();
         let x = if type_classes.is_empty() {

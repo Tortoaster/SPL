@@ -205,7 +205,7 @@ impl Gen for Exp {
                     .flat_map(|(instructions, _)| instructions)
                     .chain(vec![
                         // Branch to function
-                        BranchSubroutine { label: Label::new(fun_call.identifier()) },
+                        BranchSubroutine { label: fun_call.label() },
                         // Remove arguments
                         AdjustStack { offset: -(fun_call.args.len() as isize) },
                         // Push result
@@ -216,7 +216,10 @@ impl Gen for Exp {
             Exp::Nil => vec![LoadConstant(0)],
             Exp::Tuple(l, r) => {
                 let (mut x, _) = l.generate(scope)?;
+                x.push(StoreHeap { offset: 0 });
                 let (mut y, _) = r.generate(scope)?;
+                y.push(StoreHeap { offset: 0 });
+                y.push(AdjustStack { offset: -1 });
                 x.append(&mut y);
                 x
             }
@@ -227,45 +230,40 @@ impl Gen for Exp {
 }
 
 impl FunCall {
-    fn identifier(&self) -> &str {
-        self.id.0.as_str()
+    fn label(&self) -> Label {
+        Label::new(format!("{}", self))
+    }
+}
+
+impl fmt::Display for FunCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.id)?;
+        if !self.type_args.is_empty() {
+            write!(f, "${}", self.type_args
+                .iter()
+                .map(|(_, t)| format!("{}", t))
+                .collect::<Vec<String>>()
+                .join("&"))?;
+        }
+        Ok(())
     }
 }
 
 mod core {
+    use crate::algorithm_w::Type;
     use crate::ssm::prelude::*;
 
     pub fn core() -> Vec<Instruction> {
         std::iter::empty()
-            .chain(print_char())
             .chain(print_int())
             .chain(print_bool())
-            .chain(eq_char())
-            .chain(eq_int())
-            .chain(eq_bool())
-            .chain(lt_char())
-            .chain(lt_int())
-            .chain(gt_char())
-            .chain(gt_int())
-            .chain(le_char())
-            .chain(le_int())
-            .chain(ge_char())
-            .chain(ge_int())
-            .chain(add())
-            .chain(sub())
-            .chain(mul())
-            .chain(div())
-            .chain(modulo())
-            .chain(neg())
-            .chain(and())
-            .chain(or())
-            .chain(not())
+            .chain(print_char())
             .collect()
     }
 
     fn print_char() -> Vec<Instruction> {
         vec![
-            Labeled(Label::new("print$char"), Box::new(LoadStack { offset: -1 })),
+            Labeled(Label::new(format!("print${}", Type::Char)), Box::new(LoadStack { offset: -1 })),
             Trap { call: PrintChar },
             Return
         ]
@@ -273,7 +271,7 @@ mod core {
 
     fn print_int() -> Vec<Instruction> {
         vec![
-            Labeled(Label::new("print$int"), Box::new(LoadStack { offset: -1 })),
+            Labeled(Label::new(format!("print${}", Type::Int)), Box::new(LoadStack { offset: -1 })),
             Trap { call: PrintInt },
             Return
         ]
@@ -281,8 +279,8 @@ mod core {
 
     fn print_bool() -> Vec<Instruction> {
         vec![
-            Labeled(Label::new("print$bool"), Box::new(LoadStack { offset: -1 })),
-            BranchFalse { label: Label::new("print$bool-else1") },
+            Labeled(Label::new(format!("print${}", Type::Bool)), Box::new(LoadStack { offset: -1 })),
+            BranchFalse { label: Label::new(format!("print${}-else1", Type::Bool)) },
             LoadConstant('T' as i32),
             Trap { call: PrintChar },
             LoadConstant('r' as i32),
@@ -291,8 +289,8 @@ mod core {
             Trap { call: PrintChar },
             LoadConstant('e' as i32),
             Trap { call: PrintChar },
-            Branch { label: Label::new("print$bool-endif1") },
-            Labeled(Label::new("print$bool-else1"), Box::new(LoadConstant('F' as i32))),
+            Branch { label: Label::new(format!("print${}-endif1", Type::Bool)) },
+            Labeled(Label::new(format!("print${}-else1", Type::Bool)), Box::new(LoadConstant('F' as i32))),
             Trap { call: PrintChar },
             LoadConstant('a' as i32),
             Trap { call: PrintChar },
@@ -302,107 +300,19 @@ mod core {
             Trap { call: PrintChar },
             LoadConstant('e' as i32),
             Trap { call: PrintChar },
-            Labeled(Label::new("print$bool-endif1"), Box::new(Return)),
+            Labeled(Label::new(format!("print${}-endif1", Type::Bool)), Box::new(Return)),
         ]
     }
 
-    fn eq_char() -> Vec<Instruction> {
-        vec![
-            Labeled(Label::new("eq$char"), Box::new(LoadStack { offset: -2 })),
-            LoadStack { offset: -2 },
-            Eq,
-            StoreRegister { reg: RR },
-            Return
-        ]
-    }
-
-    fn eq_int() -> Vec<Instruction> {
-        vec![
-            Labeled(Label::new("eq$int"), Box::new(LoadStack { offset: -2 })),
-            LoadStack { offset: -2 },
-            Eq,
-            StoreRegister { reg: RR },
-            Return
-        ]
-    }
-
-    fn eq_bool() -> Vec<Instruction> {
-        vec![
-            Labeled(Label::new("eq$bool"), Box::new(LoadStack { offset: -2 })),
-            LoadStack { offset: -2 },
-            Eq,
-            StoreRegister { reg: RR },
-            Return
-        ]
-    }
-
-    fn lt_char() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn lt_int() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn gt_char() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn gt_int() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn le_char() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn le_int() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn ge_char() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn ge_int() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn add() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn sub() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn mul() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn div() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn modulo() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn neg() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn and() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn or() -> Vec<Instruction> {
-        vec![]
-    }
-
-    fn not() -> Vec<Instruction> {
-        vec![]
-    }
+    // fn op(label: Label, op: Instruction) -> Vec<Instruction> {
+    //     vec![
+    //         Labeled(label, Box::new(LoadStack { offset: -2 })),
+    //         LoadStack { offset: -2 },
+    //         op,
+    //         StoreRegister { reg: RR },
+    //         Return
+    //     ]
+    // }
 
     // hd, tl, cons, fst, snd, isEmpty
 }

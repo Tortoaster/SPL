@@ -54,8 +54,8 @@ impl fmt::Display for Register {
 pub struct Label(String);
 
 impl Label {
-    pub fn new(name: &str) -> Self {
-        Label(name.to_owned())
+    pub fn new<S: AsRef<str>>(name: S) -> Self {
+        Label(name.as_ref().to_owned())
     }
 }
 
