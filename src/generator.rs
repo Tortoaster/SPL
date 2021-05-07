@@ -5,6 +5,7 @@ use error::Result;
 
 use crate::algorithm_w::{Space, Type};
 use crate::generator::error::GenError;
+use crate::lexer::Field;
 use crate::ssm::prelude::*;
 // Reserve first scratch register to keep track of global variables
 use crate::ssm::Register::R0 as GP;
@@ -39,7 +40,7 @@ impl Scope {
             functions: HashMap::new(),
             current_label: Label::new(""),
             ifs: 0,
-            whiles: 0
+            whiles: 0,
         }
     }
 
@@ -268,22 +269,29 @@ impl Gen for Stmt {
                 t.push(Labeled(end_label, Box::new(Nop)));
                 c.append(&mut t);
                 c
-            },
+            }
             Stmt::Assignment(id, fields, exp) => {
                 // Generate value
                 let mut instructions = exp.generate(scope)?.0;
 
                 // Generate address
                 instructions.append(&mut scope.push_address(id));
-                for _ in fields {
-                    instructions.push(LoadAddress { offset: 0 });
+                for f in fields {
+                    match f {
+                        Field::Head | Field::First => instructions.push(LoadAddress { offset: 0 }),
+                        Field::Tail => instructions.append(&mut vec![
+                            LoadAddress { offset: 1 },
+                            LoadAddress { offset: 0 },
+                        ]),
+                        Field::Second => instructions.push(LoadAddress { offset: 1 })
+                    }
                 }
 
                 // Store value at address
                 instructions.push(StoreByAddress { offset: 0 });
 
                 instructions
-            },
+            }
             Stmt::FunCall(fun_call) => fun_call.args
                 .iter()
                 .map(|arg| arg.generate(scope))
