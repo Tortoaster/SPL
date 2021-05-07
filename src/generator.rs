@@ -358,21 +358,37 @@ impl Gen for Exp {
 
 impl Gen for FunCall {
     fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
-        let instructions = self.args
-            .iter()
-            .zip(scope.function_args.get(&self.id).unwrap().clone())
-            .enumerate()
-            .map(|(index, (arg, id))| VarDecl::generate_arg(id, arg, index as isize, scope))
-            .collect::<Result<Vec<Vec<Instruction>>>>()?
-            .into_iter()
-            .flatten()
-            .chain(vec![
-                // Branch to function
-                BranchSubroutine { label: self.label() },
-                // Remove arguments
-                AdjustStack { offset: -(self.args.len() as isize) },
-            ])
-            .collect();
+        let arg_names = scope.function_args.get(&self.id);
+        let instructions = match arg_names {
+            None => self.args
+                .iter()
+                .map(|arg| arg.generate(scope))
+                .collect::<Result<Vec<Vec<Instruction>>>>()?
+                .into_iter()
+                .flatten()
+                .chain(vec![
+                    // Branch to function
+                    BranchSubroutine { label: self.label() },
+                    // Remove arguments
+                    AdjustStack { offset: -(self.args.len() as isize) },
+                ])
+                .collect(),
+            Some(names) => self.args
+                .iter()
+                .zip(names.clone())
+                .enumerate()
+                .map(|(index, (arg, id))| VarDecl::generate_arg(id, arg, index as isize, scope))
+                .collect::<Result<Vec<Vec<Instruction>>>>()?
+                .into_iter()
+                .flatten()
+                .chain(vec![
+                    // Branch to function
+                    BranchSubroutine { label: self.label() },
+                    // Remove arguments
+                    AdjustStack { offset: -(self.args.len() as isize) },
+                ])
+                .collect()
+        };
 
         Ok(instructions)
     }
