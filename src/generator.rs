@@ -13,10 +13,14 @@ use crate::typer::DecoratedSPL;
 
 const MAIN: &str = "main";
 
+#[derive(Clone)]
 struct Scope {
-    globals: HashMap<Id, Vec<Instruction>>,
-    locals: HashMap<Id, Vec<Instruction>>,
-    arguments: HashMap<Id, Vec<Instruction>>,
+    global_values: HashMap<Id, Vec<Instruction>>,
+    global_addresses: HashMap<Id, Vec<Instruction>>,
+    local_values: HashMap<Id, Vec<Instruction>>,
+    local_addresses: HashMap<Id, Vec<Instruction>>,
+    arg_values: HashMap<Id, Vec<Instruction>>,
+    arg_addresses: HashMap<Id, Vec<Instruction>>,
     functions: HashMap<FunCall, Vec<Instruction>>,
     current_label: Label,
     ifs: usize,
@@ -26,9 +30,12 @@ struct Scope {
 impl Scope {
     fn new() -> Self {
         Scope {
-            globals: HashMap::new(),
-            locals: HashMap::new(),
-            arguments: HashMap::new(),
+            global_values: HashMap::new(),
+            global_addresses: HashMap::new(),
+            local_values: HashMap::new(),
+            local_addresses: HashMap::new(),
+            arg_values: HashMap::new(),
+            arg_addresses: HashMap::new(),
             functions: HashMap::new(),
             current_label: Label::new(""),
             ifs: 0,
@@ -36,11 +43,27 @@ impl Scope {
         }
     }
 
-    fn push_var(&self, id: &Id) -> Vec<Instruction> {
-        self.locals
+    fn clear_local(&mut self) {
+        self.local_values.clear();
+        self.arg_values.clear();
+        self.ifs = 0;
+        self.whiles = 0;
+    }
+
+    fn push_address(&self, id: &Id) -> Vec<Instruction> {
+        self.local_addresses
             .get(id)
-            .or(self.arguments.get(id))
-            .or(self.globals.get(id))
+            .or(self.arg_addresses.get(id))
+            .or(self.global_addresses.get(id))
+            .unwrap()
+            .clone()
+    }
+
+    fn push_var(&self, id: &Id) -> Vec<Instruction> {
+        self.local_values
+            .get(id)
+            .or(self.arg_values.get(id))
+            .or(self.global_values.get(id))
             .unwrap()
             .clone()
     }
@@ -138,9 +161,13 @@ impl VarDecl {
         instructions.push(StoreByAddress { offset });
 
         // Retrieving
-        scope.globals.insert(self.id.clone(), vec![
+        scope.global_values.insert(self.id.clone(), vec![
             LoadRegister { reg: GP },
             LoadAddress { offset }
+        ]);
+        scope.global_addresses.insert(self.id.clone(), vec![
+            LoadRegister { reg: GP },
+            ChangeAddress { offset }
         ]);
 
         Ok((instructions, deps))
@@ -152,7 +179,8 @@ impl VarDecl {
         let (instructions, deps) = self.exp.generate(scope)?;
 
         // Retrieving
-        scope.locals.insert(self.id.clone(), vec![LoadLocal { offset }]);
+        scope.local_values.insert(self.id.clone(), vec![LoadLocal { offset }]);
+        scope.local_addresses.insert(self.id.clone(), vec![LoadLocalAddress { offset }]);
 
         Ok((instructions, deps))
     }
@@ -161,6 +189,8 @@ impl VarDecl {
 impl Gen for FunDecl {
     fn generate(&self, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
         let mut instructions = Vec::new();
+        let scope = &mut scope.clone();
+        scope.clear_local();
 
         instructions.push(Labeled(Label::new(&self.id.to_string()), Box::new(Link { length: self.var_decls.len() })));
         for (index, var) in self.var_decls.iter().enumerate() {
@@ -239,7 +269,21 @@ impl Gen for Stmt {
                 c.append(&mut t);
                 c
             },
-            Stmt::Assignment(_, _, _) => vec![Nop],
+            Stmt::Assignment(id, fields, exp) => {
+                // Generate value
+                let mut instructions = exp.generate(scope)?.0;
+
+                // Generate address
+                instructions.append(&mut scope.push_address(id));
+                for _ in fields {
+                    instructions.push(LoadAddress { offset: 0 });
+                }
+
+                // Store value at address
+                instructions.push(StoreByAddress { offset: 0 });
+
+                instructions
+            },
             Stmt::FunCall(fun_call) => fun_call.args
                 .iter()
                 .map(|arg| arg.generate(scope))
