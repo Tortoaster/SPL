@@ -23,13 +23,14 @@ struct Scope {
     arg_values: HashMap<Id, Vec<Instruction>>,
     arg_addresses: HashMap<Id, Vec<Instruction>>,
     functions: HashMap<FunCall, Vec<Instruction>>,
+    function_args: HashMap<Id, Vec<Id>>,
     current_label: Label,
     ifs: usize,
     whiles: usize,
 }
 
 impl Scope {
-    fn new() -> Self {
+    fn new(spl: &DecoratedSPL) -> Self {
         Scope {
             global_values: HashMap::new(),
             global_addresses: HashMap::new(),
@@ -38,7 +39,14 @@ impl Scope {
             arg_values: HashMap::new(),
             arg_addresses: HashMap::new(),
             functions: HashMap::new(),
-            current_label: Label::new(""),
+            current_label: Label::new(MAIN),
+            function_args: spl.decls
+                .iter()
+                .filter_map(|decl| match decl {
+                    Decl::VarDecl(_) => None,
+                    Decl::FunDecl(fun_decl) => Some((fun_decl.id.clone(), fun_decl.args.clone()))
+                })
+                .collect(),
             ifs: 0,
             whiles: 0,
         }
@@ -72,7 +80,7 @@ impl Scope {
 
 impl DecoratedSPL {
     pub fn generate_code(&self) -> Result<Program> {
-        Ok(Program { instructions: self.generate(&mut Scope::new())? })
+        Ok(Program { instructions: self.generate(&mut Scope::new(self))? })
     }
 }
 
@@ -131,7 +139,7 @@ impl Gen for SPL {
                 _ => None
             })
             .ok_or(GenError::MissingMain)?
-            .generate(scope)?;
+            .generate(Label::new(MAIN), scope)?;
         instructions.append(&mut functions);
 
         // Keep generating necessary variants until all are done
@@ -176,13 +184,24 @@ impl VarDecl {
 
         Ok(instructions)
     }
+
+    fn generate_arg(id: Id, arg: &Exp, index: isize, scope: &mut Scope) -> Result<Vec<Instruction>> {
+        let offset = -index - 2;
+        let instructions = arg.generate(scope)?;
+
+        scope.arg_values.insert(id.clone(), vec![LoadLocal { offset }]);
+        scope.arg_addresses.insert(id, vec![LoadLocalAddress { offset }]);
+
+        Ok(instructions)
+    }
 }
 
-impl Gen for FunDecl {
-    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
+impl FunDecl {
+    fn generate(&self, label: Label, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let mut instructions = Vec::new();
         let scope = &mut scope.clone();
         scope.clear_local();
+        scope.current_label = label;
 
         instructions.push(Labeled(Label::new(&self.id.to_string()), Box::new(Link { length: self.var_decls.len() })));
         for (index, var) in self.var_decls.iter().enumerate() {
@@ -283,19 +302,7 @@ impl Gen for Stmt {
 
                 instructions
             }
-            Stmt::FunCall(fun_call) => fun_call.args
-                .iter()
-                .map(|arg| arg.generate(scope))
-                .collect::<Result<Vec<Vec<Instruction>>>>()?
-                .into_iter()
-                .flatten()
-                .chain(vec![
-                    // Branch to function
-                    BranchSubroutine { label: fun_call.label() },
-                    // Remove arguments
-                    AdjustStack { offset: -(fun_call.args.len() as isize) },
-                ])
-                .collect(),
+            Stmt::FunCall(fun_call) => fun_call.generate(scope)?,
             Stmt::Return(ret) => {
                 match ret {
                     None => vec![
@@ -329,22 +336,9 @@ impl Gen for Exp {
             Exp::False => vec![LoadConstant(0)],
             Exp::True => vec![LoadConstant(-1)],
             Exp::FunCall(fun_call) => {
-                // Evaluate arguments
-                fun_call.args
-                    .iter()
-                    .map(|arg| arg.generate(scope))
-                    .collect::<Result<Vec<Vec<Instruction>>>>()?
-                    .into_iter()
-                    .flatten()
-                    .chain(vec![
-                        // Branch to function
-                        BranchSubroutine { label: fun_call.label() },
-                        // Remove arguments
-                        AdjustStack { offset: -(fun_call.args.len() as isize) },
-                        // Push result
-                        LoadRegister { reg: RR }
-                    ])
-                    .collect()
+                let mut instructions = fun_call.generate(scope)?;
+                instructions.push(LoadRegister { reg: RR });
+                instructions
             }
             Exp::Nil => vec![LoadConstant(0)],
             Exp::Tuple(l, r) => {
@@ -362,23 +356,40 @@ impl Gen for Exp {
     }
 }
 
-impl FunCall {
-    fn label(&self) -> Label {
-        Label::new(format!("{}", self))
+impl Gen for FunCall {
+    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
+        let instructions = self.args
+            .iter()
+            .zip(scope.function_args.get(&self.id).unwrap().clone())
+            .enumerate()
+            .map(|(index, (arg, id))| VarDecl::generate_arg(id, arg, index as isize, scope))
+            .collect::<Result<Vec<Vec<Instruction>>>>()?
+            .into_iter()
+            .flatten()
+            .chain(vec![
+                // Branch to function
+                BranchSubroutine { label: self.label() },
+                // Remove arguments
+                AdjustStack { offset: -(self.args.len() as isize) },
+            ])
+            .collect();
+
+        Ok(instructions)
     }
 }
 
-impl fmt::Display for FunCall {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.id)?;
+impl FunCall {
+    fn label(&self) -> Label {
+        let mut name = format!("{}", self.id);
         if !self.type_args.is_empty() {
-            write!(f, "${}", self.type_args
+            name.push_str(format!("${}", self.type_args
                 .iter()
                 .map(|(_, t)| format!("{}", t))
                 .collect::<Vec<String>>()
-                .join("&"))?;
+                .join("&")
+            ).as_str());
         }
-        Ok(())
+        Label::new(name)
     }
 }
 
