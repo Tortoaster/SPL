@@ -182,25 +182,25 @@ pub enum TypeClass {
     Ord
 }
 
-impl TypeClass {
-    fn dependencies(&self) -> BTreeSet<TypeClass> {
-        match self {
-            TypeClass::Any => BTreeSet::new(),
-            TypeClass::Show => Some(TypeClass::Any).into_iter().collect(),
-            TypeClass::Eq => Some(TypeClass::Any).into_iter().collect(),
-            TypeClass::Ord => Some(TypeClass::Eq).into_iter().collect(),
-        }
-    }
-
-    fn methods(&self) -> Vec<Id> {
-        match self {
-            TypeClass::Any => Vec::new(),
-            TypeClass::Show => vec![Id("show".to_owned())],
-            TypeClass::Eq => vec![Id("eq".to_owned()), Id("ne".to_owned())],
-            TypeClass::Ord => vec![Id("lt".to_owned()), Id("gt".to_owned()), Id("le".to_owned()), Id("ge".to_owned())],
-        }
-    }
-}
+// impl TypeClass {
+//     pub fn dependencies(&self) -> BTreeSet<TypeClass> {
+//         match self {
+//             TypeClass::Any => BTreeSet::new(),
+//             TypeClass::Show => Some(TypeClass::Any).into_iter().collect(),
+//             TypeClass::Eq => Some(TypeClass::Any).into_iter().collect(),
+//             TypeClass::Ord => Some(TypeClass::Eq).into_iter().collect(),
+//         }
+//     }
+//
+//     pub fn methods(&self) -> Vec<Id> {
+//         match self {
+//             TypeClass::Any => Vec::new(),
+//             TypeClass::Show => vec![Id("show".to_owned())],
+//             TypeClass::Eq => vec![Id("eq".to_owned()), Id("ne".to_owned())],
+//             TypeClass::Ord => vec![Id("lt".to_owned()), Id("gt".to_owned()), Id("le".to_owned()), Id("ge".to_owned())],
+//         }
+//     }
+// }
 
 impl fmt::Display for TypeClass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

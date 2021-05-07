@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 
 use error::Result;
 
-use crate::algorithm_w::{Space, Type};
+use crate::algorithm_w::Space;
 use crate::generator::error::GenError;
 use crate::lexer::Field;
 use crate::ssm::prelude::*;

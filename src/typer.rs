@@ -401,7 +401,7 @@ pub mod error {
         Conflict(Id),
         Recursive(TypeVariable, Type),
         Incomplete(Id),
-        UndefinedClass(TypeClass),
+        // UndefinedClass(TypeClass),
     }
 
     impl fmt::Display for TypeError {
@@ -413,7 +413,7 @@ pub mod error {
                 TypeError::Conflict(id) => write!(f, "Variable {:?} is defined more than once", id),
                 TypeError::Recursive(v, t) => write!(f, "Occur check fails: {:?} vs {:?}", v, t),
                 TypeError::Incomplete(id) => write!(f, "Function {:?} does not return a correct value in all paths", id),
-                TypeError::UndefinedClass(class) => write!(f, "Type class {:?} not found", class),
+                // TypeError::UndefinedClass(class) => write!(f, "Type class {:?} not found", class),
             }
         }
     }
