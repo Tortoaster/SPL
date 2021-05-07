@@ -8,7 +8,7 @@ use crate::generator::error::GenError;
 use crate::lexer::Field;
 use crate::ssm::prelude::*;
 // Reserve first scratch register to keep track of global variables
-use crate::ssm::Register::R0 as GP;
+use crate::ssm::Register::R7 as GP;
 use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 use crate::typer::DecoratedSPL;
 
@@ -398,11 +398,11 @@ impl FunCall {
     fn label(&self) -> Label {
         let mut name = format!("{}", self.id);
         if !self.type_args.is_empty() {
-            name.push_str(format!("${}", self.type_args
+            name.push_str(format!("-t{}", self.type_args
                 .iter()
                 .map(|(_, t)| format!("{}", t))
                 .collect::<Vec<String>>()
-                .join("&")
+                .join("-a")
             ).as_str());
         }
         Label::new(name)
@@ -418,12 +418,23 @@ mod core {
             .chain(print_int())
             .chain(print_bool())
             .chain(print_char())
+            .chain(add())
             .collect()
+    }
+
+    fn add() -> Vec<Instruction> {
+        vec![
+            Labeled(Label::new("add"), Box::new(LoadStack { offset: -2 })),
+            LoadStack { offset: -2 },
+            Add,
+            StoreRegister { reg: RR },
+            Return
+        ]
     }
 
     fn print_char() -> Vec<Instruction> {
         vec![
-            Labeled(Label::new(format!("print${}", Type::Char)), Box::new(LoadStack { offset: -1 })),
+            Labeled(Label::new(format!("print-t{}", Type::Char)), Box::new(LoadStack { offset: -1 })),
             Trap { call: PrintChar },
             Return
         ]
@@ -431,7 +442,7 @@ mod core {
 
     fn print_int() -> Vec<Instruction> {
         vec![
-            Labeled(Label::new(format!("print${}", Type::Int)), Box::new(LoadStack { offset: -1 })),
+            Labeled(Label::new(format!("print-t{}", Type::Int)), Box::new(LoadStack { offset: -1 })),
             Trap { call: PrintInt },
             Return
         ]
@@ -439,8 +450,8 @@ mod core {
 
     fn print_bool() -> Vec<Instruction> {
         vec![
-            Labeled(Label::new(format!("print${}", Type::Bool)), Box::new(LoadStack { offset: -1 })),
-            BranchFalse { label: Label::new(format!("print${}-else1", Type::Bool)) },
+            Labeled(Label::new(format!("print-t{}", Type::Bool)), Box::new(LoadStack { offset: -1 })),
+            BranchFalse { label: Label::new(format!("print-t{}--else1", Type::Bool)) },
             LoadConstant('T' as i32),
             Trap { call: PrintChar },
             LoadConstant('r' as i32),
@@ -449,8 +460,8 @@ mod core {
             Trap { call: PrintChar },
             LoadConstant('e' as i32),
             Trap { call: PrintChar },
-            Branch { label: Label::new(format!("print${}-endif1", Type::Bool)) },
-            Labeled(Label::new(format!("print${}-else1", Type::Bool)), Box::new(LoadConstant('F' as i32))),
+            Branch { label: Label::new(format!("print-t{}--endif1", Type::Bool)) },
+            Labeled(Label::new(format!("print-t{}--else1", Type::Bool)), Box::new(LoadConstant('F' as i32))),
             Trap { call: PrintChar },
             LoadConstant('a' as i32),
             Trap { call: PrintChar },
@@ -460,7 +471,7 @@ mod core {
             Trap { call: PrintChar },
             LoadConstant('e' as i32),
             Trap { call: PrintChar },
-            Labeled(Label::new(format!("print${}-endif1", Type::Bool)), Box::new(Return)),
+            Labeled(Label::new(format!("print-t{}--endif1", Type::Bool)), Box::new(Return)),
         ]
     }
 

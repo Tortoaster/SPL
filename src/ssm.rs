@@ -73,7 +73,7 @@ impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)?;
         if let Some(suffix) = &self.suffix {
-            write!(f, "-{}", suffix)?;
+            write!(f, "--{}", suffix)?;
         }
         Ok(())
     }
