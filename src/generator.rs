@@ -72,7 +72,7 @@ impl Scope {
 
 impl DecoratedSPL {
     pub fn generate_code(&self) -> Result<Program> {
-        Ok(Program { instructions: self.generate(&mut Scope::new())?.0 })
+        Ok(Program { instructions: self.generate(&mut Scope::new())? })
     }
 }
 
@@ -90,15 +90,11 @@ impl fmt::Display for Program {
 }
 
 trait Gen {
-    fn generate(&self, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)>;
-}
-
-trait GenIndex {
-    fn generate_indexed(&self, index: isize, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)>;
+    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>>;
 }
 
 impl Gen for SPL {
-    fn generate(&self, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
+    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         // Reserve space for global variables
         let globals = self.decls
             .iter()
@@ -110,19 +106,17 @@ impl Gen for SPL {
         ];
 
         // Generate code to initialize global variables
-        let (mut variables, var_variants) = self.decls
+        let mut variables = self.decls
             .iter()
             .enumerate()
             .map(|(index, decl)| match decl {
                 Decl::VarDecl(var_decl) => var_decl.generate_global(index as isize, scope),
-                _ => Ok((Vec::new(), HashSet::new()))
+                _ => Ok(Vec::new())
             })
-            .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+            .collect::<Result<Vec<Vec<Instruction>>>>()?
             .into_iter()
-            .fold((Vec::new(), HashSet::new()), |(inst, variants), (new_inst, new_variants)|
-                (inst.into_iter().chain(new_inst).collect(),
-                 variants.into_iter().chain(new_variants).collect()),
-            );
+            .flatten()
+            .collect();
         instructions.append(&mut variables);
 
         // Move to main function, halt when it returns
@@ -130,7 +124,7 @@ impl Gen for SPL {
         instructions.push(Halt);
 
         // Generate code for main function
-        let (mut functions, fun_variants) = self.decls
+        let mut functions = self.decls
             .iter()
             .find_map(|decl| match decl {
                 Decl::FunDecl(fun_decl) => (fun_decl.id == Id(MAIN.to_owned())).then(|| fun_decl),
@@ -140,24 +134,21 @@ impl Gen for SPL {
             .generate(scope)?;
         instructions.append(&mut functions);
 
-        let variants: HashSet<(Id, Type)> = var_variants.into_iter().chain(fun_variants).collect();
-
         // Keep generating necessary variants until all are done
-        while !variants.is_empty() {}
 
         // Generate core functions
         instructions.append(&mut core::core());
 
-        Ok((instructions, variants))
+        Ok(instructions)
     }
 }
 
 impl VarDecl {
-    fn generate_global(&self, index: isize, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
+    fn generate_global(&self, index: isize, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let offset = -index - 1;
 
         // Initialization
-        let (mut instructions, deps) = self.exp.generate(scope)?;
+        let mut instructions = self.exp.generate(scope)?;
         instructions.push(LoadRegister { reg: GP });
         instructions.push(StoreByAddress { offset });
 
@@ -171,46 +162,46 @@ impl VarDecl {
             ChangeAddress { offset }
         ]);
 
-        Ok((instructions, deps))
+        Ok(instructions)
     }
 
-    fn generate_local(&self, index: isize, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
+    fn generate_local(&self, index: isize, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let offset = index + 1;
         // Initialization
-        let (instructions, deps) = self.exp.generate(scope)?;
+        let instructions = self.exp.generate(scope)?;
 
         // Retrieving
         scope.local_values.insert(self.id.clone(), vec![LoadLocal { offset }]);
         scope.local_addresses.insert(self.id.clone(), vec![LoadLocalAddress { offset }]);
 
-        Ok((instructions, deps))
+        Ok(instructions)
     }
 }
 
 impl Gen for FunDecl {
-    fn generate(&self, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
+    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let mut instructions = Vec::new();
         let scope = &mut scope.clone();
         scope.clear_local();
 
         instructions.push(Labeled(Label::new(&self.id.to_string()), Box::new(Link { length: self.var_decls.len() })));
         for (index, var) in self.var_decls.iter().enumerate() {
-            let (mut vars, _) = var.generate_local(index as isize, scope)?;
+            let mut vars = var.generate_local(index as isize, scope)?;
             instructions.append(&mut vars);
         }
         for stmt in &self.stmts {
-            let (mut stmts, _) = stmt.generate(scope)?;
+            let mut stmts = stmt.generate(scope)?;
             instructions.append(&mut stmts);
         }
         instructions.push(Unlink);
         instructions.push(Return);
 
-        Ok((instructions, HashSet::new()))
+        Ok(instructions)
     }
 }
 
 impl Gen for Stmt {
-    fn generate(&self, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
+    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let instructions = match self {
             Stmt::If(c, t, e) => {
                 scope.ifs += 1;
@@ -221,22 +212,22 @@ impl Gen for Stmt {
                     .clone()
                     .with_suffix(format!("endif{}", scope.ifs));
 
-                let mut c = c.generate(scope)?.0;
+                let mut c = c.generate(scope)?;
                 c.push(BranchFalse { label: else_label.clone() });
                 let mut t: Vec<Instruction> = t
                     .iter()
                     .map(|stmt| stmt.generate(scope))
-                    .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+                    .collect::<Result<Vec<Vec<Instruction>>>>()?
                     .into_iter()
-                    .flat_map(|(instructions, _)| instructions)
+                    .flatten()
                     .collect();
                 t.push(Branch { label: end_label.clone() });
                 let mut e: Vec<Instruction> = e
                     .iter()
                     .map(|stmt| stmt.generate(scope))
-                    .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+                    .collect::<Result<Vec<Vec<Instruction>>>>()?
                     .into_iter()
-                    .flat_map(|(instructions, _)| instructions)
+                    .flatten()
                     .collect();
                 let labeled = Labeled(else_label, Box::new(e[0].clone()));
                 e[0] = labeled;
@@ -254,16 +245,16 @@ impl Gen for Stmt {
                     .clone()
                     .with_suffix(format!("endwhile{}", scope.ifs));
 
-                let mut c = c.generate(scope)?.0;
+                let mut c = c.generate(scope)?;
                 let labeled = Labeled(start_label.clone(), Box::new(c[0].clone()));
                 c[0] = labeled;
                 c.push(BranchFalse { label: end_label.clone() });
                 let mut t: Vec<Instruction> = t
                     .iter()
                     .map(|stmt| stmt.generate(scope))
-                    .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+                    .collect::<Result<Vec<Vec<Instruction>>>>()?
                     .into_iter()
-                    .flat_map(|(instructions, _)| instructions)
+                    .flatten()
                     .collect();
                 t.push(Branch { label: start_label });
                 t.push(Labeled(end_label, Box::new(Nop)));
@@ -272,7 +263,7 @@ impl Gen for Stmt {
             }
             Stmt::Assignment(id, fields, exp) => {
                 // Generate value
-                let mut instructions = exp.generate(scope)?.0;
+                let mut instructions = exp.generate(scope)?;
 
                 // Generate address
                 instructions.append(&mut scope.push_address(id));
@@ -295,9 +286,9 @@ impl Gen for Stmt {
             Stmt::FunCall(fun_call) => fun_call.args
                 .iter()
                 .map(|arg| arg.generate(scope))
-                .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+                .collect::<Result<Vec<Vec<Instruction>>>>()?
                 .into_iter()
-                .flat_map(|(instructions, _)| instructions)
+                .flatten()
                 .chain(vec![
                     // Branch to function
                     BranchSubroutine { label: fun_call.label() },
@@ -313,7 +304,6 @@ impl Gen for Stmt {
                     ],
                     Some(exp) => exp
                         .generate(scope)?
-                        .0
                         .into_iter()
                         .chain(vec![
                             StoreRegister { reg: RR },
@@ -325,13 +315,13 @@ impl Gen for Stmt {
             }
         };
 
-        Ok((instructions, HashSet::new()))
+        Ok(instructions)
     }
 }
 
 /// Generates an expression, leaving the result on top of the stack
 impl Gen for Exp {
-    fn generate(&self, scope: &mut Scope) -> Result<(Vec<Instruction>, HashSet<(Id, Type)>)> {
+    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let instructions = match self {
             Exp::Variable(id) => scope.push_var(id),
             Exp::Number(n) => vec![LoadConstant(*n)],
@@ -343,9 +333,9 @@ impl Gen for Exp {
                 fun_call.args
                     .iter()
                     .map(|arg| arg.generate(scope))
-                    .collect::<Result<Vec<(Vec<Instruction>, HashSet<(Id, Type)>)>>>()?
+                    .collect::<Result<Vec<Vec<Instruction>>>>()?
                     .into_iter()
-                    .flat_map(|(instructions, _)| instructions)
+                    .flatten()
                     .chain(vec![
                         // Branch to function
                         BranchSubroutine { label: fun_call.label() },
@@ -358,9 +348,9 @@ impl Gen for Exp {
             }
             Exp::Nil => vec![LoadConstant(0)],
             Exp::Tuple(l, r) => {
-                let (mut x, _) = l.generate(scope)?;
+                let mut x = l.generate(scope)?;
                 x.push(StoreHeap { offset: 0 });
-                let (mut y, _) = r.generate(scope)?;
+                let mut y = r.generate(scope)?;
                 y.push(StoreHeap { offset: 0 });
                 y.push(AdjustStack { offset: -1 });
                 x.append(&mut y);
@@ -368,7 +358,7 @@ impl Gen for Exp {
             }
         };
 
-        Ok((instructions, HashSet::new()))
+        Ok(instructions)
     }
 }
 
