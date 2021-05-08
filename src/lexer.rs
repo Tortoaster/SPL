@@ -245,15 +245,19 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 return self.next();
             } else if self.followed_by('*') {
+                let mut depth = 1;
                 loop {
                     while let Some(c) = self.chars.next() {
-                        if *c == '*' {
-                            break;
+                        if *c == '*' && self.followed_by('/') {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        } else if *c == '/' && self.followed_by('*') {
+                            depth += 1;
                         }
                     }
-                    if self.followed_by('/') {
-                        return self.next();
-                    }
+                    return self.next();
                 }
             } else {
                 Token::Operator(Operator::Divide)

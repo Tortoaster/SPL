@@ -1,6 +1,21 @@
 use spl::lexer::{Lexable, Operator, Token};
 
 #[test]
+fn nested_comments() {
+    let code = "
+    /* fac(n) :: Int -> Int {
+        /* if (n < 2) {
+            return 1;
+        } else {
+            return n * fac(n - 1);
+        } */
+    } */
+    ";
+    let tokens: Vec<Token> = code.tokenize().expect("Failed to tokenize").map(|p| p.inner).collect();
+    assert!(tokens.is_empty())
+}
+
+#[test]
 fn fac() {
     let code = "
     fac(n) :: Int -> Int {
