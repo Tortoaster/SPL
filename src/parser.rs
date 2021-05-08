@@ -1,9 +1,9 @@
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::iter::Peekable;
 
 use error::Result;
 
-use crate::algorithm_w::{Generator, Type, TypeVariable, Environment, TypeClass};
+use crate::algorithm_w::{Environment, Generator, Type, TypeClass, TypeVariable};
 use crate::char_iterator::Positioned;
 use crate::lexer::{Field, Lexer, Operator, Token};
 use crate::parser::error::ParseError;
@@ -26,16 +26,12 @@ impl Consume for Peekable<Lexer<'_>> {
 }
 
 pub trait Parsable: Sized {
-    /**
-    Parses this parsable. This consumes the necessary tokens from the iterator,
-    hence this should only be used when no alternative parsables are valid.
-    **/
+    /// Parses this parsable. This consumes the necessary tokens from the iterator,
+    /// hence this should only be used when no alternative parsables are valid.
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self>;
 
-    /**
-    Tries to parse this parsable. If it succeeds, this returns the same value as parse,
-    but if it fails, this function won't advance the iterator (at the cost of performance).
-    **/
+    /// Tries to parse this parsable. If it succeeds, this returns the same value as parse,
+    /// but if it fails, this function won't advance the iterator (at the cost of performance).
     fn try_parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         let mut copy = (*tokens).clone();
         let parsed = Self::parse(&mut copy)?;
@@ -43,9 +39,7 @@ pub trait Parsable: Sized {
         Ok(parsed)
     }
 
-    /**
-    Parses as many instances of this parsable after each other as possible.
-    **/
+    /// Parses as many instances of this parsable after each other as possible.
     fn parse_many(tokens: &mut Peekable<Lexer>) -> Vec<Self> {
         let mut parsed = Vec::new();
         while let Ok(p) = Self::try_parse(tokens) {
@@ -54,9 +48,7 @@ pub trait Parsable: Sized {
         parsed
     }
 
-    /**
-    Parses as many instances of this parsable after each other as possible, separated by separator.
-    **/
+    /// Parses as many instances of this parsable after each other as possible, separated by separator.
     fn parse_many_sep<T: AsRef<Token>>(tokens: &mut Peekable<Lexer>, separator: T) -> Result<Vec<Self>> {
         let mut parsed = Vec::new();
         while let Ok(p) = Self::try_parse(tokens) {
@@ -363,7 +355,10 @@ impl Exp {
                 }
             }
             Positioned { inner: Token::Nil, .. } => Exp::Nil,
-            token => return Err(token.into_bad_token_err("expression"))
+            token => return Err(token.transform(ParseError::BadToken {
+                found: token.inner,
+                expected: "expression".to_owned()
+            }))
         };
 
         while let Some(Positioned { inner: Token::Operator(op), row, col, .. }) = tokens.peek() {
@@ -373,38 +368,32 @@ impl Exp {
                 break;
             }
 
-            let op = op.clone();
-            let row = *row;
-            let col = *col;
-            tokens.next();
+            let op = tokens.next().unwrap().transform(op);
             let rhs = Self::parse_exp(tokens, r_bp)?;
 
-            lhs = Exp::FunCall(FunCall { id: op.infix_id(row, col)?, args: vec![lhs, rhs], type_args: BTreeMap::new() });
+            lhs = Exp::FunCall(FunCall { id: op.infix_id()?, args: vec![lhs, rhs], type_args: BTreeMap::new() });
         }
 
         Ok(lhs)
     }
 }
 
-impl Operator {
-    fn prefix_binding_power(&self, row: usize, col: usize) -> Result<u8> {
-        let bp = match self {
+impl Positioned<Operator> {
+    fn prefix_binding_power(&self) -> Result<u8> {
+        let bp = match self.inner {
             Operator::Minus => 17,
             Operator::Not => 7,
-            _ => return Err(ParseError::Fixity {
-                found: self.clone(),
-                prefix: true,
-                row,
-                col,
-                code: "TODO".to_string(),
-            })
+            _ => return Err(self.transform(ParseError::Fixity {
+                found: self.inner.clone(),
+                prefix: true
+            }))
         };
 
         Ok(bp)
     }
 
-    fn infix_binding_power(&self, row: usize, col: usize) -> Result<(u8, u8)> {
-        let bp = match self {
+    fn infix_binding_power(&self) -> Result<(u8, u8)> {
+        let bp = match self.inner {
             Operator::Times | Operator::Divide | Operator::Modulo => (15, 16),
             Operator::Plus | Operator::Minus => (13, 14),
             Operator::Smaller | Operator::Greater |
@@ -413,36 +402,30 @@ impl Operator {
             Operator::And => (6, 5),
             Operator::Or => (4, 3),
             Operator::Cons => (2, 1),
-            _ => return Err(ParseError::Fixity {
-                found: self.clone(),
-                prefix: false,
-                row,
-                col,
-                code: "TODO".to_string(),
-            })
+            _ => return Err(self.transform(ParseError::Fixity {
+                found: self.inner.clone(),
+                prefix: false
+            }))
         };
 
         Ok(bp)
     }
 
-    pub fn prefix_id(&self, row: usize, col: usize) -> Result<Id> {
-        let name = match self {
+    pub fn prefix_id(&self) -> Result<Id> {
+        let name = match self.inner {
             Operator::Not => "not",
             Operator::Minus => "neg",
-            _ => return Err(ParseError::Fixity {
-                found: self.clone(),
-                prefix: true,
-                row,
-                col,
-                code: "TODO".to_string()
-            })
+            _ => return Err(self.transform(ParseError::Fixity {
+                found: self.inner.clone(),
+                prefix: true
+            }))
         };
 
         Ok(Id(name.to_owned()))
     }
 
-    pub fn infix_id(&self, row: usize, col: usize) -> Result<Id> {
-        let name = match self {
+    pub fn infix_id(&self) -> Result<Id> {
+        let name = match self.inner {
             Operator::Plus => "add",
             Operator::Minus => "sub",
             Operator::Times => "mul",
@@ -457,13 +440,10 @@ impl Operator {
             Operator::And => "and",
             Operator::Or => "or",
             Operator::Cons => "cons",
-            _ => return Err(ParseError::Fixity {
-                found: self.clone(),
-                prefix: false,
-                row,
-                col,
-                code: "TODO".to_string()
-            })
+            _ => return Err(self.transform(ParseError::Fixity {
+                found: self.inner.clone(),
+                prefix: false
+            }))
         };
 
         Ok(Id(name.to_owned()))
@@ -495,7 +475,10 @@ impl Parsable for Id {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
         match tokens.next().ok_or(ParseError::EOF { expected: "identifier".to_owned() })? {
             Positioned { inner: Token::Identifier(s), .. } => Ok(Id(s)),
-            token => Err(token.into_bad_token_err("identifier"))
+            token => Err(token.transform(ParseError::BadToken {
+                found: token.inner,
+                expected: "identifier".to_owned()
+            }))
         }
     }
 }
@@ -505,17 +488,15 @@ pub mod error {
     use std::fmt;
     use std::fmt::Debug;
 
+    use crate::char_iterator::Positioned;
     use crate::lexer::{Operator, Token};
 
-    pub type Result<T, E = ParseError> = std::result::Result<T, E>;
+    pub type Result<T, E = Positioned<ParseError>> = std::result::Result<T, E>;
 
     #[derive(Clone)]
     pub enum ParseError {
         BadToken {
             found: Token,
-            row: usize,
-            col: usize,
-            code: String,
             expected: String,
         },
         EOF {
@@ -524,18 +505,15 @@ pub mod error {
         Fixity {
             found: Operator,
             prefix: bool,
-            row: usize,
-            col: usize,
-            code: String,
         },
         InvalidAnnotation,
         PolyVar,
     }
 
-    impl fmt::Display for ParseError {
+    impl fmt::Display for Positioned<ParseError> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                ParseError::BadToken { found, row, col, code, expected } => write!(
+                Positioned { inner: ParseError::BadToken { found, expected }, row, col, code } => write!(
                     f,
                     "Bad token {:?} at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
                     found,
@@ -546,8 +524,8 @@ pub mod error {
                     expected,
                     indent = col - 1
                 ),
-                ParseError::EOF { expected } => write!(f, "Unexpected end of file, expected {}", expected),
-                ParseError::Fixity { found, prefix, row, col, code } => write!(
+                Positioned { inner: ParseError::EOF { expected }, .. } => write!(f, "Unexpected end of file, expected {}", expected),
+                Positioned { inner: ParseError::Fixity { found, prefix }, row, col, code } => write!(
                     f,
                     "{:?} is not a{}fix operator, at {}:{}:\n{}\n{: >indent$}",
                     found,
@@ -558,17 +536,17 @@ pub mod error {
                     "^",
                     indent = col - 1
                 ),
-                ParseError::InvalidAnnotation => write!(f, "Variables cannot have a function or void type"),
-                ParseError::PolyVar => write!(f, "Use the 'var' keyword to indicate a polymorphic variable")
+                Positioned { inner: ParseError::InvalidAnnotation, .. } => write!(f, "Variables cannot have a function or void type"),
+                Positioned { inner: ParseError::PolyVar, .. } => write!(f, "Use the 'var' keyword to indicate a polymorphic variable")
             }
         }
     }
 
-    impl Debug for ParseError {
+    impl Debug for Positioned<ParseError> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "{}", self)
         }
     }
 
-    impl Error for ParseError {}
+    impl Error for Positioned<ParseError> {}
 }

@@ -23,18 +23,6 @@ impl<'a, K: Clone + Debug> Positioned<'a, K> {
     }
 }
 
-impl Positioned<'_, Token> {
-    pub fn into_bad_token_err<S: AsRef<str>>(self, expected: S) -> ParseError {
-        ParseError::BadToken {
-            found: self.inner,
-            row: self.row,
-            col: self.col,
-            code: self.code.to_owned(),
-            expected: expected.as_ref().to_owned()
-        }
-    }
-}
-
 impl<'a, K: Clone + Debug> Deref for Positioned<'a, K> {
     type Target = K;
 

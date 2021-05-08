@@ -91,17 +91,21 @@ pub trait Lexable<'a> {
 
 impl<'a> Lexable<'a> for &'a str {
     fn tokenize(self) -> Result<Lexer<'a>> {
+        // Create lexer
         let mut lexer = Lexer {
             chars: self.iter_char().peekable(),
             errors: Vec::new(),
         };
-        while let Some(_) = lexer.next() {}
+        // Consume lexer to look for errors
+        lexer.by_ref().for_each(drop);
         if lexer.errors.is_empty() {
+            // No errors, return identical lexer
             Ok(Lexer {
                 chars: self.iter_char().peekable(),
                 errors: Vec::new(),
             })
         } else {
+            // Errors found
             return Err(lexer.errors);
         }
     }
