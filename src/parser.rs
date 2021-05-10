@@ -1,38 +1,65 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Debug;
 use std::iter::Peekable;
 
 use error::Result;
 
 use crate::algorithm_w::{Environment, Generator, Type, TypeClass, TypeVariable};
-use crate::char_iterator::Positioned;
+use crate::char_iterator::{Join, Pos};
 use crate::lexer::{Field, Lexer, Operator, Token};
 use crate::parser::error::ParseError;
 use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 
-trait Consume {
-    fn munch<T: AsRef<Token>>(&mut self, expected: T) -> Result<()>;
+trait Util<'a> {
+    fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;
+
+    fn peek_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, &Pos<'a, Token>>;
+
+    fn consume<T: AsRef<Token>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;
 }
 
-impl Consume for Peekable<Lexer<'_>> {
-    fn munch<T: AsRef<Token>>(&mut self, expected: T) -> Result<()> {
-        let found = self.next().ok_or(ParseError::EOF { expected: format!("{:?}", expected.as_ref()) })?;
+impl<'a> Util<'a> for Peekable<Lexer<'a>> {
+    fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>> {
+        self.next().ok_or(Pos {
+            row: 0,
+            col: 0,
+            code: "",
+            inner: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
+        })
+    }
 
-        if *found == *expected.as_ref() {
-            Ok(())
+    fn peek_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, &Pos<'a, Token>> {
+        self.peek().ok_or(Pos {
+            row: 0,
+            col: 0,
+            code: "",
+            inner: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
+        })
+    }
+
+    fn consume<T: AsRef<Token>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>> {
+        let token = self.next_or_eof(format!("{:?}", expected.as_ref()))?;
+
+        if token.inner == *expected.as_ref() {
+            Ok(token)
         } else {
-            Err(found.into_bad_token_err(format!("{:?}", expected.as_ref())))
+            let (pos, inner) = token.eject();
+            Err(pos.with(ParseError::BadToken {
+                found: inner,
+                expected: format!("{:?}", expected.as_ref()),
+            }))
         }
     }
 }
 
-pub trait Parsable: Sized {
+pub trait Parsable<'a>: Sized + Clone + Debug {
     /// Parses this parsable. This consumes the necessary tokens from the iterator,
     /// hence this should only be used when no alternative parsables are valid.
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self>;
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>>;
 
     /// Tries to parse this parsable. If it succeeds, this returns the same value as parse,
     /// but if it fails, this function won't advance the iterator (at the cost of performance).
-    fn try_parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+    fn try_parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
         let mut copy = (*tokens).clone();
         let parsed = Self::parse(&mut copy)?;
         *tokens = copy;
@@ -40,7 +67,7 @@ pub trait Parsable: Sized {
     }
 
     /// Parses as many instances of this parsable after each other as possible.
-    fn parse_many(tokens: &mut Peekable<Lexer>) -> Vec<Self> {
+    fn parse_many(tokens: &mut Peekable<Lexer<'a>>) -> Vec<Pos<'a, Self>> {
         let mut parsed = Vec::new();
         while let Ok(p) = Self::try_parse(tokens) {
             parsed.push(p);
@@ -49,28 +76,30 @@ pub trait Parsable: Sized {
     }
 
     /// Parses as many instances of this parsable after each other as possible, separated by separator.
-    fn parse_many_sep<T: AsRef<Token>>(tokens: &mut Peekable<Lexer>, separator: T) -> Result<Vec<Self>> {
+    fn parse_many_sep<T: AsRef<Token>>(tokens: &mut Peekable<Lexer<'a>>, separator: T) -> Result<'a, Vec<Pos<'a, Self>>> {
         let mut parsed = Vec::new();
         while let Ok(p) = Self::try_parse(tokens) {
             parsed.push(p);
             match tokens.peek() {
                 None => break,
-                Some(s) => if *separator.as_ref() != **s { break; }
+                Some(s) => if *separator.as_ref() != s.inner { break; }
             }
-            tokens.munch(&separator)?;
+            // TODO: Include?
+            let _ = tokens.consume(&separator)?;
         }
+
         Ok(parsed)
     }
 }
 
-impl SPL {
-    pub fn new(mut lexer: Peekable<Lexer>) -> Result<Self> {
+impl<'a> SPL<'a> {
+    pub fn new(mut lexer: Peekable<Lexer<'a>>) -> Result<Pos<'a, Self>> {
         Self::parse(&mut lexer)
     }
 }
 
-impl Parsable for SPL {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+impl<'a> Parsable<'a> for SPL<'a> {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
         let mut decls = Vec::new();
 
         while tokens.peek().is_some() {
@@ -78,70 +107,107 @@ impl Parsable for SPL {
             decls.push(d);
         }
 
-        Ok(SPL { decls })
+        let pos = decls.join_with(());
+        Ok(pos.with(SPL { decls }))
     }
 }
 
-impl Parsable for Decl {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let decl = match **tokens.peek().ok_or(ParseError::EOF { expected: "declaration".to_owned() })? {
-            Token::Identifier(_) => Decl::FunDecl(FunDecl::parse(tokens)?),
-            _ => Decl::VarDecl(VarDecl::parse(tokens)?)
+impl<'a> Parsable<'a> for Decl<'a> {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+        let token = tokens.peek_or_eof("declaration")?;
+        let decl = match token.inner {
+            Token::Identifier(_) => {
+                let fun_decl = FunDecl::parse(tokens)?;
+                let (pos, inner) = fun_decl.eject();
+                pos.with(Decl::FunDecl(inner))
+            }
+            _ => {
+                let var_decl = VarDecl::parse(tokens)?;
+                let (pos, inner) = var_decl.eject();
+                pos.with(Decl::VarDecl(inner))
+            }
         };
 
         Ok(decl)
     }
 }
 
-impl Parsable for VarDecl {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+impl<'a> Parsable<'a> for VarDecl<'a> {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
         let var_type = <Option<Type>>::parse(tokens)?;
         let id = Id::parse(tokens)?;
-        tokens.munch(Token::Assign)?;
+        let equals = tokens.consume(Token::Assign)?;
         let exp = Exp::parse(tokens)?;
-        tokens.munch(Token::Semicolon)?;
+        let end = tokens.consume(Token::Semicolon)?;
 
-        Ok(VarDecl { var_type, id, exp })
+        Ok(var_type
+            .pos()
+            .extend(&id)
+            .extend(&equals)
+            .extend(&exp)
+            .extend(&end)
+            .with(VarDecl { var_type, id, exp }))
     }
 }
 
-impl Parsable for FunDecl {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let id = Id::parse(tokens)?;
-        tokens.munch(Token::OpenParen)?;
-        let args = Id::parse_many_sep(tokens, Token::Comma)?;
-        tokens.munch(Token::CloseParen)?;
+impl<'a> Parsable<'a> for FunDecl<'a> {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+        let mut positions = Vec::new();
 
-        let fun_type = if let Some(Positioned { inner: Token::HasType, .. }) = tokens.peek() {
-            tokens.munch(Token::HasType)?;
-            Some(Type::parse_function(tokens, &mut Generator::new(), &mut HashMap::new())?.generalize(&Environment::new()))
+        let id = Id::parse(tokens)?;
+        positions.push(tokens.consume(Token::OpenParen)?);
+        let args = Id::parse_many_sep(tokens, Token::Comma)?;
+        positions.push(tokens.consume(Token::CloseParen)?);
+
+        let fun_type = if let Some(Pos { inner: Token::HasType, .. }) = tokens.peek() {
+            positions.push(tokens.consume(Token::HasType)?);
+            let function = Type::parse_function(tokens, &mut Generator::new(), &mut HashMap::new())?;
+            let scheme = function.generalize(&Environment::new());
+            Some(function.with(scheme))
         } else {
             None
         };
 
-        tokens.munch(Token::OpenBracket)?;
+        positions.push(tokens.consume(Token::OpenBracket)?);
         let var_decls = VarDecl::parse_many(tokens);
         let stmts = Stmt::parse_many(tokens);
-        tokens.munch(Token::CloseBracket)?;
+        positions.push(tokens.consume(Token::CloseBracket)?);
 
-        Ok(FunDecl { id, args, fun_type, var_decls, stmts })
+        let var_pos = var_decls.join_with(());
+        let stmt_pos = stmts.join_with(());
+
+        let fun_decl = FunDecl {
+            id,
+            args,
+            fun_type,
+            var_decls,
+            stmts,
+        };
+
+        Ok(positions
+            .join_with(fun_decl)
+            .extend(&var_pos)
+            .extend(&stmt_pos))
     }
 }
 
 /// Parsable for variable type annotations
-impl Parsable for Option<Type> {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        match **tokens.peek().ok_or(ParseError::EOF { expected: "variable type".to_owned() })? {
+impl<'a> Parsable<'a> for Option<Type> {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+        let token = tokens.peek_or_eof("variable type")?;
+        match token.inner {
             Token::Var => {
-                tokens.munch(Token::Var)?;
-                Ok(None)
+                Ok(tokens.consume(Token::Var)?.with(None))
             }
             _ => {
                 let parsed = Type::parse_basic(tokens, &mut Generator::new(), &mut HashMap::new())?;
-                match parsed {
-                    Type::Int | Type::Bool | Type::Char | Type::Tuple(_, _) | Type::Array(_) => Ok(Some(parsed)),
-                    Type::Polymorphic(_) => Err(ParseError::PolyVar),
-                    _ => Err(ParseError::InvalidAnnotation)
+                match parsed.inner {
+                    Type::Int | Type::Bool | Type::Char | Type::Tuple(_, _) | Type::Array(_) => {
+                        let (pos, inner) = parsed.eject();
+                        Ok(pos.with(Some(inner)))
+                    }
+                    Type::Polymorphic(_) => Err(parsed.with(ParseError::PolyVar)),
+                    _ => Err(parsed.with(ParseError::InvalidAnnotation))
                 }
             }
         }
@@ -149,27 +215,29 @@ impl Parsable for Option<Type> {
 }
 
 /// Parsable for many type class annotations
-impl Parsable for Vec<(TypeClass, Id)> {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+impl<'a> Parsable<'a> for Vec<Pos<'a, (TypeClass, Id)>> {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
         let type_classes = <(TypeClass, Id)>::parse_many_sep(tokens, Token::Comma)?;
-        tokens.munch(Token::DoubleArrow)?;
-        Ok(type_classes)
+        let arrow = tokens.consume(Token::DoubleArrow)?;
+        let pos = type_classes.join_with(());
+        Ok(pos.with(type_classes).extend(&arrow))
     }
 }
 
 /// Parsable for type class annotations
-impl Parsable for (TypeClass, Id) {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let class = match Id::parse(tokens)?.0.as_str() {
+impl<'a> Parsable<'a> for (TypeClass, Id) {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+        let id = Id::parse(tokens)?;
+        let class = match id.inner.0.as_str() {
             "Any" => TypeClass::Any,
             "Show" => TypeClass::Show,
             "Eq" => TypeClass::Eq,
             "Ord" => TypeClass::Ord,
-            _ => return Err(ParseError::InvalidAnnotation)
+            _ => return Err(id.with(ParseError::InvalidAnnotation))
         };
         let var = Id::parse(tokens)?;
 
-        Ok((class, var))
+        Ok(id.extend(&var).with((class, var.inner)))
     }
 }
 
@@ -181,218 +249,313 @@ impl AsRef<Token> for Token {
 
 impl Type {
     /// Parses any type other than a function
-    fn parse_basic(tokens: &mut Peekable<Lexer>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<Self> {
-        let token = tokens.peek().ok_or(ParseError::EOF { expected: "type".to_owned() })?;
-        let t = match **token {
-            Token::Void => {
-                tokens.munch(Token::Void)?;
-                Type::Void
-            }
-            Token::Int => {
-                tokens.munch(Token::Int)?;
-                Type::Int
-            }
-            Token::Bool => {
-                tokens.munch(Token::Bool)?;
-                Type::Bool
-            }
-            Token::Char => {
-                tokens.munch(Token::Char)?;
-                Type::Char
-            }
+    fn parse_basic<'a>(tokens: &mut Peekable<Lexer<'a>>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
+        let token = tokens.next_or_eof("type")?;
+        let t = match token.inner {
+            Token::Void => token.with(Type::Void),
+            Token::Int => token.with(Type::Int),
+            Token::Bool => token.with(Type::Bool),
+            Token::Char => token.with(Type::Char),
             Token::OpenParen => {
-                tokens.munch(Token::OpenParen)?;
                 let l = Type::parse_basic(tokens, gen, poly_names)?;
-                tokens.munch(Token::Comma)?;
+                let comma = tokens.consume(Token::Comma)?;
                 let r = Type::parse_basic(tokens, gen, poly_names)?;
-                tokens.munch(Token::CloseParen)?;
-                Type::Tuple(Box::new(l), Box::new(r))
+                let close = tokens.consume(Token::CloseParen)?;
+                token
+                    .extend(&l)
+                    .extend(&comma)
+                    .extend(&r)
+                    .extend(&close)
+                    .with(Type::Tuple(Box::new(l.inner), Box::new(r.inner)))
             }
             Token::OpenArr => {
-                tokens.munch(Token::OpenArr)?;
                 let t = Type::parse_basic(tokens, gen, poly_names)?;
-                tokens.munch(Token::CloseArr)?;
-                Type::Array(Box::new(t))
+                let close = tokens.consume(Token::CloseArr)?;
+                token
+                    .extend(&t)
+                    .extend(&close)
+                    .with(Type::Array(Box::new(t.inner)))
             }
-            Token::Identifier(_) => {
-                let id = Id::parse(tokens)?;
-                Type::Polymorphic(poly_names.entry(id).or_insert(gen.fresh()).clone())
+            Token::Identifier(ref s) => {
+                let id = Id(s.clone());
+                token.with(Type::Polymorphic(poly_names
+                    .entry(id).or_insert(gen.fresh())
+                    .clone()
+                ))
             }
-            _ => return Err(token.clone().into_bad_token_err("type"))
+            _ => return Err(token.with(ParseError::BadToken {
+                found: token.inner.clone(),
+                expected: "type".to_owned(),
+            }))
         };
 
         Ok(t)
     }
 
     /// Parses a function type, including type class constraints
-    pub fn parse_function(tokens: &mut Peekable<Lexer>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<Self> {
+    pub fn parse_function<'a>(tokens: &mut Peekable<Lexer<'a>>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
         // Read optional type class constraints
-        let type_classes = <Vec<(TypeClass, Id)>>::try_parse(tokens).unwrap_or(Vec::new());
-        for (class, var) in type_classes {
+        let type_classes = <Vec<Pos<(TypeClass, Id)>>>::try_parse(tokens).unwrap_or(tokens.peek_or_eof("function type")?.with(Vec::new()));
+        for p in type_classes.inner {
+            let (class, var) = p.inner;
             poly_names.entry(var).or_insert(gen.fresh()).impose(class);
         }
 
         let mut arg_types = Vec::new();
         loop {
-            let token = tokens.peek().ok_or(ParseError::EOF { expected: "type".to_owned() })?;
-            match **token {
+            let token = tokens.peek_or_eof("type")?;
+            match token.inner {
                 Token::To => break,
                 _ => arg_types.push(Type::parse_basic(tokens, gen, poly_names)?)
             }
         }
-        tokens.munch(Token::To)?;
-        let ret_type = Type::parse_basic(tokens, gen, poly_names)?;
+        let to = tokens.consume(Token::To)?;
+        let ret_type = Type::parse_basic(tokens, gen, poly_names)?.extend(&to);
         let fun_type = arg_types
             .into_iter()
-            .rfold(ret_type, |res, arg| Type::Function(Box::new(arg), Box::new(res)));
+            .rfold(ret_type, |res, arg| {
+                let (pos, inner) = res.eject();
+                pos
+                    .extend(&arg)
+                    .with(Type::Function(Box::new(arg.inner), Box::new(inner)))
+            });
 
         Ok(fun_type)
     }
 }
 
-impl Parsable for Stmt {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self, ParseError> {
-        let token = tokens.next().ok_or(ParseError::EOF { expected: "statement".to_owned() })?;
-        let t = match &*token {
+impl<'a> Parsable<'a> for Stmt<'a> {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+        let token = tokens.next_or_eof("statement")?;
+
+        let t = match token.inner {
             Token::If => {
-                tokens.munch(Token::OpenParen)?;
+                let mut positions = vec![token];
+
+                positions.push(tokens.consume(Token::OpenParen)?);
                 let condition = Exp::parse(tokens)?;
-                tokens.munch(Token::CloseParen)?;
-                tokens.munch(Token::OpenBracket)?;
+                positions.push(tokens.consume(Token::CloseParen)?);
+                positions.push(tokens.consume(Token::OpenBracket)?);
                 let then = Stmt::parse_many(tokens);
-                tokens.munch(Token::CloseBracket)?;
-                let otherwise = if let Some(Positioned { inner: Token::Else, .. }) = tokens.peek() {
-                    tokens.munch(Token::Else)?;
-                    tokens.munch(Token::OpenBracket)?;
+                positions.push(tokens.consume(Token::CloseBracket)?);
+                let otherwise = if let Some(Pos { inner: Token::Else, .. }) = tokens.peek() {
+                    positions.push(tokens.consume(Token::Else)?);
+                    positions.push(tokens.consume(Token::OpenBracket)?);
                     let result = Stmt::parse_many(tokens);
-                    tokens.munch(Token::CloseBracket)?;
+                    positions.push(tokens.consume(Token::CloseBracket)?);
                     result
                 } else {
                     Vec::new()
                 };
 
-                Stmt::If(condition, then, otherwise)
+                positions
+                    .join_with(())
+                    .extend(&condition)
+                    .extend(&then.join_with(()))
+                    .extend(&otherwise.join_with(()))
+                    .with(Stmt::If(condition, then, otherwise))
             }
             Token::While => {
-                tokens.munch(Token::OpenParen)?;
-                let condition = Exp::parse(tokens)?;
-                tokens.munch(Token::CloseParen)?;
-                tokens.munch(Token::OpenBracket)?;
-                let repeat = Stmt::parse_many(tokens);
-                tokens.munch(Token::CloseBracket)?;
+                let mut positions = vec![token];
 
-                Stmt::While(condition, repeat)
+                positions.push(tokens.consume(Token::OpenParen)?);
+                let condition = Exp::parse(tokens)?;
+                positions.push(tokens.consume(Token::CloseParen)?);
+                positions.push(tokens.consume(Token::OpenBracket)?);
+                let repeat = Stmt::parse_many(tokens);
+                positions.push(tokens.consume(Token::CloseBracket)?);
+
+                positions
+                    .join_with(())
+                    .extend(&condition)
+                    .extend(&repeat.join_with(()))
+                    .with(Stmt::While(condition, repeat))
             }
             Token::Return => {
-                let value = if let Some(Positioned { inner: Token::Semicolon, .. }) = tokens.peek() {
-                    None
+                if let Some(Pos { inner: Token::Semicolon, .. }) = tokens.peek() {
+                    let end = tokens.consume(Token::Semicolon)?;
+                    token
+                        .with(Stmt::Return(None))
+                        .extend(&end)
                 } else {
-                    Some(Exp::parse(tokens)?)
-                };
-                tokens.munch(Token::Semicolon)?;
-
-                Stmt::Return(value)
-            }
-            Token::Identifier(s) => {
-                let id = Id(s.clone());
-                if let Some(Positioned { inner: Token::OpenParen, .. }) = tokens.peek() {
-                    tokens.munch(Token::OpenParen)?;
-                    let args = Exp::parse_many_sep(tokens, Token::Comma)?;
-                    tokens.munch(Token::CloseParen)?;
-                    tokens.munch(Token::Semicolon)?;
-
-                    Stmt::FunCall(FunCall { id, args, type_args: BTreeMap::new() })
-                } else {
-                    let selector = <Vec<Field>>::parse(tokens)?;
-                    tokens.munch(Token::Assign)?;
                     let exp = Exp::parse(tokens)?;
-                    tokens.munch(Token::Semicolon)?;
-
-                    Stmt::Assignment(id, selector, exp)
+                    let end = tokens.consume(Token::Semicolon)?;
+                    token
+                        .extend(&exp)
+                        .extend(&end)
+                        .with(Stmt::Return(Some(exp)))
                 }
             }
-            _ => return Err(token.into_bad_token_err("statement"))
+            Token::Identifier(ref s) => {
+                let id = token.with(Id(s.clone()));
+                if let Some(Pos { inner: Token::OpenParen, .. }) = tokens.peek() {
+                    let open = tokens.consume(Token::OpenParen)?;
+                    let args = Exp::parse_many_sep(tokens, Token::Comma)?;
+                    let close = tokens.consume(Token::CloseParen)?;
+                    let end = tokens.consume(Token::Semicolon)?;
+
+                    let pos = args
+                        .join_with(())
+                        .extend(&token)
+                        .extend(&open)
+                        .extend(&close)
+                        .extend(&end);
+
+                    let fun_call = FunCall {
+                        id,
+                        args,
+                        type_args: BTreeMap::new(),
+                    };
+
+                    pos.with(Stmt::FunCall(fun_call))
+                } else {
+                    let selector = <Vec<Pos<Field>>>::parse(tokens)?;
+                    let equals = tokens.consume(Token::Assign)?;
+                    let exp = Exp::parse(tokens)?;
+                    let end = tokens.consume(Token::Semicolon)?;
+
+                    token
+                        .extend(&selector)
+                        .extend(&equals)
+                        .extend(&exp)
+                        .extend(&end)
+                        .with(Stmt::Assignment(id, selector.inner, exp))
+                }
+            }
+            _ => return Err(token.pos().with(ParseError::BadToken {
+                found: token.inner,
+                expected: "statement".to_owned(),
+            }))
         };
 
         Ok(t)
     }
 }
 
-impl Exp {
-    fn parse_exp(tokens: &mut Peekable<Lexer>, min_bp: u8) -> Result<Self> {
-        let mut lhs = match tokens.next().ok_or(ParseError::EOF { expected: "expression".to_owned() })? {
-            Positioned { inner: Token::Identifier(s), .. } => {
-                let id = Id(s);
-                if let Some(Positioned { inner: Token::OpenParen, .. }) = tokens.peek() {
-                    tokens.munch(Token::OpenParen)?;
-                    let fun_call = FunCall { id, args: Exp::parse_many_sep(tokens, Token::Comma)?, type_args: BTreeMap::new() };
-                    tokens.munch(Token::CloseParen)?;
-                    Exp::FunCall(fun_call)
+impl<'a> Exp<'a> {
+    fn parse_exp(tokens: &mut Peekable<Lexer<'a>>, min_bp: u8) -> Result<'a, Pos<'a, Self>> {
+        let token = tokens.next_or_eof("expression")?;
+
+        let mut lhs = match token.inner {
+            Token::Identifier(ref s) => {
+                let id = Id(s.clone());
+                if let Some(Pos { inner: Token::OpenParen, .. }) = tokens.peek() {
+                    let open = tokens.consume(Token::OpenParen)?;
+                    let fun_call = FunCall {
+                        id: token.with(id),
+                        args: Exp::parse_many_sep(tokens, Token::Comma)?,
+                        type_args: BTreeMap::new(),
+                    };
+                    let close = tokens.consume(Token::CloseParen)?;
+                    token
+                        .extend(&open)
+                        .extend(&fun_call.args.join_with(()))
+                        .extend(&close)
+                        .with(Exp::FunCall(fun_call))
                 } else {
-                    let fields = <Vec<Field>>::parse(tokens)?;
-                    fields.into_iter().fold(Exp::Variable(id), |e, f| Exp::FunCall(FunCall { id: Id(format!("{}", f)), args: vec![e], type_args: BTreeMap::new() }))
+                    let fields = <Vec<Pos<Field>>>::parse(tokens)?;
+                    fields.inner
+                        .into_iter()
+                        .fold(token.with(Exp::Variable(id)), |e, f| {
+                            let pos = e.pos();
+                            let fun_call = FunCall {
+                                id: f.with(Id(format!("{}", f.inner))),
+                                args: vec![e],
+                                type_args: BTreeMap::new(),
+                            };
+                            pos.with(Exp::FunCall(fun_call)).extend(&f)
+                        })
                 }
             }
-            Positioned { inner: Token::Operator(op), row, col, .. } => {
-                let r_bp = op.prefix_binding_power(row, col)?;
+            Token::Operator(ref op) => {
+                let op = token.with(op.clone());
+                let r_bp = op.prefix_binding_power()?;
                 let rhs = Self::parse_exp(tokens, r_bp)?;
-                Exp::FunCall(FunCall { id: op.prefix_id(row, col)?, args: vec![rhs], type_args: BTreeMap::new() })
+                let pos = rhs.pos();
+                let fun_call = FunCall {
+                    id: op.prefix_id()?,
+                    args: vec![rhs],
+                    type_args: BTreeMap::new(),
+                };
+                token
+                    .extend(&pos)
+                    .with(Exp::FunCall(fun_call))
             }
-            Positioned { inner: Token::Number(n), .. } => Exp::Number(n),
-            Positioned { inner: Token::Character(c), .. } => Exp::Character(c),
-            Positioned { inner: Token::False, .. } => Exp::False,
-            Positioned { inner: Token::True, .. } => Exp::True,
-            Positioned { inner: Token::OpenParen, .. } => {
+            Token::Number(n) => token.with(Exp::Number(n)),
+            Token::Character(c) => token.with(Exp::Character(c)),
+            Token::False => token.with(Exp::Boolean(false)),
+            Token::True => token.with(Exp::Boolean(true)),
+            Token::OpenParen => {
                 let lhs = Self::parse_exp(tokens, 0)?;
-                if let Some(Positioned { inner: Token::CloseParen, .. }) = tokens.peek() {
-                    tokens.munch(Token::CloseParen)?;
+                if let Some(Pos { inner: Token::CloseParen, .. }) = tokens.peek() {
+                    let close = tokens.consume(Token::CloseParen)?;
                     lhs
+                        .extend(&token)
+                        .extend(&close)
                 } else {
-                    tokens.munch(Token::Comma)?;
+                    let comma = tokens.consume(Token::Comma)?;
                     let rhs = Self::parse_exp(tokens, 0)?;
-                    tokens.munch(Token::CloseParen)?;
-                    Exp::Tuple(Box::new(lhs), Box::new(rhs))
+                    let close = tokens.consume(Token::CloseParen)?;
+                    token
+                        .extend(&lhs)
+                        .extend(&comma)
+                        .extend(&rhs)
+                        .extend(&close)
+                        .with(Exp::Tuple(Box::new(lhs), Box::new(rhs)))
                 }
             }
-            Positioned { inner: Token::Nil, .. } => Exp::Nil,
-            token => return Err(token.transform(ParseError::BadToken {
+            Token::Nil => token.with(Exp::Nil),
+            _ => return Err(token.pos().with(ParseError::BadToken {
                 found: token.inner,
-                expected: "expression".to_owned()
+                expected: "expression".to_owned(),
             }))
         };
 
-        while let Some(Positioned { inner: Token::Operator(op), row, col, .. }) = tokens.peek() {
-            let (l_bp, r_bp) = op.infix_binding_power(*row, *col)?;
+        while let Some(Pos { inner: Token::Operator(op), .. }) = tokens.peek() {
+            let op = op.clone();
+            let op = tokens.peek().unwrap().with(op);
+            let (l_bp, r_bp) = op.infix_binding_power()?;
 
             if l_bp < min_bp {
                 break;
             }
 
-            let op = tokens.next().unwrap().transform(op);
+            tokens.next();
             let rhs = Self::parse_exp(tokens, r_bp)?;
 
-            lhs = Exp::FunCall(FunCall { id: op.infix_id()?, args: vec![lhs, rhs], type_args: BTreeMap::new() });
+            let pos = lhs
+                .pos()
+                .extend(&op)
+                .extend(&rhs);
+
+            let fun_call = FunCall {
+                id: op.infix_id()?,
+                args: vec![lhs, rhs],
+                type_args: BTreeMap::new(),
+            };
+
+            lhs = pos.with(Exp::FunCall(fun_call));
         }
 
         Ok(lhs)
     }
 }
 
-impl Positioned<Operator> {
-    fn prefix_binding_power(&self) -> Result<u8> {
+impl<'a> Pos<'a, Operator> {
+    fn prefix_binding_power(&self) -> Result<'a, u8> {
         let bp = match self.inner {
             Operator::Minus => 17,
             Operator::Not => 7,
-            _ => return Err(self.transform(ParseError::Fixity {
+            _ => return Err(self.with(ParseError::Fixity {
                 found: self.inner.clone(),
-                prefix: true
+                prefix: true,
             }))
         };
 
         Ok(bp)
     }
 
-    fn infix_binding_power(&self) -> Result<(u8, u8)> {
+    fn infix_binding_power(&self) -> Result<'a, (u8, u8)> {
         let bp = match self.inner {
             Operator::Times | Operator::Divide | Operator::Modulo => (15, 16),
             Operator::Plus | Operator::Minus => (13, 14),
@@ -402,29 +565,29 @@ impl Positioned<Operator> {
             Operator::And => (6, 5),
             Operator::Or => (4, 3),
             Operator::Cons => (2, 1),
-            _ => return Err(self.transform(ParseError::Fixity {
+            _ => return Err(self.with(ParseError::Fixity {
                 found: self.inner.clone(),
-                prefix: false
+                prefix: false,
             }))
         };
 
         Ok(bp)
     }
 
-    pub fn prefix_id(&self) -> Result<Id> {
+    pub fn prefix_id(&self) -> Result<'a, Pos<'a, Id>> {
         let name = match self.inner {
             Operator::Not => "not",
             Operator::Minus => "neg",
-            _ => return Err(self.transform(ParseError::Fixity {
+            _ => return Err(self.with(ParseError::Fixity {
                 found: self.inner.clone(),
-                prefix: true
+                prefix: true,
             }))
         };
 
-        Ok(Id(name.to_owned()))
+        Ok(self.with(Id(name.to_owned())))
     }
 
-    pub fn infix_id(&self) -> Result<Id> {
+    pub fn infix_id(&self) -> Result<'a, Pos<'a, Id>> {
         let name = match self.inner {
             Operator::Plus => "add",
             Operator::Minus => "sub",
@@ -440,44 +603,46 @@ impl Positioned<Operator> {
             Operator::And => "and",
             Operator::Or => "or",
             Operator::Cons => "cons",
-            _ => return Err(self.transform(ParseError::Fixity {
+            _ => return Err(self.with(ParseError::Fixity {
                 found: self.inner.clone(),
-                prefix: false
+                prefix: false,
             }))
         };
 
-        Ok(Id(name.to_owned()))
+        Ok(self.with(Id(name.to_owned())))
     }
 }
 
-impl Parsable for Exp {
-    fn parse(lexer: &mut Peekable<Lexer>) -> Result<Self> {
-        Self::parse_exp(lexer, 0)
+impl<'a> Parsable<'a> for Exp<'a> {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+        Self::parse_exp(tokens, 0)
     }
 }
 
-impl Parsable for Vec<Field> {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+impl<'a> Parsable<'a> for Vec<Pos<'a, Field>> {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
         let mut fields = Vec::new();
 
-        while let Some(Positioned { inner: Token::Field(_), .. }) = tokens.peek() {
-            match tokens.next() {
-                Some(Positioned { inner: Token::Field(field), .. }) => fields.push(field),
-                _ => panic!("Impossible")
+        while let Some(Pos { inner: Token::Field(_), .. }) = tokens.peek() {
+            let token = tokens.next().unwrap();
+            let pos = token.pos();
+            if let Token::Field(field) = token.inner {
+                fields.push(pos.with(field));
             }
         }
 
-        Ok(fields)
+        Ok(fields.join_with(()).with(fields))
     }
 }
 
-impl Parsable for Id {
-    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        match tokens.next().ok_or(ParseError::EOF { expected: "identifier".to_owned() })? {
-            Positioned { inner: Token::Identifier(s), .. } => Ok(Id(s)),
-            token => Err(token.transform(ParseError::BadToken {
+impl<'a> Parsable<'a> for Id {
+    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+        let token = tokens.next_or_eof("identifier")?;
+        match token.inner {
+            Token::Identifier(ref s) => Ok(token.with(Id(s.clone()))),
+            _ => Err(token.pos().with(ParseError::BadToken {
                 found: token.inner,
-                expected: "identifier".to_owned()
+                expected: "identifier".to_owned(),
             }))
         }
     }
@@ -488,12 +653,12 @@ pub mod error {
     use std::fmt;
     use std::fmt::Debug;
 
-    use crate::char_iterator::Positioned;
+    use crate::char_iterator::Pos;
     use crate::lexer::{Operator, Token};
 
-    pub type Result<T, E = Positioned<ParseError>> = std::result::Result<T, E>;
+    pub type Result<'a, T, E = Pos<'a, ParseError>> = std::result::Result<T, E>;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub enum ParseError {
         BadToken {
             found: Token,
@@ -510,10 +675,10 @@ pub mod error {
         PolyVar,
     }
 
-    impl fmt::Display for Positioned<ParseError> {
+    impl fmt::Display for Pos<'_, ParseError> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                Positioned { inner: ParseError::BadToken { found, expected }, row, col, code } => write!(
+                Pos { inner: ParseError::BadToken { found, expected }, row, col, code } => write!(
                     f,
                     "Bad token {:?} at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
                     found,
@@ -524,8 +689,8 @@ pub mod error {
                     expected,
                     indent = col - 1
                 ),
-                Positioned { inner: ParseError::EOF { expected }, .. } => write!(f, "Unexpected end of file, expected {}", expected),
-                Positioned { inner: ParseError::Fixity { found, prefix }, row, col, code } => write!(
+                Pos { inner: ParseError::EOF { expected }, .. } => write!(f, "Unexpected end of file, expected {}", expected),
+                Pos { inner: ParseError::Fixity { found, prefix }, row, col, code } => write!(
                     f,
                     "{:?} is not a{}fix operator, at {}:{}:\n{}\n{: >indent$}",
                     found,
@@ -536,17 +701,11 @@ pub mod error {
                     "^",
                     indent = col - 1
                 ),
-                Positioned { inner: ParseError::InvalidAnnotation, .. } => write!(f, "Variables cannot have a function or void type"),
-                Positioned { inner: ParseError::PolyVar, .. } => write!(f, "Use the 'var' keyword to indicate a polymorphic variable")
+                Pos { inner: ParseError::InvalidAnnotation, .. } => write!(f, "Variables cannot have a function or void type"),
+                Pos { inner: ParseError::PolyVar, .. } => write!(f, "Use the 'var' keyword to indicate a polymorphic variable")
             }
         }
     }
 
-    impl Debug for Positioned<ParseError> {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "{}", self)
-        }
-    }
-
-    impl Error for Positioned<ParseError> {}
+    impl Error for Pos<'_, ParseError> {}
 }

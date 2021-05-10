@@ -10,27 +10,26 @@ use crate::ssm::prelude::*;
 // Reserve first scratch register to keep track of global variables
 use crate::ssm::Register::R7 as GP;
 use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
-use crate::typer::DecoratedSPL;
 
 const MAIN: &str = "main";
 
 #[derive(Clone)]
-struct Scope {
+struct Scope<'a> {
     global_values: HashMap<Id, Vec<Instruction>>,
     global_addresses: HashMap<Id, Vec<Instruction>>,
     local_values: HashMap<Id, Vec<Instruction>>,
     local_addresses: HashMap<Id, Vec<Instruction>>,
     arg_values: HashMap<Id, Vec<Instruction>>,
     arg_addresses: HashMap<Id, Vec<Instruction>>,
-    functions: HashMap<FunCall, Vec<Instruction>>,
+    functions: HashMap<FunCall<'a>, Vec<Instruction>>,
     function_args: HashMap<Id, Vec<Id>>,
     current_label: Label,
     ifs: usize,
     whiles: usize,
 }
 
-impl Scope {
-    fn new(spl: &DecoratedSPL) -> Self {
+impl Scope<'_> {
+    fn new(spl: &SPL) -> Self {
         Scope {
             global_values: HashMap::new(),
             global_addresses: HashMap::new(),
@@ -42,9 +41,9 @@ impl Scope {
             current_label: Label::new(MAIN),
             function_args: spl.decls
                 .iter()
-                .filter_map(|decl| match decl {
+                .filter_map(|decl| match &decl.inner {
                     Decl::VarDecl(_) => None,
-                    Decl::FunDecl(fun_decl) => Some((fun_decl.id.clone(), fun_decl.args.clone()))
+                    Decl::FunDecl(fun_decl) => Some((fun_decl.id.inner.clone(), fun_decl.args.iter().map(|id| id.inner.clone()).collect()))
                 })
                 .collect(),
             ifs: 0,
@@ -78,7 +77,7 @@ impl Scope {
     }
 }
 
-impl DecoratedSPL {
+impl SPL<'_> {
     pub fn generate_code(&self) -> Result<Program> {
         Ok(Program { instructions: self.generate(&mut Scope::new(self))? })
     }
@@ -101,7 +100,7 @@ trait Gen {
     fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>>;
 }
 
-impl Gen for SPL {
+impl Gen for SPL<'_> {
     fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         // Reserve space for global variables
         let globals = self.decls
@@ -117,7 +116,7 @@ impl Gen for SPL {
         let mut variables = self.decls
             .iter()
             .enumerate()
-            .map(|(index, decl)| match decl {
+            .map(|(index, decl)| match &decl.inner {
                 Decl::VarDecl(var_decl) => var_decl.generate_global(index as isize, scope),
                 _ => Ok(Vec::new())
             })
@@ -134,8 +133,8 @@ impl Gen for SPL {
         // Generate code for main function
         let mut functions = self.decls
             .iter()
-            .find_map(|decl| match decl {
-                Decl::FunDecl(fun_decl) => (fun_decl.id == Id(MAIN.to_owned())).then(|| fun_decl),
+            .find_map(|decl| match &decl.inner {
+                Decl::FunDecl(fun_decl) => (fun_decl.id.inner == Id(MAIN.to_owned())).then(|| fun_decl),
                 _ => None
             })
             .ok_or(GenError::MissingMain)?
@@ -151,7 +150,7 @@ impl Gen for SPL {
     }
 }
 
-impl VarDecl {
+impl VarDecl<'_> {
     fn generate_global(&self, index: isize, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let offset = -index - 1;
 
@@ -161,11 +160,11 @@ impl VarDecl {
         instructions.push(StoreByAddress { offset });
 
         // Retrieving
-        scope.global_values.insert(self.id.clone(), vec![
+        scope.global_values.insert(self.id.inner.clone(), vec![
             LoadRegister { reg: GP },
             LoadAddress { offset }
         ]);
-        scope.global_addresses.insert(self.id.clone(), vec![
+        scope.global_addresses.insert(self.id.inner.clone(), vec![
             LoadRegister { reg: GP },
             ChangeAddress { offset }
         ]);
@@ -179,8 +178,8 @@ impl VarDecl {
         let instructions = self.exp.generate(scope)?;
 
         // Retrieving
-        scope.local_values.insert(self.id.clone(), vec![LoadLocal { offset }]);
-        scope.local_addresses.insert(self.id.clone(), vec![LoadLocalAddress { offset }]);
+        scope.local_values.insert(self.id.inner.clone(), vec![LoadLocal { offset }]);
+        scope.local_addresses.insert(self.id.inner.clone(), vec![LoadLocalAddress { offset }]);
 
         Ok(instructions)
     }
@@ -196,7 +195,7 @@ impl VarDecl {
     }
 }
 
-impl FunDecl {
+impl FunDecl<'_> {
     fn generate(&self, label: Label, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let mut instructions = Vec::new();
         let scope = &mut scope.clone();
@@ -219,7 +218,7 @@ impl FunDecl {
     }
 }
 
-impl Gen for Stmt {
+impl Gen for Stmt<'_> {
     fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let instructions = match self {
             Stmt::If(c, t, e) => {
@@ -287,7 +286,7 @@ impl Gen for Stmt {
                 // Generate address
                 instructions.append(&mut scope.push_address(id));
                 for f in fields {
-                    match f {
+                    match f.inner {
                         Field::Head | Field::First => instructions.push(LoadAddress { offset: 0 }),
                         Field::Tail => instructions.append(&mut vec![
                             LoadAddress { offset: 1 },
@@ -327,14 +326,13 @@ impl Gen for Stmt {
 }
 
 /// Generates an expression, leaving the result on top of the stack
-impl Gen for Exp {
+impl Gen for Exp<'_> {
     fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let instructions = match self {
             Exp::Variable(id) => scope.push_var(id),
             Exp::Number(n) => vec![LoadConstant(*n)],
             Exp::Character(c) => vec![LoadConstant(*c as i32)],
-            Exp::False => vec![LoadConstant(0)],
-            Exp::True => vec![LoadConstant(-1)],
+            Exp::Boolean(b) => vec![LoadConstant(if *b { 1 } else { -1 })],
             Exp::FunCall(fun_call) => {
                 let mut instructions = fun_call.generate(scope)?;
                 instructions.push(LoadRegister { reg: RR });
@@ -356,7 +354,7 @@ impl Gen for Exp {
     }
 }
 
-impl Gen for FunCall {
+impl Gen for FunCall<'_> {
     fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let arg_names = scope.function_args.get(&self.id);
         let instructions = match arg_names {
@@ -394,9 +392,9 @@ impl Gen for FunCall {
     }
 }
 
-impl FunCall {
+impl FunCall<'_> {
     fn label(&self) -> Label {
-        let mut name = format!("{}", self.id);
+        let mut name = format!("{}", self.id.inner);
         if !self.type_args.is_empty() {
             name.push_str(format!("-t{}", self.type_args
                 .iter()

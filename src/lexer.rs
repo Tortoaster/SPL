@@ -4,7 +4,7 @@ use std::iter::Peekable;
 
 use error::Result;
 
-use crate::char_iterator::{CharIterable, CharIterator, Positioned};
+use crate::char_iterator::{CharIterable, CharIterator, Pos};
 use crate::lexer::error::LexError;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -121,7 +121,7 @@ impl<'a> Lexer<'a> {
     fn followed_by(&mut self, c: char) -> bool {
         match self.chars.peek() {
             None => false,
-            Some(d) => if c == **d {
+            Some(d) => if c == d.inner {
                 self.chars.next();
                 true
             } else {
@@ -176,7 +176,7 @@ impl<'a> Lexer<'a> {
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = Positioned<'a, Token>;
+    type Item = Pos<'a, Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let current = self.chars.next()?;
@@ -320,7 +320,7 @@ impl<'a> Iterator for Lexer<'a> {
             }
         };
 
-        Some(current.transform(token))
+        Some(current.with(token))
     }
 }
 

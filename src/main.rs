@@ -1,4 +1,5 @@
-use std::env;
+use std::{env, fs};
+use std::path::Path;
 
 use crate::compiler::error::CompileError;
 
@@ -13,24 +14,37 @@ mod algorithm_w;
 mod generator;
 mod ssm;
 
-fn main() -> Result<(), CompileError> {
+const DIR: &str = "./out/";
+const EXTENSION: &str = ".ssm";
+
+fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        return Err(CompileError::InsufficientArguments);
+        eprintln!("{}", CompileError::InsufficientArguments);
+        return;
     }
 
-    let env = compiler::compile(&args[1])?;
+    let path = Path::new(&args[1]);
 
-    env
-        .iter()
-        .filter(|((id, _), _)|
-            !vec![
-                "print", "isEmpty", "fst", "snd", "hd", "tl", "not", "add", "sub", "mul", "div",
-                "mod", "eq", "ne", "lt", "gt", "le", "ge", "and", "or", "cons"
-            ].contains(&id.0.as_str())
-        )
-        .for_each(|((id, _), t)| println!("{}: {}", id.0, t));
+    let code = fs::read_to_string(path).expect("File inaccessible");
 
-    Ok(())
+    let result = compiler::compile(code.as_str());
+
+    match result {
+        Err(err) => {
+            eprintln!("{}", err);
+            return;
+        }
+        Ok(program) => {
+            let out = (DIR.to_owned() + path
+                .file_stem()
+                .expect("Not a file")
+                .to_str()
+                .unwrap()
+            ).to_owned() + EXTENSION;
+
+            fs::write(out, format!("{}", program)).expect("Unable to write file");
+        }
+    }
 }

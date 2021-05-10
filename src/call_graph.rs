@@ -35,7 +35,7 @@ impl Identifier {
 }
 
 // TODO: Simplify
-pub fn topsorted_sccs(ast: &SPL) -> Option<Vec<Vec<&Decl>>> {
+pub fn topsorted_sccs<'a>(ast: &'a SPL) -> Option<Vec<Vec<&'a Decl<'a>>>> {
     let mut ids = Identifier::new();
 
     let nodes: Vec<Node> = ast.decls
@@ -118,7 +118,7 @@ pub fn topsorted_sccs(ast: &SPL) -> Option<Vec<Vec<&Decl>>> {
 
     let decls: HashMap<(Id, Space), &Decl> = ast.decls
         .iter()
-        .map(|decl| ((decl.id(), decl.space()), decl))
+        .map(|decl| ((decl.id(), decl.space()), &decl.inner))
         .collect();
 
     sccs
@@ -141,7 +141,7 @@ trait Calls {
     fn assignments(&self, exclude: &HashSet<Id>) -> BTreeSet<Id>;
 }
 
-impl Calls for Decl {
+impl Calls for Decl<'_> {
     fn fun_calls(&self) -> BTreeSet<Id> {
         match self {
             Decl::VarDecl(decl) => decl.fun_calls(),
@@ -164,7 +164,7 @@ impl Calls for Decl {
     }
 }
 
-impl Calls for FunDecl {
+impl Calls for FunDecl<'_> {
     fn fun_calls(&self) -> BTreeSet<Id> {
         let mut calls: BTreeSet<Id> = self.var_decls
             .iter()
@@ -183,7 +183,7 @@ impl Calls for FunDecl {
             .iter()
             .flat_map(|decl| {
                 let refs = decl.references(&defined);
-                defined.insert(decl.id.clone());
+                defined.insert(decl.id.inner.clone());
                 refs
             })
             .collect();
@@ -197,7 +197,7 @@ impl Calls for FunDecl {
     fn assignments(&self, _: &HashSet<Id>) -> BTreeSet<Id> {
         let defined = self.var_decls
             .iter()
-            .map(|decl| decl.id.clone())
+            .map(|decl| decl.id.inner.clone())
             .collect();
         self.stmts
             .iter()
@@ -206,7 +206,7 @@ impl Calls for FunDecl {
     }
 }
 
-impl Calls for VarDecl {
+impl Calls for VarDecl<'_> {
     fn fun_calls(&self) -> BTreeSet<Id> {
         self.exp.fun_calls()
     }
@@ -220,7 +220,7 @@ impl Calls for VarDecl {
     }
 }
 
-impl Calls for Stmt {
+impl Calls for Stmt<'_> {
     fn fun_calls(&self) -> BTreeSet<Id> {
         match self {
             Stmt::If(c, t, e) => c
@@ -249,7 +249,7 @@ impl Calls for Stmt {
                     .iter()
                     .flat_map(|arg| arg.fun_calls())
                     .collect();
-                fun_calls.insert(fun_call.id.clone());
+                fun_calls.insert(fun_call.id.inner.clone());
                 fun_calls
             }
             Stmt::Return(e) => e
@@ -308,7 +308,7 @@ impl Calls for Stmt {
             Stmt::Assignment(id, _, _) => if exclude.contains(id) {
                 BTreeSet::new()
             } else {
-                Some(id.clone())
+                Some(id.inner.clone())
                     .into_iter()
                     .collect()
             },
@@ -317,16 +317,16 @@ impl Calls for Stmt {
     }
 }
 
-impl Calls for Exp {
+impl Calls for Exp<'_> {
     fn fun_calls(&self) -> BTreeSet<Id> {
         match self {
-            Exp::Variable(_) | Exp::Number(_) | Exp::Character(_) | Exp::False | Exp::True | Exp::Nil => BTreeSet::new(),
+            Exp::Variable(_) | Exp::Number(_) | Exp::Character(_) | Exp::Boolean(_) | Exp::Nil => BTreeSet::new(),
             Exp::FunCall(fun_call) => {
                 let mut fun_calls: BTreeSet<Id> = fun_call.args
                     .iter()
                     .flat_map(|arg| arg.fun_calls())
                     .collect();
-                fun_calls.insert(fun_call.id.clone());
+                fun_calls.insert(fun_call.id.inner.clone());
                 fun_calls
             }
             Exp::Tuple(l, r) => l
@@ -346,7 +346,7 @@ impl Calls for Exp {
                     .into_iter()
                     .collect()
             }
-            Exp::Number(_) | Exp::Character(_) | Exp::False | Exp::True | Exp::Nil => BTreeSet::new(),
+            Exp::Number(_) | Exp::Character(_) | Exp::Boolean(_) | Exp::Nil => BTreeSet::new(),
             Exp::FunCall(fun_call) => fun_call.args
                 .iter()
                 .flat_map(|arg| arg.references(exclude))

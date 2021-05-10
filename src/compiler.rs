@@ -1,29 +1,21 @@
-use std::fs;
-use std::path::Path;
-
 use error::Result;
 
 use crate::algorithm_w::{Environment, Generator};
 use crate::lexer::Lexable;
 use crate::tree::SPL;
+use crate::generator::Program;
 
-const OUT: &str = "./out/out.ssm";
-
-pub fn compile<P: AsRef<Path>>(path: P) -> Result<Environment> {
-    let code = fs::read_to_string(path).expect("File inaccessible");
-
-    let lexer = code.as_str().tokenize()?;
-    let ast = SPL::new(lexer.peekable())?;
+pub fn compile(code: &str) -> Result<Program> {
+    let lexer = code.tokenize()?;
+    let mut ast = SPL::new(lexer.peekable())?;
 
     let mut gen = Generator::new();
     let mut env = Environment::new();
 
-    let decorated = ast.infer_types(&mut env, &mut gen)?;
-    let program = decorated.generate_code()?;
+    ast.infer_types(&mut env, &mut gen)?;
+    let program = ast.generate_code()?;
 
-    fs::write(OUT, format!("{}", program)).expect("Unable to write file");
-
-    Ok(env)
+    Ok(program)
 }
 
 pub mod error {
@@ -31,22 +23,23 @@ pub mod error {
     use std::fmt;
     use std::fmt::Debug;
 
+    use crate::char_iterator::Pos;
+    use crate::generator::error::GenError;
     use crate::lexer::error::LexError;
     use crate::parser::error::ParseError;
     use crate::typer::error::TypeError;
-    use crate::generator::error::GenError;
 
-    pub type Result<T, E = CompileError> = std::result::Result<T, E>;
+    pub type Result<'a, T, E = CompileError<'a>> = std::result::Result<T, E>;
 
-    pub enum CompileError {
+    pub enum CompileError<'a> {
         LexError(Vec<LexError>),
-        ParseError(ParseError),
+        ParseError(Pos<'a, ParseError>),
         TypeError(TypeError),
         GenError(GenError),
         InsufficientArguments,
     }
 
-    impl fmt::Display for CompileError {
+    impl fmt::Display for CompileError<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 CompileError::LexError(e) => write!(f, "Lexer error:\n{}", e.iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n")),
@@ -58,35 +51,35 @@ pub mod error {
         }
     }
 
-    impl Debug for CompileError {
+    impl Debug for CompileError<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "{}", self)
         }
     }
 
-    impl From<Vec<LexError>> for CompileError {
+    impl From<Vec<LexError>> for CompileError<'_> {
         fn from(e: Vec<LexError>) -> Self {
             CompileError::LexError(e)
         }
     }
 
-    impl From<ParseError> for CompileError {
-        fn from(e: ParseError) -> Self {
+    impl<'a> From<Pos<'a, ParseError>> for CompileError<'a> {
+        fn from(e: Pos<'a, ParseError>) -> Self {
             CompileError::ParseError(e)
         }
     }
 
-    impl From<TypeError> for CompileError {
+    impl From<TypeError> for CompileError<'_> {
         fn from(e: TypeError) -> Self {
             CompileError::TypeError(e)
         }
     }
 
-    impl From<GenError> for CompileError {
+    impl From<GenError> for CompileError<'_> {
         fn from(e: GenError) -> Self {
             CompileError::GenError(e)
         }
     }
 
-    impl Error for CompileError {}
+    impl Error for CompileError<'_> {}
 }
