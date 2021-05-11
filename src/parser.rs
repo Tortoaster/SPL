@@ -5,9 +5,9 @@ use std::iter::Peekable;
 use error::Result;
 
 use crate::algorithm_w::{Environment, Generator, Type, TypeClass, TypeVariable};
-use crate::char_iterator::{Join, Pos};
 use crate::lexer::{Field, Lexer, Operator, Token};
 use crate::parser::error::ParseError;
+use crate::position::{Join, Pos};
 use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 
 trait Util<'a> {
@@ -111,7 +111,7 @@ impl<'a> Parsable<'a> for SPL<'a> {
             row: 0,
             col: 0,
             code: "",
-            inner: ()
+            inner: (),
         });
 
         Ok(pos.with(SPL { decls }))
@@ -683,8 +683,8 @@ pub mod error {
     use std::fmt;
     use std::fmt::Debug;
 
-    use crate::char_iterator::Pos;
     use crate::lexer::{Operator, Token};
+    use crate::position::Pos;
 
     pub type Result<'a, T, E = Pos<'a, ParseError>> = std::result::Result<T, E>;
 

@@ -1,9 +1,9 @@
 use error::Result;
 
 use crate::algorithm_w::{Environment, Generator};
+use crate::generator::Program;
 use crate::lexer::Lexable;
 use crate::tree::SPL;
-use crate::generator::Program;
 
 pub fn compile(code: &str) -> Result<Program> {
     let lexer = code.tokenize()?;
@@ -23,10 +23,10 @@ pub mod error {
     use std::fmt;
     use std::fmt::Debug;
 
-    use crate::char_iterator::Pos;
     use crate::generator::error::GenError;
     use crate::lexer::error::LexError;
     use crate::parser::error::ParseError;
+    use crate::position::Pos;
     use crate::typer::error::TypeError;
 
     pub type Result<'a, T, E = CompileError<'a>> = std::result::Result<T, E>;

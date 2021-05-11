@@ -60,7 +60,7 @@ impl Label {
     pub fn new<S: AsRef<str>>(name: S) -> Self {
         Label {
             name: name.as_ref().to_owned(),
-            suffix: None
+            suffix: None,
         }
     }
     pub fn with_suffix<S: AsRef<str>>(mut self, suffix: S) -> Self {

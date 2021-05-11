@@ -8,3 +8,4 @@ pub mod call_graph;
 pub mod algorithm_w;
 pub mod generator;
 pub mod ssm;
+pub mod position;

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, BTreeSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
@@ -40,7 +40,7 @@ impl TypeVariable {
 }
 
 pub struct Generator {
-    current: usize
+    current: usize,
 }
 
 impl Generator {
@@ -179,7 +179,7 @@ pub enum TypeClass {
     Any,
     Show,
     Eq,
-    Ord
+    Ord,
 }
 
 // impl TypeClass {

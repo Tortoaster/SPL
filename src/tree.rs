@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::algorithm_w::{PolyType, Space, Type, TypeVariable};
-use crate::char_iterator::Pos;
 use crate::lexer::Field;
+use crate::position::Pos;
 
 type PDecl<'a> = Pos<'a, Decl<'a>>;
 type PVarDecl<'a> = Pos<'a, VarDecl<'a>>;
@@ -96,9 +96,9 @@ mod printer {
     use std::fmt;
 
     use crate::algorithm_w::{Environment, PolyType, Type};
+    use crate::tree::PField;
 
     use super::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
-    use crate::tree::PField;
 
     const TAB_SIZE: usize = 4;
 

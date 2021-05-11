@@ -4,8 +4,9 @@ use std::iter::Peekable;
 
 use error::Result;
 
-use crate::char_iterator::{CharIterable, CharIterator, Pos};
+use crate::char_iterator::{CharIterable, CharIterator};
 use crate::lexer::error::LexError;
+use crate::position::Pos;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token {

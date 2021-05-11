@@ -3,7 +3,7 @@ use error::Result;
 use crate::algorithm_w::{Environment, Generator, Space, Substitution, Type, Typed};
 use crate::call_graph;
 use crate::lexer::Field;
-use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl, PStmt};
+use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, PStmt, SPL, Stmt, VarDecl};
 use crate::typer::error::TypeError;
 
 pub trait Infer {
@@ -371,7 +371,7 @@ pub mod error {
     use std::fmt;
     use std::fmt::Debug;
 
-    use crate::algorithm_w::{Type, TypeVariable, TypeClass};
+    use crate::algorithm_w::{Type, TypeClass, TypeVariable};
     use crate::tree::Id;
 
     pub type Result<T, E = TypeError> = std::result::Result<T, E>;

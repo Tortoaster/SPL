@@ -13,6 +13,7 @@ mod call_graph;
 mod algorithm_w;
 mod generator;
 mod ssm;
+mod position;
 
 const DIR: &str = "./out/";
 const EXTENSION: &str = ".ssm";
