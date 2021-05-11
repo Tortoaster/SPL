@@ -7,6 +7,7 @@ use error::Result;
 use crate::char_iterator::{CharIterable, CharIterator};
 use crate::lexer::error::LexError;
 use crate::position::Pos;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token {
@@ -94,6 +95,7 @@ impl<'a> Lexable<'a> for &'a str {
     fn tokenize(self) -> Result<Lexer<'a>> {
         // Create lexer
         let mut lexer = Lexer {
+            code: self,
             chars: self.iter_char().peekable(),
             errors: Vec::new(),
         };
@@ -102,6 +104,7 @@ impl<'a> Lexable<'a> for &'a str {
         if lexer.errors.is_empty() {
             // No errors, return identical lexer
             Ok(Lexer {
+                code: self,
                 chars: self.iter_char().peekable(),
                 errors: Vec::new(),
             })
@@ -114,11 +117,39 @@ impl<'a> Lexable<'a> for &'a str {
 
 #[derive(Clone, Debug)]
 pub struct Lexer<'a> {
+    code: &'a str,
     chars: Peekable<CharIterator<'a>>,
     errors: Vec<LexError>,
 }
 
+#[derive(Clone, Debug)]
+pub struct PeekLexer<'a> {
+    pub code: &'a str,
+    lexer: Peekable<Lexer<'a>>,
+}
+
+impl<'a> Deref for PeekLexer<'a> {
+    type Target = Peekable<Lexer<'a>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.lexer
+    }
+}
+
+impl<'a> DerefMut for PeekLexer<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.lexer
+    }
+}
+
 impl<'a> Lexer<'a> {
+    pub fn peekable(self) -> PeekLexer<'a> {
+        PeekLexer {
+            code: self.code,
+            lexer: <Self as Iterator>::peekable(self)
+        }
+    }
+
     fn followed_by(&mut self, c: char) -> bool {
         match self.chars.peek() {
             None => false,

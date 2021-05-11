@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
+use std::fmt::Display;
 
 #[must_use]
 #[derive(Clone, Eq, Debug)]
@@ -20,6 +22,20 @@ impl<'a, T: PartialEq> PartialEq for Pos<'a, T> {
 impl<'a, T: Hash> Hash for Pos<'a, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.inner.hash(state)
+    }
+}
+
+impl<'a, T: Display> fmt::Display for Pos<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.inner)?;
+        writeln!(f,
+            " at {}:{}:\n{}\n{: >indent$}",
+            self.row,
+            self.col,
+            self.code.lines().nth(self.row - 1).unwrap(),
+            "^",
+            indent = self.col - 1
+        )
     }
 }
 

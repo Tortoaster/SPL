@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
-use std::iter::Peekable;
 
 use error::Result;
 
 use crate::algorithm_w::{Environment, Generator, Type, TypeClass, TypeVariable};
-use crate::lexer::{Field, Lexer, Operator, Token};
+use crate::lexer::{Field, Operator, Token, PeekLexer};
 use crate::parser::error::ParseError;
 use crate::position::{Join, Pos};
 use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
+use crate::char_iterator::CharIterable;
 
 trait Util<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;
@@ -18,20 +18,20 @@ trait Util<'a> {
     fn consume<T: AsRef<Token>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;
 }
 
-impl<'a> Util<'a> for Peekable<Lexer<'a>> {
+impl<'a> Util<'a> for PeekLexer<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>> {
         self.next().ok_or(Pos {
-            row: 0,
-            col: 0,
-            code: "",
+            row: self.code.lines().count(),
+            col: self.code.lines().last().unwrap_or("").len() + 1,
+            code: self.code,
             inner: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
         })
     }
 
     fn peek_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, &Pos<'a, Token>> {
         self.peek().ok_or(Pos {
-            row: 0,
-            col: 0,
+            row: 1,
+            col: 1,
             code: "",
             inner: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
         })
@@ -55,11 +55,11 @@ impl<'a> Util<'a> for Peekable<Lexer<'a>> {
 pub trait Parsable<'a>: Sized + Clone + Debug {
     /// Parses this parsable. This consumes the necessary tokens from the iterator,
     /// hence this should only be used when no alternative parsables are valid.
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>>;
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>>;
 
     /// Tries to parse this parsable. If it succeeds, this returns the same value as parse,
     /// but if it fails, this function won't advance the iterator (at the cost of performance).
-    fn try_parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn try_parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let mut copy = (*tokens).clone();
         let parsed = Self::parse(&mut copy)?;
         *tokens = copy;
@@ -67,7 +67,7 @@ pub trait Parsable<'a>: Sized + Clone + Debug {
     }
 
     /// Parses as many instances of this parsable after each other as possible.
-    fn parse_many(tokens: &mut Peekable<Lexer<'a>>) -> Vec<Pos<'a, Self>> {
+    fn parse_many(tokens: &mut PeekLexer<'a>) -> Vec<Pos<'a, Self>> {
         let mut parsed = Vec::new();
         while let Ok(p) = Self::try_parse(tokens) {
             parsed.push(p);
@@ -76,7 +76,7 @@ pub trait Parsable<'a>: Sized + Clone + Debug {
     }
 
     /// Parses as many instances of this parsable after each other as possible, separated by separator.
-    fn parse_many_sep<T: AsRef<Token>>(tokens: &mut Peekable<Lexer<'a>>, separator: T) -> Result<'a, Vec<Pos<'a, Self>>> {
+    fn parse_many_sep<T: AsRef<Token>>(tokens: &mut PeekLexer<'a>, separator: T) -> Result<'a, Vec<Pos<'a, Self>>> {
         let mut parsed = Vec::new();
         while let Ok(p) = Self::try_parse(tokens) {
             parsed.push(p);
@@ -93,13 +93,13 @@ pub trait Parsable<'a>: Sized + Clone + Debug {
 }
 
 impl<'a> SPL<'a> {
-    pub fn new(mut lexer: Peekable<Lexer<'a>>) -> Result<Pos<'a, Self>> {
+    pub fn new(mut lexer: PeekLexer<'a>) -> Result<Pos<'a, Self>> {
         Self::parse(&mut lexer)
     }
 }
 
 impl<'a> Parsable<'a> for SPL<'a> {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let mut decls = Vec::new();
 
         while tokens.peek().is_some() {
@@ -110,7 +110,7 @@ impl<'a> Parsable<'a> for SPL<'a> {
         let pos = decls.join_with(()).unwrap_or(Pos {
             row: 0,
             col: 0,
-            code: "",
+            code: tokens.code,
             inner: (),
         });
 
@@ -119,7 +119,7 @@ impl<'a> Parsable<'a> for SPL<'a> {
 }
 
 impl<'a> Parsable<'a> for Decl<'a> {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.peek_or_eof("declaration")?;
         let decl = match token.inner {
             Token::Identifier(_) => {
@@ -139,7 +139,7 @@ impl<'a> Parsable<'a> for Decl<'a> {
 }
 
 impl<'a> Parsable<'a> for VarDecl<'a> {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let var_type = <Option<Type>>::parse(tokens)?;
         let id = Id::parse(tokens)?;
         let equals = tokens.consume(Token::Assign)?;
@@ -157,7 +157,7 @@ impl<'a> Parsable<'a> for VarDecl<'a> {
 }
 
 impl<'a> Parsable<'a> for FunDecl<'a> {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let mut positions = Vec::new();
 
         let id = Id::parse(tokens)?;
@@ -208,7 +208,7 @@ impl<'a> Parsable<'a> for FunDecl<'a> {
 
 /// Parsable for variable type annotations
 impl<'a> Parsable<'a> for Option<Type> {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.peek_or_eof("variable type")?;
         match token.inner {
             Token::Var => {
@@ -231,7 +231,7 @@ impl<'a> Parsable<'a> for Option<Type> {
 
 /// Parsable for many type class annotations
 impl<'a> Parsable<'a> for Vec<Pos<'a, (TypeClass, Id)>> {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let type_classes = <(TypeClass, Id)>::parse_many_sep(tokens, Token::Comma)?;
         let arrow = tokens.consume(Token::DoubleArrow)?;
         let pos = type_classes.join_with(()).unwrap_or(arrow.with(()));
@@ -241,7 +241,7 @@ impl<'a> Parsable<'a> for Vec<Pos<'a, (TypeClass, Id)>> {
 
 /// Parsable for type class annotations
 impl<'a> Parsable<'a> for (TypeClass, Id) {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let id = Id::parse(tokens)?;
         let class = match id.inner.0.as_str() {
             "Any" => TypeClass::Any,
@@ -264,7 +264,7 @@ impl AsRef<Token> for Token {
 
 impl Type {
     /// Parses any type other than a function
-    fn parse_basic<'a>(tokens: &mut Peekable<Lexer<'a>>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
+    fn parse_basic<'a>(tokens: &mut PeekLexer<'a>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.next_or_eof("type")?;
         let t = match token.inner {
             Token::Void => token.with(Type::Void),
@@ -308,7 +308,7 @@ impl Type {
     }
 
     /// Parses a function type, including type class constraints
-    pub fn parse_function<'a>(tokens: &mut Peekable<Lexer<'a>>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
+    pub fn parse_function<'a>(tokens: &mut PeekLexer<'a>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
         // Read optional type class constraints
         let type_classes = <Vec<Pos<(TypeClass, Id)>>>::try_parse(tokens).unwrap_or(tokens.peek_or_eof("function type")?.with(Vec::new()));
         for p in type_classes.inner {
@@ -340,7 +340,7 @@ impl Type {
 }
 
 impl<'a> Parsable<'a> for Stmt<'a> {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.next_or_eof("statement")?;
 
         let t = match token.inner {
@@ -460,7 +460,7 @@ impl<'a> Parsable<'a> for Stmt<'a> {
 }
 
 impl<'a> Exp<'a> {
-    fn parse_exp(tokens: &mut Peekable<Lexer<'a>>, min_bp: u8) -> Result<'a, Pos<'a, Self>> {
+    fn parse_exp(tokens: &mut PeekLexer<'a>, min_bp: u8) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.next_or_eof("expression")?;
 
         let mut lhs = match token.inner {
@@ -642,13 +642,13 @@ impl<'a> Pos<'a, Operator> {
 }
 
 impl<'a> Parsable<'a> for Exp<'a> {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         Self::parse_exp(tokens, 0)
     }
 }
 
 impl<'a> Parsable<'a> for Vec<Pos<'a, Field>> {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let mut fields = Vec::new();
 
         let pos = tokens.peek_or_eof("fields")?.with(());
@@ -666,7 +666,7 @@ impl<'a> Parsable<'a> for Vec<Pos<'a, Field>> {
 }
 
 impl<'a> Parsable<'a> for Id {
-    fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
+    fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.next_or_eof("identifier")?;
         match token.inner {
             Token::Identifier(ref s) => Ok(token.with(Id(s.clone()))),
@@ -705,34 +705,19 @@ pub mod error {
         PolyVar,
     }
 
-    impl fmt::Display for Pos<'_, ParseError> {
+    impl fmt::Display for ParseError {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                Pos { inner: ParseError::BadToken { found, expected }, row, col, code } => write!(
-                    f,
-                    "Bad token {:?} at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
-                    found,
-                    row,
-                    col,
-                    code.lines().nth(*row - 1).unwrap(),
-                    "^",
-                    expected,
-                    indent = col - 1
-                ),
-                Pos { inner: ParseError::EOF { expected }, .. } => write!(f, "Unexpected end of file, expected {}", expected),
-                Pos { inner: ParseError::Fixity { found, prefix }, row, col, code } => write!(
-                    f,
-                    "{:?} is not a{}fix operator, at {}:{}:\n{}\n{: >indent$}",
-                    found,
-                    if *prefix { " pre" } else { "n in" },
-                    row,
-                    col,
-                    code.lines().nth(*row - 1).unwrap(),
-                    "^",
-                    indent = col - 1
-                ),
-                Pos { inner: ParseError::InvalidAnnotation, .. } => write!(f, "Variables cannot have a function or void type"),
-                Pos { inner: ParseError::PolyVar, .. } => write!(f, "Use the 'var' keyword to indicate a polymorphic variable")
+                ParseError::BadToken { found, expected } =>
+                    write!(f, "Bad token {:?}, expected: {}", found, expected),
+                ParseError::EOF { expected } =>
+                    write!(f, "Unexpected end of file, expected {}", expected),
+                ParseError::Fixity { found, prefix } =>
+                    write!(f, "{:?} is not a{}fix operator", found, if *prefix { " pre" } else { "n in" }),
+                ParseError::InvalidAnnotation =>
+                    write!(f, "Variables cannot have a function or void type"),
+                ParseError::PolyVar =>
+                    write!(f, "Use the 'var' keyword to indicate a polymorphic variable")
             }
         }
     }
