@@ -88,11 +88,11 @@ impl fmt::Display for Field {
 }
 
 pub trait Lexable<'a> {
-    fn tokenize(self) -> Result<Lexer<'a>>;
+    fn tokenize(self) -> Result<'a, Lexer<'a>>;
 }
 
 impl<'a> Lexable<'a> for &'a str {
-    fn tokenize(self) -> Result<Lexer<'a>> {
+    fn tokenize(self) -> Result<'a, Lexer<'a>> {
         // Create lexer
         let mut lexer = Lexer {
             code: self,
@@ -119,7 +119,7 @@ impl<'a> Lexable<'a> for &'a str {
 pub struct Lexer<'a> {
     code: &'a str,
     chars: Peekable<CharIterator<'a>>,
-    errors: Vec<LexError>,
+    errors: Vec<Pos<'a, LexError>>,
 }
 
 #[derive(Clone, Debug)]
@@ -192,16 +192,18 @@ impl<'a> Lexer<'a> {
 
     fn expected(&mut self, expected: impl Display) {
         self.errors.push(if let Some(c) = self.chars.peek() {
-            LexError::Unexpected {
-                found: **c,
-                row: c.row,
-                col: c.col,
-                code: c.code.to_owned(),
+            c.with(LexError::Unexpected {
+                found: c.inner,
                 expected: expected.to_string(),
-            }
+            })
         } else {
-            LexError::EOF {
-                expected: expected.to_string()
+            Pos {
+                row: self.code.lines().count(),
+                col: self.code.lines().last().unwrap_or("").len() + 1,
+                code: self.code,
+                inner: LexError::EOF {
+                    expected: expected.to_string()
+                }
             }
         });
     }
@@ -330,24 +332,14 @@ impl<'a> Iterator for Lexer<'a> {
                 ".fst" => Token::Field(Field::First),
                 ".snd" => Token::Field(Field::Second),
                 f => {
-                    self.errors.push(LexError::Field {
-                        found: f.to_owned(),
-                        row: current.row,
-                        col: current.col,
-                        code: current.code.to_owned(),
-                    });
+                    self.errors.push(current.with(LexError::Field { found: f.to_owned() }));
                     return self.next();
                 }
             }
             '0'..='9' => Token::Number(self.read_number(*current)),
             ' ' | '\r' | '\n' | '\t' => return self.next(),
             _ => {
-                self.errors.push(LexError::Invalid {
-                    found: *current,
-                    row: current.row,
-                    col: current.col,
-                    code: current.code.to_owned(),
-                });
+                self.errors.push(current.with(LexError::Invalid { found: *current }));
                 return self.next();
             }
         };
@@ -360,68 +352,29 @@ pub mod error {
     use std::error::Error;
     use std::fmt;
     use std::fmt::Debug;
+    use crate::position::Pos;
 
-    pub type Result<T, E = Vec<LexError>> = std::result::Result<T, E>;
+    pub type Result<'a, T, E = Vec<Pos<'a, LexError>>> = std::result::Result<T, E>;
 
     #[derive(Clone)]
     pub enum LexError {
-        Unexpected {
-            found: char,
-            row: usize,
-            col: usize,
-            code: String,
-            expected: String,
-        },
+        Unexpected { found: char, expected: String },
         EOF { expected: String },
-        Invalid {
-            found: char,
-            row: usize,
-            col: usize,
-            code: String,
-        },
-        Field {
-            found: String,
-            row: usize,
-            col: usize,
-            code: String,
-        },
+        Invalid { found: char },
+        Field { found: String },
     }
 
     impl fmt::Display for LexError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                LexError::Unexpected { found, row, col, code, expected } => write!(
-                    f,
-                    "Unexpected character '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: {}",
-                    found,
-                    row,
-                    col,
-                    code.lines().nth(*row - 1).unwrap(),
-                    "^",
-                    expected,
-                    indent = col - 1
-                ),
-                LexError::EOF { expected } => write!(f, "Unexpected EOF\nExpected: {}", expected),
-                LexError::Invalid { found, row, col, code } => write!(
-                    f,
-                    "Invalid character '{}' at {}:{}:\n{}\n{: >indent$}",
-                    found,
-                    row,
-                    col,
-                    code.lines().nth(*row - 1).unwrap(),
-                    "^",
-                    indent = col - 1
-                ),
-                LexError::Field { found, row, col, code } => write!(
-                    f,
-                    "Unexpected field '{}' at {}:{}:\n{}\n{: >indent$}\nExpected: .hd, .tl, .fst, .snd",
-                    found,
-                    row,
-                    col,
-                    code.lines().nth(*row - 1).unwrap(),
-                    "^",
-                    indent = col - 1
-                )
+                LexError::Unexpected { found, expected } =>
+                    write!(f, "Unexpected character '{}', expected: {}", found, expected),
+                LexError::EOF { expected } =>
+                    write!(f, "Unexpected EOF\nExpected: {}", expected),
+                LexError::Invalid { found } =>
+                    write!(f, "Invalid character '{}'", found),
+                LexError::Field { found } =>
+                    write!(f, "Unexpected field '{}', expected: .hd, .tl, .fst, .snd", found)
             }
         }
     }

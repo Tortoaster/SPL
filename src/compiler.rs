@@ -32,7 +32,7 @@ pub mod error {
     pub type Result<'a, T, E = CompileError<'a>> = std::result::Result<T, E>;
 
     pub enum CompileError<'a> {
-        LexError(Vec<LexError>),
+        LexError(Vec<Pos<'a, LexError>>),
         ParseError(Pos<'a, ParseError>),
         TypeError(TypeError),
         GenError(GenError),
@@ -57,8 +57,8 @@ pub mod error {
         }
     }
 
-    impl From<Vec<LexError>> for CompileError<'_> {
-        fn from(e: Vec<LexError>) -> Self {
+    impl<'a> From<Vec<Pos<'a, LexError>>> for CompileError<'a> {
+        fn from(e: Vec<Pos<'a, LexError>>) -> Self {
             CompileError::LexError(e)
         }
     }
