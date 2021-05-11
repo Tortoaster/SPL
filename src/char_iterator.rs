@@ -1,16 +1,28 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::str::Chars;
 
 #[must_use]
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, Debug)]
 pub struct Pos<'a, T> {
     pub row: usize,
     pub col: usize,
     pub code: &'a str,
     pub inner: T,
+}
+
+impl<'a, T: PartialEq> PartialEq for Pos<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl<'a, T: Hash> Hash for Pos<'a, T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inner.hash(state)
+    }
 }
 
 impl<'a, T> Pos<'a, T> {
@@ -44,12 +56,12 @@ impl<'a, T> Pos<'a, T> {
 }
 
 pub trait Join<'a> {
-    fn join_with<'b, U>(&'b self, inner: U) -> Pos<'a, U>;
+    fn join_with<'b, U>(&'b self, inner: U) -> Option<Pos<'a, U>>;
 }
 
 impl<'a, T> Join<'a> for Vec<Pos<'a, T>> {
-    fn join_with<'b, U>(&'b self, inner: U) -> Pos<'a, U> {
-        let min = self
+    fn join_with<'b, U>(&'b self, inner: U) -> Option<Pos<'a, U>> {
+        self
             .iter()
             .min_by(|p1, p2| if p1.row < p2.row {
                 Ordering::Less
@@ -64,13 +76,7 @@ impl<'a, T> Join<'a> for Vec<Pos<'a, T>> {
             } else {
                 Ordering::Greater
             })
-            .expect("cannot join positions of empty list");
-        Pos {
-            row: min.row,
-            col: min.col,
-            code: min.code,
-            inner,
-        }
+            .map(|pos| pos.with(inner))
     }
 }
 

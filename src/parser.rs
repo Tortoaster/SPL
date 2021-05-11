@@ -103,11 +103,17 @@ impl<'a> Parsable<'a> for SPL<'a> {
         let mut decls = Vec::new();
 
         while tokens.peek().is_some() {
-            let d = Decl::parse(tokens)?;
-            decls.push(d);
+            let decl = Decl::parse(tokens)?;
+            decls.push(decl);
         }
 
-        let pos = decls.join_with(());
+        let pos = decls.join_with(()).unwrap_or(Pos {
+            row: 0,
+            col: 0,
+            code: "",
+            inner: ()
+        });
+
         Ok(pos.with(SPL { decls }))
     }
 }
@@ -184,10 +190,19 @@ impl<'a> Parsable<'a> for FunDecl<'a> {
             stmts,
         };
 
-        Ok(positions
+        let mut result = positions
             .join_with(fun_decl)
-            .extend(&var_pos)
-            .extend(&stmt_pos))
+            .unwrap();
+
+        if let Some(pos) = var_pos {
+            result = result.extend(&pos);
+        }
+
+        if let Some(pos) = stmt_pos {
+            result = result.extend(&pos);
+        }
+
+        Ok(result)
     }
 }
 
@@ -219,7 +234,7 @@ impl<'a> Parsable<'a> for Vec<Pos<'a, (TypeClass, Id)>> {
     fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
         let type_classes = <(TypeClass, Id)>::parse_many_sep(tokens, Token::Comma)?;
         let arrow = tokens.consume(Token::DoubleArrow)?;
-        let pos = type_classes.join_with(());
+        let pos = type_classes.join_with(()).unwrap_or(arrow.with(()));
         Ok(pos.with(type_classes).extend(&arrow))
     }
 }
@@ -348,11 +363,17 @@ impl<'a> Parsable<'a> for Stmt<'a> {
                     Vec::new()
                 };
 
-                positions
+                let pos = positions
                     .join_with(())
+                    .unwrap();
+
+                let t_pos = then.join_with(()).unwrap_or(pos.clone());
+                let o_pos = otherwise.join_with(()).unwrap_or(pos.clone());
+
+                pos
                     .extend(&condition)
-                    .extend(&then.join_with(()))
-                    .extend(&otherwise.join_with(()))
+                    .extend(&t_pos)
+                    .extend(&o_pos)
                     .with(Stmt::If(condition, then, otherwise))
             }
             Token::While => {
@@ -365,10 +386,15 @@ impl<'a> Parsable<'a> for Stmt<'a> {
                 let repeat = Stmt::parse_many(tokens);
                 positions.push(tokens.consume(Token::CloseBracket)?);
 
-                positions
+                let pos = positions
                     .join_with(())
+                    .unwrap();
+
+                let r_pos = repeat.join_with(()).unwrap_or(pos.clone());
+
+                pos
                     .extend(&condition)
-                    .extend(&repeat.join_with(()))
+                    .extend(&r_pos)
                     .with(Stmt::While(condition, repeat))
             }
             Token::Return => {
@@ -396,6 +422,7 @@ impl<'a> Parsable<'a> for Stmt<'a> {
 
                     let pos = args
                         .join_with(())
+                        .unwrap_or(open.with(()))
                         .extend(&token)
                         .extend(&open)
                         .extend(&close)
@@ -447,9 +474,10 @@ impl<'a> Exp<'a> {
                         type_args: BTreeMap::new(),
                     };
                     let close = tokens.consume(Token::CloseParen)?;
+                    let arg_pos = fun_call.args.join_with(()).unwrap_or(token.with(()));
                     token
                         .extend(&open)
-                        .extend(&fun_call.args.join_with(()))
+                        .extend(&arg_pos)
                         .extend(&close)
                         .with(Exp::FunCall(fun_call))
                 } else {
@@ -623,6 +651,8 @@ impl<'a> Parsable<'a> for Vec<Pos<'a, Field>> {
     fn parse(tokens: &mut Peekable<Lexer<'a>>) -> Result<'a, Pos<'a, Self>> {
         let mut fields = Vec::new();
 
+        let pos = tokens.peek_or_eof("fields")?.with(());
+
         while let Some(Pos { inner: Token::Field(_), .. }) = tokens.peek() {
             let token = tokens.next().unwrap();
             let pos = token.pos();
@@ -631,7 +661,7 @@ impl<'a> Parsable<'a> for Vec<Pos<'a, Field>> {
             }
         }
 
-        Ok(fields.join_with(()).with(fields))
+        Ok(fields.join_with(()).unwrap_or(pos).with(fields))
     }
 }
 

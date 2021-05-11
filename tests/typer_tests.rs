@@ -254,16 +254,6 @@ fn flow_overloading() {
     assert_eq!("Eq a => a -> Bool", format!("{}", result));
 }
 
-fn type_check(code: &str) -> Result<Environment, CompileError> {
-    let mut gen = Generator::new();
-    let mut env = Environment::new();
-
-    let mut program = SPL::parse(&mut code.tokenize().unwrap().peekable()).unwrap();
-    program.infer_types(&mut env, &mut gen).unwrap();
-
-    Ok(env)
-}
-
 #[test]
 fn type_check_files() {
     let mut errors = 0;
@@ -298,4 +288,14 @@ fn type_check_files() {
     if errors > 0 {
         panic!("Errors found while typing")
     }
+}
+
+fn type_check(code: &str) -> Result<Environment, CompileError> {
+    let mut gen = Generator::new();
+    let mut env = Environment::new();
+
+    let mut program = SPL::parse(&mut code.tokenize()?.peekable())?;
+    program.infer_types(&mut env, &mut gen)?;
+
+    Ok(env)
 }
