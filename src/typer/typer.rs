@@ -85,7 +85,6 @@ impl Infer for VarDecl<'_> {
         // Infer new type
         let (subst_i, inferred) = self.exp.infer_type(env, gen)?;
 
-        // TODO: Necessary?
         let env = &env.apply(&subst_i);
 
         // Get current type
@@ -237,7 +236,6 @@ impl TryInfer for Stmt<'_> {
             Stmt::Assignment(x, f, e) => {
                 let (subst_i, inferred) = e.infer_type(env, gen)?;
 
-                // TODO: necessary?
                 let env = &env.apply(&subst_i);
 
                 let remembered = env
@@ -314,7 +312,6 @@ impl Infer for Exp<'_> {
                 let (l_subst, l_inferred) = l.infer_type(env, gen)?;
                 let (r_subst, r_inferred) = r.infer_type(&env.apply(&l_subst), gen)?;
                 let subst = r_subst.compose(&l_subst);
-                // TODO: Apply substitutions to l_inferred?
                 let l_inferred = l_inferred.apply(&subst);
                 Ok((subst, Type::Tuple(Box::new(l_inferred), Box::new(r_inferred))))
             }
@@ -334,8 +331,14 @@ impl Infer for FunCall<'_> {
             .pop()
             .unwrap();
 
+        let function = self.id.inner.clone();
+        let required = arg_types.len();
+        let got = self.args.len();
+        if required != got {
+            return Err(TypeError::ArgumentNumber { function, required, got });
+        }
+
         let mut env = env.clone();
-        // TODO: Error if wrong number of args
         let mut types = Vec::new();
         let subst_i = self.args
             .iter()
@@ -348,7 +351,6 @@ impl Infer for FunCall<'_> {
             })?;
 
         types.apply(&subst_i);
-        // TODO: Necessary? Probably
         arg_types.apply(&subst_i);
 
         let subst_u = types
@@ -391,19 +393,33 @@ pub mod error {
         Conflict(Id),
         Recursive(TypeVariable, Type),
         Incomplete(Id),
+        ArgumentNumber {
+            function: Id,
+            required: usize,
+            got: usize,
+        },
         // UndefinedClass(TypeClass),
     }
 
     impl fmt::Display for TypeError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                TypeError::Mismatch { expected, found } => write!(f, "Type mismatch: expected {:?}, found {:?}", expected, found),
-                TypeError::TypeClass { found, class } => write!(f, "Type {:?} does not implement {:?}", found, class),
-                TypeError::Unbound(id) => write!(f, "Unbound variable {:?}", id),
-                TypeError::Conflict(id) => write!(f, "Variable {:?} is defined more than once", id),
-                TypeError::Recursive(v, t) => write!(f, "Occur check fails: {:?} vs {:?}", v, t),
-                TypeError::Incomplete(id) => write!(f, "Function {:?} does not return a correct value in all paths", id),
-                // TypeError::UndefinedClass(class) => write!(f, "Type class {:?} not found", class),
+                TypeError::Mismatch { expected, found } =>
+                    write!(f, "Type mismatch: expected {}, found {}", expected, found),
+                TypeError::TypeClass { found, class } =>
+                    write!(f, "Type {} does not implement {}", found, class),
+                TypeError::Unbound(id) =>
+                    write!(f, "Unbound variable {}", id),
+                TypeError::Conflict(id) =>
+                    write!(f, "Variable {} is defined more than once", id),
+                TypeError::Recursive(v, t) =>
+                    write!(f, "Occur check fails: {:?} vs {:?}", v, t),
+                TypeError::Incomplete(id) =>
+                    write!(f, "Function {} does not return a correct value in all paths", id),
+                TypeError::ArgumentNumber { function, got, required } =>
+                    write!(f, "Function {} requires {} arguments, but {} were supplied", function, required, got),
+                // TypeError::UndefinedClass(class) =>
+                //     write!(f, "Type class {:?} not found", class),
             }
         }
     }
