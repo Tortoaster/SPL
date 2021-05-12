@@ -21,6 +21,7 @@ pub trait TryInfer {
 
 impl<'a> SPL<'a> {
     pub fn infer_types(&mut self, env: &mut Environment, gen: &mut Generator) -> Result<()> {
+        // Check for duplicate functions
         let mut names = HashSet::new();
         for decl in &self.decls {
             if let Decl::FunDecl(fun_decl) = &decl.inner {
@@ -30,7 +31,11 @@ impl<'a> SPL<'a> {
                 }
             }
         }
+
+        // Create dependency graph
         let sccs = call_graph::topsorted_sccs(&self);
+
+        // Detect cyclic variable definitions
         for scc in &sccs {
             let vars: Vec<&VarDecl> = scc
                 .into_iter()
@@ -45,6 +50,7 @@ impl<'a> SPL<'a> {
             }
         }
 
+        // Type all declarations in the right order
         for scc in sccs {
             // First add all members of this scc to the environment
             for decl in &scc {
@@ -123,7 +129,21 @@ impl Infer for VarDecl<'_> {
 
 impl Infer for FunDecl<'_> {
     fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
-        // TODO: check for doubly defined arguments and variables
+        // Check for double defined arguments
+        let mut names = HashSet::new();
+        for id in &self.args {
+            if !names.insert(id.inner.clone()) {
+                return Err(TypeError::VarConflict(id.inner.clone()));
+            }
+        }
+
+        // Check for double defined variables
+        let mut names = HashSet::new();
+        for var_decl in &self.var_decls {
+            if !names.insert(var_decl.id.inner.clone()) {
+                return Err(TypeError::VarConflict(var_decl.id.inner.clone()));
+            }
+        }
 
         // Create local scope
         let mut env = env.clone();
