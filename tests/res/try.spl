@@ -13,4 +13,5 @@ main() {
     } else {
         z = x + y;
     }
+    print(z);
 }

@@ -362,6 +362,7 @@ impl Infer for FunCall<'_> {
 
         let subst = subst_u.compose(&subst_i);
         let t = ret_type.apply(&subst);
+
         Ok((subst, t))
     }
 }

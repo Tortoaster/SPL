@@ -359,6 +359,7 @@ impl Gen for FunCall<'_> {
     fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let arg_names = scope.function_args.get(&self.id);
         let instructions = match arg_names {
+            // Builtin function
             None => self.args
                 .iter()
                 .map(|arg| arg.generate(scope))
@@ -372,6 +373,7 @@ impl Gen for FunCall<'_> {
                     AdjustStack { offset: -(self.args.len() as isize) },
                 ])
                 .collect(),
+            // Custom function
             Some(names) => self.args
                 .iter()
                 .zip(names.clone())
@@ -396,8 +398,8 @@ impl Gen for FunCall<'_> {
 impl FunCall<'_> {
     fn label(&self) -> Label {
         let mut name = format!("{}", self.id.inner);
-        if !self.type_args.is_empty() {
-            name.push_str(format!("-t{}", self.type_args
+        if !self.arg_types.is_empty() {
+            name.push_str(format!("-t{}", self.arg_types
                 .iter()
                 .map(|(_, t)| format!("{}", t))
                 .collect::<Vec<String>>()

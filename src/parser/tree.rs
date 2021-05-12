@@ -64,7 +64,7 @@ pub enum Exp<'a> {
 pub struct FunCall<'a> {
     pub id: PId<'a>,
     pub args: Vec<PExp<'a>>,
-    pub type_args: BTreeMap<TypeVariable, Type>,
+    pub arg_types: BTreeMap<TypeVariable, Type>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

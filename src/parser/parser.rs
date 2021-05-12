@@ -430,7 +430,7 @@ impl<'a> Parsable<'a> for Stmt<'a> {
                     let fun_call = FunCall {
                         id,
                         args,
-                        type_args: BTreeMap::new(),
+                        arg_types: BTreeMap::new(),
                     };
 
                     pos.with(Stmt::FunCall(fun_call))
@@ -470,7 +470,7 @@ impl<'a> Exp<'a> {
                     let fun_call = FunCall {
                         id: token.with(id),
                         args: Exp::parse_many_sep(tokens, Token::Comma)?,
-                        type_args: BTreeMap::new(),
+                        arg_types: BTreeMap::new(),
                     };
                     let close = tokens.consume(Token::CloseParen)?;
                     let arg_pos = fun_call.args.join_with(()).unwrap_or(token.with(()));
@@ -488,7 +488,7 @@ impl<'a> Exp<'a> {
                             let fun_call = FunCall {
                                 id: f.with(Id(format!("{}", f.inner))),
                                 args: vec![e],
-                                type_args: BTreeMap::new(),
+                                arg_types: BTreeMap::new(),
                             };
                             pos.with(Exp::FunCall(fun_call)).extend(&f)
                         })
@@ -502,7 +502,7 @@ impl<'a> Exp<'a> {
                 let fun_call = FunCall {
                     id: op.prefix_id()?,
                     args: vec![rhs],
-                    type_args: BTreeMap::new(),
+                    arg_types: BTreeMap::new(),
                 };
                 token
                     .extend(&pos)
@@ -558,7 +558,7 @@ impl<'a> Exp<'a> {
             let fun_call = FunCall {
                 id: op.infix_id()?,
                 args: vec![lhs, rhs],
-                type_args: BTreeMap::new(),
+                arg_types: BTreeMap::new(),
             };
 
             lhs = pos.with(Exp::FunCall(fun_call));
