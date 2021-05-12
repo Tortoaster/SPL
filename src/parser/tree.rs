@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::algorithm_w::{PolyType, Space, Type, TypeVariable};
 use crate::lexer::Field;
 use crate::position::Pos;
+use crate::typer::{PolyType, Space, Type, TypeVariable};
 
 type PDecl<'a> = Pos<'a, Decl<'a>>;
 type PVarDecl<'a> = Pos<'a, VarDecl<'a>>;
@@ -95,10 +95,10 @@ impl Decl<'_> {
 mod printer {
     use std::fmt;
 
-    use crate::algorithm_w::{Environment, PolyType, Type};
-    use crate::tree::PField;
+    use crate::typer::{Environment, PolyType, Type};
 
     use super::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
+    use super::PField;
 
     const TAB_SIZE: usize = 4;
 

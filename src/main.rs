@@ -3,16 +3,11 @@ use std::path::Path;
 
 use crate::compiler::error::CompileError;
 
-mod char_iterator;
 mod lexer;
 mod parser;
 mod typer;
-mod tree;
 mod compiler;
-mod call_graph;
-mod algorithm_w;
 mod generator;
-mod ssm;
 mod position;
 
 const DIR: &str = "./out/";

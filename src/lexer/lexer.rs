@@ -1,13 +1,13 @@
 use std::fmt;
 use std::fmt::{Debug, Display};
 use std::iter::Peekable;
+use std::ops::{Deref, DerefMut};
 
 use error::Result;
 
-use crate::char_iterator::{CharIterable, CharIterator};
+use crate::lexer::{CharIterable, CharIterator};
 use crate::lexer::error::LexError;
 use crate::position::Pos;
-use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token {
@@ -146,7 +146,7 @@ impl<'a> Lexer<'a> {
     pub fn peekable(self) -> PeekLexer<'a> {
         PeekLexer {
             code: self.code,
-            lexer: <Self as Iterator>::peekable(self)
+            lexer: <Self as Iterator>::peekable(self),
         }
     }
 
@@ -203,7 +203,7 @@ impl<'a> Lexer<'a> {
                 code: self.code,
                 inner: LexError::EOF {
                     expected: expected.to_string()
-                }
+                },
             }
         });
     }
@@ -352,6 +352,7 @@ pub mod error {
     use std::error::Error;
     use std::fmt;
     use std::fmt::Debug;
+
     use crate::position::Pos;
 
     pub type Result<'a, T, E = Vec<Pos<'a, LexError>>> = std::result::Result<T, E>;

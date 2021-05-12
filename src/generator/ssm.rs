@@ -84,7 +84,7 @@ impl fmt::Display for Label {
 /// # Examples
 ///
 /// ```
-/// use spl::ssm::prelude::*;
+/// use spl::generator::prelude::*;
 ///
 /// let example: Vec<Instruction> = vec![
 ///     Branch { label: Label::new("m") },

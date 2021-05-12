@@ -3,11 +3,11 @@ use std::fmt::Debug;
 
 use error::Result;
 
-use crate::algorithm_w::{Environment, Generator, Type, TypeClass, TypeVariable};
-use crate::lexer::{Field, Operator, Token, PeekLexer};
+use crate::lexer::{Field, Operator, PeekLexer, Token};
+use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 use crate::parser::error::ParseError;
 use crate::position::{Join, Pos};
-use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
+use crate::typer::{Environment, Generator, Type, TypeClass, TypeVariable};
 
 trait Util<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;

@@ -4,9 +4,8 @@ use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 
 use crate::lexer::Lexable;
-use crate::tree::Id;
-use crate::typer::error::Result;
-use crate::typer::error::TypeError;
+use crate::parser::Id;
+use crate::typer::error::{Result, TypeError};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct TypeVariable(usize, BTreeSet<TypeClass>);

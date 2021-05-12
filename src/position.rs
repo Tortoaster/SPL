@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 use std::fmt;
+use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
-use std::fmt::Display;
 
 #[must_use]
 #[derive(Clone, Eq, Debug)]
@@ -29,12 +29,12 @@ impl<'a, T: Display> fmt::Display for Pos<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inner)?;
         writeln!(f,
-            " at {}:{}:\n{}\n{: >indent$}",
-            self.row,
-            self.col,
-            self.code.lines().nth(self.row - 1).unwrap(),
-            "^",
-            indent = self.col - 1
+                 " at {}:{}:\n{}\n{: >indent$}",
+                 self.row,
+                 self.col,
+                 self.code.lines().nth(self.row - 1).unwrap(),
+                 "^",
+                 indent = self.col - 1
         )
     }
 }

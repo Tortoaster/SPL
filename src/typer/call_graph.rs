@@ -3,8 +3,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::Graph;
 use petgraph::prelude::*;
 
-use crate::algorithm_w::Space;
-use crate::tree::{Decl, Exp, FunDecl, Id, SPL, Stmt, VarDecl};
+use crate::parser::{Decl, Exp, FunDecl, Id, SPL, Stmt, VarDecl};
+use crate::typer::Space;
 
 type Node = usize;
 

@@ -1,9 +1,9 @@
 use error::Result;
 
-use crate::algorithm_w::{Environment, Generator, Space, Substitution, Type, Typed};
-use crate::call_graph;
 use crate::lexer::Field;
-use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, PStmt, SPL, Stmt, VarDecl};
+use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, PStmt, SPL, Stmt, VarDecl};
+use crate::typer::{Environment, Generator, Space, Substitution, Type, Typed};
+use crate::typer::call_graph;
 use crate::typer::error::TypeError;
 
 pub trait Infer {
@@ -371,8 +371,8 @@ pub mod error {
     use std::fmt;
     use std::fmt::Debug;
 
-    use crate::algorithm_w::{Type, TypeClass, TypeVariable};
-    use crate::tree::Id;
+    use crate::parser::Id;
+    use crate::typer::{Type, TypeClass, TypeVariable};
 
     pub type Result<T, E = TypeError> = std::result::Result<T, E>;
 

@@ -1,9 +1,9 @@
 use error::Result;
 
-use crate::algorithm_w::{Environment, Generator};
 use crate::generator::Program;
 use crate::lexer::Lexable;
-use crate::tree::SPL;
+use crate::parser::SPL;
+use crate::typer::{Environment, Generator};
 
 pub fn compile(code: &str) -> Result<Program> {
     let lexer = code.tokenize()?;

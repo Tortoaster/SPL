@@ -3,13 +3,13 @@ use std::fmt;
 
 use error::Result;
 
-use crate::algorithm_w::Space;
 use crate::generator::error::GenError;
-use crate::lexer::Field;
-use crate::ssm::prelude::*;
+use crate::generator::prelude::*;
 // Reserve first scratch register to keep track of global variables
-use crate::ssm::Register::R7 as GP;
-use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
+use crate::generator::Register::R7 as GP;
+use crate::lexer::Field;
+use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
+use crate::typer::Space;
 
 const MAIN: &str = "main";
 
@@ -408,8 +408,8 @@ impl FunCall<'_> {
 }
 
 mod core {
-    use crate::algorithm_w::Type;
-    use crate::ssm::prelude::*;
+    use crate::generator::prelude::*;
+    use crate::typer::Type;
 
     pub fn core() -> Vec<Instruction> {
         std::iter::empty()
