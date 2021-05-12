@@ -1,12 +1,10 @@
 use std::fs;
 
-use spl::algorithm_w::{Environment, Generator, Space, Type, TypeClass};
 use spl::compiler::error::CompileError;
 use spl::lexer::Lexable;
-use spl::parser::Parsable;
-use spl::tree::{Exp, Id, SPL};
+use spl::parser::{Exp, Id, Parsable, SPL};
+use spl::typer::{Environment, Generator, Infer, Space, Type, TypeClass};
 use spl::typer::error::TypeError;
-use spl::typer::Infer;
 
 #[test]
 fn simple_exp() {

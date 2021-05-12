@@ -1,7 +1,7 @@
 use std::fs;
 
 use spl::lexer::Lexable;
-use spl::tree::SPL;
+use spl::parser::SPL;
 
 const RES_DIR: &str = "tests/res/";
 
