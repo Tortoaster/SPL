@@ -8,7 +8,6 @@ use crate::lexer::{Field, Operator, Token, PeekLexer};
 use crate::parser::error::ParseError;
 use crate::position::{Join, Pos};
 use crate::tree::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
-use crate::char_iterator::CharIterable;
 
 trait Util<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;

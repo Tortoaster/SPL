@@ -202,7 +202,7 @@ impl FunDecl<'_> {
         scope.clear_local();
         scope.current_label = label;
 
-        instructions.push(Labeled(Label::new(&self.id.to_string()), Box::new(Link { length: self.var_decls.len() })));
+        instructions.push(Labeled(Label::new(&self.id.inner.to_string()), Box::new(Link { length: self.var_decls.len() })));
         for (index, var) in self.var_decls.iter().enumerate() {
             let mut vars = var.generate_local(index as isize, scope)?;
             instructions.append(&mut vars);
