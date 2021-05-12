@@ -1,10 +1,11 @@
 use error::Result;
 
 use crate::lexer::Field;
-use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, PStmt, SPL, Stmt, VarDecl};
+use crate::parser::{Decl, Exp, FunCall, FunDecl, PStmt, SPL, Stmt, VarDecl};
 use crate::typer::{Environment, Generator, Space, Substitution, Type, Typed};
 use crate::typer::call_graph;
 use crate::typer::error::TypeError;
+use std::collections::{HashSet};
 
 pub trait Infer {
     fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)>;
@@ -20,8 +21,16 @@ pub trait TryInfer {
 
 impl<'a> SPL<'a> {
     pub fn infer_types(&mut self, env: &mut Environment, gen: &mut Generator) -> Result<()> {
-        // TODO: Check for duplicate definitions
-        let sccs = call_graph::topsorted_sccs(&self).ok_or(TypeError::Conflict(Id("Some".to_owned())))?;
+        let mut names = HashSet::new();
+        for decl in &self.decls {
+            if let Decl::FunDecl(fun_decl) = &decl.inner {
+                let id = &fun_decl.id.inner;
+                if !names.insert(id.clone()) {
+                    return Err(TypeError::FunConflict(id.clone()));
+                }
+            }
+        }
+        let sccs = call_graph::topsorted_sccs(&self);
         for scc in &sccs {
             let vars: Vec<&VarDecl> = scc
                 .into_iter()
@@ -57,7 +66,7 @@ impl<'a> SPL<'a> {
                     }
                 };
                 if env.insert((decl.id(), decl.space()), inner.into()).is_some() {
-                    return Err(TypeError::Conflict(decl.id()));
+                    return Err(TypeError::VarConflict(decl.id()));
                 }
             }
 
@@ -402,7 +411,8 @@ pub mod error {
             class: TypeClass,
         },
         Unbound(Id),
-        Conflict(Id),
+        FunConflict(Id),
+        VarConflict(Id),
         Recursive(TypeVariable, Type),
         Incomplete(Id),
         ArgumentNumber {
@@ -423,7 +433,9 @@ pub mod error {
                     write!(f, "Type {} does not implement {}", found, class),
                 TypeError::Unbound(id) =>
                     write!(f, "Unbound variable {}", id),
-                TypeError::Conflict(id) =>
+                TypeError::FunConflict(id) =>
+                    write!(f, "Function {} is defined more than once", id),
+                TypeError::VarConflict(id) =>
                     write!(f, "Variable {} is defined more than once", id),
                 TypeError::Recursive(v, t) =>
                     write!(f, "Occur check fails: {:?} vs {:?}", v, t),

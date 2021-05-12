@@ -34,8 +34,7 @@ impl Identifier {
     }
 }
 
-// TODO: Simplify
-pub fn topsorted_sccs<'a>(ast: &'a SPL) -> Option<Vec<Vec<&'a Decl<'a>>>> {
+pub fn topsorted_sccs<'a>(ast: &'a SPL) -> Vec<Vec<&'a Decl<'a>>> {
     let mut ids = Identifier::new();
 
     let nodes: Vec<Node> = ast.decls
@@ -73,8 +72,6 @@ pub fn topsorted_sccs<'a>(ast: &'a SPL) -> Option<Vec<Vec<&'a Decl<'a>>>> {
         )
         .collect();
 
-    // TODO: Detect cyclic initialization for variables
-
     let mut graph = Graph::<Node, ()>::new();
 
     let indices: HashMap<Node, NodeIndex> = nodes
@@ -109,12 +106,12 @@ pub fn topsorted_sccs<'a>(ast: &'a SPL) -> Option<Vec<Vec<&'a Decl<'a>>>> {
         .map(|scc| scc
             .into_iter()
             .map(|index| {
-                let node = inv_indices.get(&index)?;
-                Some(inv_ids.get(&node)?.clone())
+                let node = inv_indices.get(&index).unwrap();
+                inv_ids.get(&node).unwrap().clone()
             })
             .collect()
         )
-        .collect::<Option<Vec<Vec<(Id, Space)>>>>()?;
+        .collect::<Vec<Vec<(Id, Space)>>>();
 
     let decls: HashMap<(Id, Space), &Decl> = ast.decls
         .iter()
@@ -125,11 +122,11 @@ pub fn topsorted_sccs<'a>(ast: &'a SPL) -> Option<Vec<Vec<&'a Decl<'a>>>> {
         .into_iter()
         .map(|scc| scc
             .into_iter()
-            .map(|node| decls.get(&node).map(|decl| *decl))
+            .map(|node| *decls.get(&node).unwrap())
             .collect()
         )
         .rev()
-        .collect::<Option<Vec<Vec<&Decl>>>>()
+        .collect::<Vec<Vec<&Decl>>>()
 }
 
 trait Calls {
