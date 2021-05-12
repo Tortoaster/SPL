@@ -132,7 +132,6 @@ pub fn topsorted_sccs<'a>(ast: &'a SPL) -> Option<Vec<Vec<&'a Decl<'a>>>> {
         .collect::<Option<Vec<Vec<&Decl>>>>()
 }
 
-// TODO: Return iterators
 trait Calls {
     fn fun_calls(&self) -> BTreeSet<Id>;
 

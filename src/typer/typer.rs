@@ -22,7 +22,19 @@ impl<'a> SPL<'a> {
     pub fn infer_types(&mut self, env: &mut Environment, gen: &mut Generator) -> Result<()> {
         // TODO: Check for duplicate definitions
         let sccs = call_graph::topsorted_sccs(&self).ok_or(TypeError::Conflict(Id("Some".to_owned())))?;
-        // TODO: Check variable cycles
+        for scc in &sccs {
+            let vars: Vec<&VarDecl> = scc
+                .into_iter()
+                .filter_map(|decl| if let Decl::VarDecl(var_decl) = decl {
+                    Some(var_decl)
+                } else {
+                    None
+                })
+                .collect();
+            if vars.len() > 1 {
+                return Err(TypeError::Codependent(vars[0].id.inner.clone(), vars[1].id.inner.clone()))
+            }
+        }
 
         for scc in sccs {
             // First add all members of this scc to the environment
@@ -398,6 +410,7 @@ pub mod error {
             required: usize,
             got: usize,
         },
+        Codependent(Id, Id)
         // UndefinedClass(TypeClass),
     }
 
@@ -418,6 +431,8 @@ pub mod error {
                     write!(f, "Function {} does not return a correct value in all paths", id),
                 TypeError::ArgumentNumber { function, got, required } =>
                     write!(f, "Function {} requires {} arguments, but {} were supplied", function, required, got),
+                TypeError::Codependent(a, b) =>
+                    write!(f, "Global variables {} and {} depend on each other", a, b),
                 // TypeError::UndefinedClass(class) =>
                 //     write!(f, "Type class {:?} not found", class),
             }
