@@ -2,5 +2,15 @@ var x = 1;
 var y = 2;
 
 main() {
-    var z = x + y;
+    var cond = True;
+    var z = 0;
+    while(cond) {
+        x = x + 2;
+        cond = False;
+    }
+    if(!cond) {
+        z = x - y;
+    } else {
+        z = x + y;
+    }
 }

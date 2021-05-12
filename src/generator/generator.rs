@@ -152,7 +152,7 @@ impl Gen for SPL<'_> {
 
 impl VarDecl<'_> {
     fn generate_global(&self, index: isize, scope: &mut Scope) -> Result<Vec<Instruction>> {
-        let offset = -index - 1;
+        let offset = -index;
 
         // Initialization
         let mut instructions = self.exp.generate(scope)?;
@@ -175,7 +175,8 @@ impl VarDecl<'_> {
     fn generate_local(&self, index: isize, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let offset = index + 1;
         // Initialization
-        let instructions = self.exp.generate(scope)?;
+        let mut instructions = self.exp.generate(scope)?;
+        instructions.push(StoreLocal { offset });
 
         // Retrieving
         scope.local_values.insert(self.id.inner.clone(), vec![LoadLocal { offset }]);
@@ -332,7 +333,7 @@ impl Gen for Exp<'_> {
             Exp::Variable(id) => scope.push_var(id),
             Exp::Number(n) => vec![LoadConstant(*n)],
             Exp::Character(c) => vec![LoadConstant(*c as i32)],
-            Exp::Boolean(b) => vec![LoadConstant(if *b { 1 } else { -1 })],
+            Exp::Boolean(b) => vec![LoadConstant(if *b { -1 } else { 0 })],
             Exp::FunCall(fun_call) => {
                 let mut instructions = fun_call.generate(scope)?;
                 instructions.push(LoadRegister { reg: RR });
@@ -416,15 +417,32 @@ mod core {
             .chain(print_int())
             .chain(print_bool())
             .chain(print_char())
-            .chain(add())
+            .chain(bin_op(Label::new("add"), Add))
+            .chain(bin_op(Label::new("sub"), Sub))
+            .chain(bin_op(Label::new("mul"), Mul))
+            .chain(bin_op(Label::new("div"), Div))
+            .chain(bin_op(Label::new("mod"), Mod))
+            .chain(un_op(Label::new("neg"), Neg))
+            .chain(bin_op(Label::new("and"), And))
+            .chain(bin_op(Label::new("or"), Or))
+            .chain(un_op(Label::new("not"), Not))
             .collect()
     }
 
-    fn add() -> Vec<Instruction> {
+    fn un_op(label: Label, op: Instruction) -> Vec<Instruction> {
         vec![
-            Labeled(Label::new("add"), Box::new(LoadStack { offset: -2 })),
+            Labeled(label, Box::new(LoadStack { offset: -1 })),
+            op,
+            StoreRegister { reg: RR },
+            Return
+        ]
+    }
+
+    fn bin_op(label: Label, op: Instruction) -> Vec<Instruction> {
+        vec![
+            Labeled(label, Box::new(LoadStack { offset: -2 })),
             LoadStack { offset: -2 },
-            Add,
+            op,
             StoreRegister { reg: RR },
             Return
         ]
@@ -472,18 +490,6 @@ mod core {
             Labeled(Label::new(format!("print-t{}--endif1", Type::Bool)), Box::new(Return)),
         ]
     }
-
-    // fn op(label: Label, op: Instruction) -> Vec<Instruction> {
-    //     vec![
-    //         Labeled(label, Box::new(LoadStack { offset: -2 })),
-    //         LoadStack { offset: -2 },
-    //         op,
-    //         StoreRegister { reg: RR },
-    //         Return
-    //     ]
-    // }
-
-    // hd, tl, cons, fst, snd, isEmpty
 }
 
 pub mod error {
