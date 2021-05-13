@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use error::Result;
 
 use crate::lexer::Field;
@@ -5,7 +7,6 @@ use crate::parser::{Decl, Exp, FunCall, FunDecl, PStmt, SPL, Stmt, VarDecl};
 use crate::typer::{Environment, Generator, Space, Substitution, Type, Typed};
 use crate::typer::call_graph;
 use crate::typer::error::TypeError;
-use std::collections::{HashSet};
 
 pub trait Infer {
     fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)>;
@@ -91,7 +92,7 @@ impl<'a> SPL<'a> {
                 }
             }
 
-            // And finally update their types in the tree
+            // Update their types in the tree
             for decl in &scc {
                 match decl {
                     Decl::VarDecl(var_decl) => {
@@ -104,9 +105,9 @@ impl<'a> SPL<'a> {
                     }
                 }
             }
-        }
 
-        // TODO: Decorate function calls
+            // TODO: Update function call type arguments with most recent substitution
+        }
 
         Ok(())
     }
@@ -376,9 +377,11 @@ impl Infer for Exp<'_> {
 
 impl Infer for FunCall<'_> {
     fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
-        let mut arg_types = env
+        let function = env
             .get(&(self.id.inner.clone(), Space::Fun))
-            .ok_or(TypeError::Unbound(self.id.inner.clone()))?
+            .ok_or(TypeError::Unbound(self.id.inner.clone()))?;
+
+        let mut arg_types = function
             .instantiate(gen)
             .unfold();
 
@@ -386,11 +389,11 @@ impl Infer for FunCall<'_> {
             .pop()
             .unwrap();
 
-        let function = self.id.inner.clone();
+        let id = self.id.inner.clone();
         let required = arg_types.len();
         let got = self.args.len();
         if required != got {
-            return Err(TypeError::ArgumentNumber { function, required, got });
+            return Err(TypeError::ArgumentNumber { function: id, required, got });
         }
 
         let mut env = env.clone();
@@ -409,16 +412,22 @@ impl Infer for FunCall<'_> {
         arg_types.apply(&subst_i);
 
         let subst_u = types
-            .into_iter()
+            .iter()
             .zip(&arg_types)
             .fold(Ok(Substitution::new()), |acc, (inferred, required)| {
                 let subst = acc?;
-                let subst_u = required.apply(&subst).unify_with(&inferred)?;
+                let subst_u = required.apply(&subst).unify_with(inferred)?;
                 Ok(subst_u.compose(&subst))
             })?;
 
         let subst = subst_u.compose(&subst_i);
         let t = ret_type.apply(&subst);
+
+        // Decorate function call with filled-in type arguments
+        let full_type = types
+            .into_iter()
+            .fold(t.clone(), |acc, t| Type::Function(Box::new(t), Box::new(acc)));
+        *self.type_args.borrow_mut() = function.inner.find_substitution(&full_type);
 
         Ok((subst, t))
     }

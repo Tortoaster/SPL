@@ -1,10 +1,9 @@
-use std::collections::BTreeMap;
+use std::cell::RefCell;
 use std::fmt;
 
 use crate::lexer::Field;
 use crate::position::Pos;
-use crate::typer::{PolyType, Space, Type, TypeVariable};
-use std::cell::RefCell;
+use crate::typer::{PolyType, Space, Type, Substitution};
 
 type PDecl<'a> = Pos<'a, Decl<'a>>;
 type PVarDecl<'a> = Pos<'a, VarDecl<'a>>;
@@ -65,7 +64,7 @@ pub enum Exp<'a> {
 pub struct FunCall<'a> {
     pub id: PId<'a>,
     pub args: Vec<PExp<'a>>,
-    pub arg_types: RefCell<BTreeMap<TypeVariable, Type>>,
+    pub type_args: RefCell<Substitution>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

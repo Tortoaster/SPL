@@ -398,8 +398,8 @@ impl Gen for FunCall<'_> {
 impl FunCall<'_> {
     fn label(&self) -> Label {
         let mut name = format!("{}", self.id.inner);
-        if !self.arg_types.borrow().is_empty() {
-            name.push_str(format!("-t{}", self.arg_types
+        if !self.type_args.borrow().is_empty() {
+            name.push_str(format!("-t{}", self.type_args
                 .borrow()
                 .iter()
                 .map(|(_, t)| format!("{}", t))

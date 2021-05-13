@@ -74,6 +74,29 @@ pub enum Type {
 }
 
 impl Type {
+    /// Finds out what substitution is necessary for this type to become the other type.
+    /// This assumes the structure of the types is the same.
+    /// Type variables from this type will not be substituted with other type variables.
+    pub fn find_substitution(&self, other: &Self) -> Substitution {
+        match (&self, other) {
+            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => l1
+                .find_substitution(l2)
+                .compose(&r1.find_substitution(r2)),
+            (Type::Array(a1), Type::Array(a2)) => a1.find_substitution(a2),
+            (Type::Function(arg1, res1), Type::Function(arg2, res2)) => arg1
+                .find_substitution(arg2)
+                .compose(&res1.find_substitution(res2)),
+            (Type::Polymorphic(_), Type::Polymorphic(_)) => Substitution::new(),
+            // TODO: What if t contains more type vars?
+            (Type::Polymorphic(var), t) => {
+                let mut subst = Substitution::new();
+                subst.insert(var.clone(), t.clone());
+                subst
+            }
+            _ => Substitution::new()
+        }
+    }
+
     pub fn generalize(&self, env: &Environment) -> PolyType {
         PolyType {
             variables: self
@@ -323,7 +346,7 @@ impl DerefMut for Environment {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Substitution(HashMap<TypeVariable, Type>);
 
 impl Substitution {
