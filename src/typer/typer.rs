@@ -82,7 +82,7 @@ impl<'a> SPL<'a> {
                 *env = env.apply(&subst);
             }
 
-            // And finally generalize them, so their type does change anymore
+            // Generalize them, so their type does change anymore
             for decl in &scc {
                 if let Decl::FunDecl(decl) = decl {
                     let old = env.remove(&(decl.id.inner.clone(), Space::Fun)).unwrap();
@@ -90,12 +90,23 @@ impl<'a> SPL<'a> {
                     env.insert((decl.id.inner.clone(), Space::Fun), new);
                 }
             }
+
+            // And finally update their types in the tree
+            for decl in &scc {
+                match decl {
+                    Decl::VarDecl(var_decl) => {
+                        let t = env.get(&(var_decl.id.inner.clone(), Space::Var)).unwrap();
+                        var_decl.var_type.borrow_mut().inner.replace(t.inner.clone());
+                    }
+                    Decl::FunDecl(fun_decl) => {
+                        let t = env.get(&(fun_decl.id.inner.clone(), Space::Fun)).unwrap();
+                        fun_decl.fun_type.borrow_mut().inner.replace(t.clone());
+                    }
+                }
+            }
         }
 
-        // TODO: Decorate SPL
-        // Function calls
-        // Functions
-        // Variables
+        // TODO: Decorate function calls
 
         Ok(())
     }
