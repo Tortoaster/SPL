@@ -55,11 +55,11 @@ impl<'a> SPL<'a> {
             // First add all members of this scc to the environment
             for decl in &scc {
                 let inner = match decl {
-                    Decl::VarDecl(decl) => match &decl.var_type.inner {
+                    Decl::VarDecl(decl) => match &decl.var_type.borrow().inner {
                         None => Type::Polymorphic(gen.fresh()),
                         Some(var_type) => var_type.generalize(env).instantiate(gen)
                     },
-                    Decl::FunDecl(decl) => match &decl.fun_type {
+                    Decl::FunDecl(decl) => match &decl.fun_type.borrow().inner {
                         None => {
                             let args: Vec<Type> = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()))
                                 .take(decl.args.len())
@@ -93,6 +93,9 @@ impl<'a> SPL<'a> {
         }
 
         // TODO: Decorate SPL
+        // Function calls
+        // Functions
+        // Variables
 
         Ok(())
     }
@@ -169,7 +172,7 @@ impl Infer for FunDecl<'_> {
             .iter()
             .fold(Ok(Substitution::new()), |acc, decl| {
                 let subst_a = acc?;
-                let inner = match &decl.var_type.inner {
+                let inner = match &decl.var_type.borrow().inner {
                     None => Type::Polymorphic(gen.fresh()),
                     Some(var_type) => var_type.generalize(&env).instantiate(gen)
                 };

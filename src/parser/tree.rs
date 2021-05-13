@@ -4,6 +4,7 @@ use std::fmt;
 use crate::lexer::Field;
 use crate::position::Pos;
 use crate::typer::{PolyType, Space, Type, TypeVariable};
+use std::cell::RefCell;
 
 type PDecl<'a> = Pos<'a, Decl<'a>>;
 type PVarDecl<'a> = Pos<'a, VarDecl<'a>>;
@@ -17,30 +18,30 @@ pub struct SPL<'a> {
     pub decls: Vec<PDecl<'a>>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Decl<'a> {
     VarDecl(VarDecl<'a>),
     FunDecl(FunDecl<'a>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VarDecl<'a> {
     // TODO: PolyType instead?
-    pub var_type: Pos<'a, Option<Type>>,
+    pub var_type: RefCell<Pos<'a, Option<Type>>>,
     pub id: PId<'a>,
     pub exp: PExp<'a>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunDecl<'a> {
     pub id: PId<'a>,
     pub args: Vec<PId<'a>>,
-    pub fun_type: Option<Pos<'a, PolyType>>,
+    pub fun_type: RefCell<Pos<'a, Option<PolyType>>>,
     pub var_decls: Vec<PVarDecl<'a>>,
     pub stmts: Vec<PStmt<'a>>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Stmt<'a> {
     If(PExp<'a>, Vec<PStmt<'a>>, Vec<PStmt<'a>>),
     While(PExp<'a>, Vec<PStmt<'a>>),
@@ -49,7 +50,7 @@ pub enum Stmt<'a> {
     Return(Option<PExp<'a>>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Exp<'a> {
     Variable(Id),
     Number(i32),
@@ -60,11 +61,11 @@ pub enum Exp<'a> {
     Tuple(Box<PExp<'a>>, Box<PExp<'a>>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunCall<'a> {
     pub id: PId<'a>,
     pub args: Vec<PExp<'a>>,
-    pub arg_types: BTreeMap<TypeVariable, Type>,
+    pub arg_types: RefCell<BTreeMap<TypeVariable, Type>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -131,7 +132,7 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!("{:indent$}{} {} = {};\n",
                     "",
-                    self.var_type.fmt_pretty(indent),
+                    self.var_type.borrow().fmt_pretty(indent),
                     self.id.fmt_pretty(indent),
                     self.exp.fmt_pretty(indent),
                     indent = indent * TAB_SIZE
@@ -157,9 +158,9 @@ mod printer {
                                 self.args.iter().map(|id| id.fmt_pretty(indent)).collect::<Vec<String>>().join(", "),
                                 indent = indent * TAB_SIZE
             );
-            if let Some(fun_type) = &self.fun_type {
+            if let Some(fun_type) = &self.fun_type.borrow().inner {
                 f += format!(":: ").as_str();
-                match fun_type.inner.inner {
+                match fun_type.inner {
                     Type::Function(_, _) => f += fun_type.fmt_pretty(indent).as_str(),
                     _ => f += format!("-> {}", fun_type.fmt_pretty(indent)).as_str()
                 }

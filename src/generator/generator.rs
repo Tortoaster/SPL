@@ -398,8 +398,9 @@ impl Gen for FunCall<'_> {
 impl FunCall<'_> {
     fn label(&self) -> Label {
         let mut name = format!("{}", self.id.inner);
-        if !self.arg_types.is_empty() {
+        if !self.arg_types.borrow().is_empty() {
             name.push_str(format!("-t{}", self.arg_types
+                .borrow()
                 .iter()
                 .map(|(_, t)| format!("{}", t))
                 .collect::<Vec<String>>()

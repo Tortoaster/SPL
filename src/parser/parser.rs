@@ -8,6 +8,7 @@ use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 use crate::parser::error::ParseError;
 use crate::position::{Join, Pos};
 use crate::typer::{Environment, Generator, Type, TypeClass, TypeVariable};
+use std::cell::RefCell;
 
 trait Util<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;
@@ -151,7 +152,7 @@ impl<'a> Parsable<'a> for VarDecl<'a> {
             .extend(&equals)
             .extend(&exp)
             .extend(&end)
-            .with(VarDecl { var_type, id, exp }))
+            .with(VarDecl { var_type: RefCell::new(var_type), id, exp }))
     }
 }
 
@@ -162,15 +163,16 @@ impl<'a> Parsable<'a> for FunDecl<'a> {
         let id = Id::parse(tokens)?;
         positions.push(tokens.consume(Token::OpenParen)?);
         let args = Id::parse_many_sep(tokens, Token::Comma)?;
-        positions.push(tokens.consume(Token::CloseParen)?);
+        let close = tokens.consume(Token::CloseParen)?;
+        positions.push(close.clone());
 
         let fun_type = if let Some(Pos { inner: Token::HasType, .. }) = tokens.peek() {
             positions.push(tokens.consume(Token::HasType)?);
             let function = Type::parse_function(tokens, &mut Generator::new(), &mut HashMap::new())?;
             let scheme = function.generalize(&Environment::new());
-            Some(function.with(scheme))
+            function.with(Some(scheme))
         } else {
-            None
+            close.with(None)
         };
 
         positions.push(tokens.consume(Token::OpenBracket)?);
@@ -184,7 +186,7 @@ impl<'a> Parsable<'a> for FunDecl<'a> {
         let fun_decl = FunDecl {
             id,
             args,
-            fun_type,
+            fun_type: RefCell::new(fun_type),
             var_decls,
             stmts,
         };
@@ -430,7 +432,7 @@ impl<'a> Parsable<'a> for Stmt<'a> {
                     let fun_call = FunCall {
                         id,
                         args,
-                        arg_types: BTreeMap::new(),
+                        arg_types: RefCell::new(BTreeMap::new()),
                     };
 
                     pos.with(Stmt::FunCall(fun_call))
@@ -470,7 +472,7 @@ impl<'a> Exp<'a> {
                     let fun_call = FunCall {
                         id: token.with(id),
                         args: Exp::parse_many_sep(tokens, Token::Comma)?,
-                        arg_types: BTreeMap::new(),
+                        arg_types: RefCell::new(BTreeMap::new()),
                     };
                     let close = tokens.consume(Token::CloseParen)?;
                     let arg_pos = fun_call.args.join_with(()).unwrap_or(token.with(()));
@@ -488,7 +490,7 @@ impl<'a> Exp<'a> {
                             let fun_call = FunCall {
                                 id: f.with(Id(format!("{}", f.inner))),
                                 args: vec![e],
-                                arg_types: BTreeMap::new(),
+                                arg_types: RefCell::new(BTreeMap::new()),
                             };
                             pos.with(Exp::FunCall(fun_call)).extend(&f)
                         })
@@ -502,7 +504,7 @@ impl<'a> Exp<'a> {
                 let fun_call = FunCall {
                     id: op.prefix_id()?,
                     args: vec![rhs],
-                    arg_types: BTreeMap::new(),
+                    arg_types: RefCell::new(BTreeMap::new()),
                 };
                 token
                     .extend(&pos)
@@ -558,7 +560,7 @@ impl<'a> Exp<'a> {
             let fun_call = FunCall {
                 id: op.infix_id()?,
                 args: vec![lhs, rhs],
-                arg_types: BTreeMap::new(),
+                arg_types: RefCell::new(BTreeMap::new()),
             };
 
             lhs = pos.with(Exp::FunCall(fun_call));

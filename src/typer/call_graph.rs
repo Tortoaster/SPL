@@ -34,7 +34,7 @@ impl Identifier {
     }
 }
 
-pub fn topsorted_sccs<'a>(ast: &'a SPL) -> Vec<Vec<&'a Decl<'a>>> {
+pub fn topsorted_sccs<'a, 'b>(ast: &'b SPL<'a>) -> Vec<Vec<&'b Decl<'a>>> {
     let mut ids = Identifier::new();
 
     let nodes: Vec<Node> = ast.decls
