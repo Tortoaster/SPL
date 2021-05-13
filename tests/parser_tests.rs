@@ -18,6 +18,7 @@ fn parse() {
     }
 }
 
+#[ignore]
 #[test]
 fn pretty_print() {
     for dir in fs::read_dir(RES_DIR) {

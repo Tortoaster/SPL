@@ -78,9 +78,11 @@ impl<'a> SPL<'a> {
             }
 
             // Then infer their types
+            let mut subst = Substitution::new();
             for decl in &scc {
-                let (subst, _) = decl.infer_type(env, gen)?;
-                *env = env.apply(&subst);
+                let (s, _) = decl.infer_type(env, gen)?;
+                *env = env.apply(&s);
+                subst = subst.compose(&s);
             }
 
             // Generalize them, so their type does change anymore
@@ -106,10 +108,60 @@ impl<'a> SPL<'a> {
                 }
             }
 
-            // TODO: Update function call type arguments with most recent substitution
+            // Update function call type arguments with most recent substitution
+            for decl in &scc {
+                match decl {
+                    Decl::VarDecl(var_decl) => var_decl.exp.update_fun_calls(&subst),
+                    Decl::FunDecl(fun_decl) => {
+                        for var_decl in &fun_decl.var_decls {
+                            var_decl.exp.update_fun_calls(&subst);
+                        }
+                        for stmt in &fun_decl.stmts {
+                            stmt.update_fun_calls(&subst)
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())
+    }
+}
+
+impl Exp<'_> {
+    fn update_fun_calls(&self, subst: &Substitution) {
+        match self {
+            Exp::Variable(_) | Exp::Number(_) | Exp::Character(_) | Exp::Boolean(_) | Exp::Nil => {}
+            Exp::FunCall(fun_call) => fun_call.type_args.borrow_mut().apply(subst),
+            Exp::Tuple(l, r) => {
+                l.update_fun_calls(subst);
+                r.update_fun_calls(subst);
+            }
+        }
+    }
+}
+
+impl Stmt<'_> {
+    fn update_fun_calls(&self, subst: &Substitution) {
+        match self {
+            Stmt::If(e, t, o) => {
+                e.update_fun_calls(subst);
+                for stmt in t.into_iter().chain(o) {
+                    stmt.update_fun_calls(&subst);
+                }
+            }
+            Stmt::While(e, t) => {
+                e.update_fun_calls(subst);
+                for stmt in t {
+                    stmt.update_fun_calls(&subst);
+                }
+            }
+            Stmt::Assignment(_, _, e) => e.update_fun_calls(subst),
+            Stmt::FunCall(fun_call) => fun_call.type_args.borrow_mut().apply(subst),
+            Stmt::Return(ret) => if let Some(e) = ret {
+                e.update_fun_calls(subst);
+            }
+        }
     }
 }
 
@@ -426,7 +478,7 @@ impl Infer for FunCall<'_> {
         // Decorate function call with filled-in type arguments
         let full_type = types
             .into_iter()
-            .fold(t.clone(), |acc, t| Type::Function(Box::new(t), Box::new(acc)));
+            .rfold(t.clone(), |acc, t| Type::Function(Box::new(t), Box::new(acc)));
         *self.type_args.borrow_mut() = function.inner.find_substitution(&full_type);
 
         Ok((subst, t))

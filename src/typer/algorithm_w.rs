@@ -364,6 +364,10 @@ impl Substitution {
             )
             .collect()
     }
+
+    pub fn apply(&mut self, subst: &Substitution) {
+        self.0 = self.0.iter().map(|(var, t)| (var.clone(), t.apply(subst))).collect();
+    }
 }
 
 impl Deref for Substitution {
