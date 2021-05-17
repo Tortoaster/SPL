@@ -5,31 +5,30 @@ use error::Result;
 
 use crate::generator::error::GenError;
 use crate::generator::prelude::*;
-// Reserve first scratch register to keep track of global variables
+// Reserve scratch register to keep track of global variables
 use crate::generator::Register::R7 as GP;
 use crate::lexer::Field;
-use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
+use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl, PStmt};
 use crate::typer::Space;
 use crate::generator::Suffix;
 
 const MAIN: &str = "main";
 
 #[derive(Clone)]
-struct Scope<'a> {
+struct Scope {
     global_values: HashMap<Id, Vec<Instruction>>,
     global_addresses: HashMap<Id, Vec<Instruction>>,
     local_values: HashMap<Id, Vec<Instruction>>,
     local_addresses: HashMap<Id, Vec<Instruction>>,
     arg_values: HashMap<Id, Vec<Instruction>>,
     arg_addresses: HashMap<Id, Vec<Instruction>>,
-    functions: HashMap<FunCall<'a>, Vec<Instruction>>,
     function_args: HashMap<Id, Vec<Id>>,
     current_label: Label,
     ifs: usize,
     whiles: usize,
 }
 
-impl Scope<'_> {
+impl Scope {
     fn new(spl: &SPL) -> Self {
         Scope {
             global_values: HashMap::new(),
@@ -38,7 +37,6 @@ impl Scope<'_> {
             local_addresses: HashMap::new(),
             arg_values: HashMap::new(),
             arg_addresses: HashMap::new(),
-            functions: HashMap::new(),
             current_label: Label::new(MAIN),
             function_args: spl.decls
                 .iter()
@@ -220,6 +218,18 @@ impl FunDecl<'_> {
     }
 }
 
+impl Gen for Vec<PStmt<'_>> {
+    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
+        Ok(self
+            .iter()
+            .map(|stmt| stmt.generate(scope))
+            .collect::<Result<Vec<Vec<Instruction>>>>()?
+            .into_iter()
+            .flatten()
+            .collect())
+    }
+}
+
 impl Gen for Stmt<'_> {
     fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
         let instructions = match self {
@@ -234,21 +244,9 @@ impl Gen for Stmt<'_> {
 
                 let mut c = c.generate(scope)?;
                 c.push(BranchFalse { label: else_label.clone() });
-                let mut t: Vec<Instruction> = t
-                    .iter()
-                    .map(|stmt| stmt.generate(scope))
-                    .collect::<Result<Vec<Vec<Instruction>>>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect();
+                let mut t = t.generate(scope)?;
                 t.push(Branch { label: end_label.clone() });
-                let mut e: Vec<Instruction> = e
-                    .iter()
-                    .map(|stmt| stmt.generate(scope))
-                    .collect::<Result<Vec<Vec<Instruction>>>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect();
+                let mut e = e.generate(scope)?;
                 let labeled = Labeled(else_label, Box::new(e[0].clone()));
                 e[0] = labeled;
                 e.push(Labeled(end_label, Box::new(Nop)));
@@ -269,13 +267,7 @@ impl Gen for Stmt<'_> {
                 let labeled = Labeled(start_label.clone(), Box::new(c[0].clone()));
                 c[0] = labeled;
                 c.push(BranchFalse { label: end_label.clone() });
-                let mut t: Vec<Instruction> = t
-                    .iter()
-                    .map(|stmt| stmt.generate(scope))
-                    .collect::<Result<Vec<Vec<Instruction>>>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect();
+                let mut t = t.generate(scope)?;
                 t.push(Branch { label: start_label });
                 t.push(Labeled(end_label, Box::new(Nop)));
                 c.append(&mut t);
