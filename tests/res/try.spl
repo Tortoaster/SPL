@@ -4,6 +4,7 @@ var y = 2;
 main() {
     var cond = True;
     var z = 0;
+    var hi = 'H' : 'i' : [];
     while(cond) {
         x = x + 2;
         cond = False;
@@ -14,4 +15,5 @@ main() {
         z = x + y;
     }
     print(z);
+    print(hi);
 }

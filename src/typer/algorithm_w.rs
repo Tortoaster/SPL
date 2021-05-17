@@ -8,7 +8,7 @@ use crate::parser::Id;
 use crate::typer::error::{Result, TypeError};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct TypeVariable(usize, BTreeSet<TypeClass>);
+pub struct TypeVariable(usize, pub BTreeSet<TypeClass>);
 
 impl TypeVariable {
     fn bind(&self, to: &Type) -> Result<Substitution> {

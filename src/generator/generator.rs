@@ -10,6 +10,7 @@ use crate::generator::Register::R7 as GP;
 use crate::lexer::Field;
 use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 use crate::typer::Space;
+use crate::generator::Suffix;
 
 const MAIN: &str = "main";
 
@@ -226,10 +227,10 @@ impl Gen for Stmt<'_> {
                 scope.ifs += 1;
                 let else_label = scope.current_label
                     .clone()
-                    .with_suffix(format!("else{}", scope.ifs));
+                    .with_suffix(Suffix::Else(scope.ifs));
                 let end_label = scope.current_label
                     .clone()
-                    .with_suffix(format!("endif{}", scope.ifs));
+                    .with_suffix(Suffix::EndIf(scope.ifs));
 
                 let mut c = c.generate(scope)?;
                 c.push(BranchFalse { label: else_label.clone() });
@@ -259,10 +260,10 @@ impl Gen for Stmt<'_> {
                 scope.whiles += 1;
                 let start_label = scope.current_label
                     .clone()
-                    .with_suffix(format!("while{}", scope.ifs));
+                    .with_suffix(Suffix::While(scope.whiles));
                 let end_label = scope.current_label
                     .clone()
-                    .with_suffix(format!("endwhile{}", scope.ifs));
+                    .with_suffix(Suffix::EndWhile(scope.whiles));
 
                 let mut c = c.generate(scope)?;
                 let labeled = Labeled(start_label.clone(), Box::new(c[0].clone()));
@@ -342,9 +343,9 @@ impl Gen for Exp<'_> {
             Exp::Nil => vec![LoadConstant(0)],
             Exp::Tuple(l, r) => {
                 let mut x = l.generate(scope)?;
-                x.push(StoreHeap { offset: 0 });
+                x.push(StoreHeap);
                 let mut y = r.generate(scope)?;
-                y.push(StoreHeap { offset: 0 });
+                y.push(StoreHeap);
                 y.push(AdjustStack { offset: -1 });
                 x.append(&mut y);
                 x
@@ -417,18 +418,26 @@ mod core {
 
     pub fn core() -> Vec<Instruction> {
         std::iter::empty()
+
             .chain(print_int())
             .chain(print_bool())
             .chain(print_char())
+
             .chain(bin_op(Label::new("add"), Add))
             .chain(bin_op(Label::new("sub"), Sub))
             .chain(bin_op(Label::new("mul"), Mul))
             .chain(bin_op(Label::new("div"), Div))
             .chain(bin_op(Label::new("mod"), Mod))
-            .chain(un_op(Label::new("neg"), Neg))
             .chain(bin_op(Label::new("and"), And))
             .chain(bin_op(Label::new("or"), Or))
+
+            .chain(un_op(Label::new("neg"), Neg))
             .chain(un_op(Label::new("not"), Not))
+
+            .chain(cons_any(Label::new("cons-tInt")))
+            .chain(cons_any(Label::new("cons-tBool")))
+            .chain(cons_any(Label::new("cons-tChar")))
+
             .collect()
     }
 
@@ -446,6 +455,16 @@ mod core {
             Labeled(label, Box::new(LoadStack { offset: -2 })),
             LoadStack { offset: -2 },
             op,
+            StoreRegister { reg: RR },
+            Return
+        ]
+    }
+
+    fn cons_any(label: Label) -> Vec<Instruction> {
+        vec![
+            Labeled(label, Box::new(LoadStack { offset: -2 })),
+            LoadStack { offset: -2 },
+            StoreMultiHeap { length: 2 },
             StoreRegister { reg: RR },
             Return
         ]

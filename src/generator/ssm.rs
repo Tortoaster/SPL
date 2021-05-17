@@ -1,4 +1,6 @@
 use std::fmt;
+use crate::typer::{Type, TypeClass};
+use std::collections::BTreeSet;
 
 pub mod prelude {
     pub use super::Call;
@@ -53,18 +55,25 @@ impl fmt::Display for Register {
 #[derive(Clone)]
 pub struct Label {
     name: String,
-    suffix: Option<String>,
+    params: Vec<Parameter>,
+    suffix: Option<Suffix>,
 }
 
 impl Label {
     pub fn new<S: AsRef<str>>(name: S) -> Self {
         Label {
             name: name.as_ref().to_owned(),
+            params: Vec::new(),
             suffix: None,
         }
     }
-    pub fn with_suffix<S: AsRef<str>>(mut self, suffix: S) -> Self {
-        self.suffix = Some(suffix.as_ref().to_owned());
+
+    pub fn with_params(mut self, params: Vec<Parameter>) {
+        self.params = params;
+    }
+
+    pub fn with_suffix(mut self, suffix: Suffix) -> Self {
+        self.suffix = Some(suffix);
         self
     }
 }
@@ -72,10 +81,73 @@ impl Label {
 impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)?;
+        if !self.params.is_empty() {
+            write!(f, "-p{}", self.params.iter().map(|p| p.to_label()).collect::<Vec<String>>().join("-a"))?;
+        }
         if let Some(suffix) = &self.suffix {
             write!(f, "--{}", suffix)?;
         }
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub enum Parameter {
+    Concrete(Type),
+    Abstract(BTreeSet<TypeClass>)
+}
+
+impl Parameter {
+    fn to_label(&self) -> String {
+        match self {
+            Parameter::Concrete(t) => format!("-t{}", t.to_label()),
+            Parameter::Abstract(classes) => format!("-C{}-c", classes.iter().map(|c| c.to_label()).collect::<Vec<String>>().join("-a"))
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum Suffix {
+    Else(usize),
+    EndIf(usize),
+    While(usize),
+    EndWhile(usize)
+}
+
+impl fmt::Display for Suffix {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Suffix::Else(index) => write!(f, "else{}", index),
+            Suffix::EndIf(index) => write!(f, "endif{}", index),
+            Suffix::While(index) => write!(f, "while{}", index),
+            Suffix::EndWhile(index) => write!(f, "endwhile{}", index)
+        }
+    }
+}
+
+impl Type {
+    fn to_label(&self) -> String {
+        match self {
+            Type::Void => "Void".to_owned(),
+            Type::Int => "Int".to_owned(),
+            Type::Bool => "Bool".to_owned(),
+            Type::Char => "Char".to_owned(),
+            Type::Tuple(l, r) => format!("-S{}-i{}-s", l, r),
+            Type::Array(a) => format!("-L{}-l", a),
+            Type::Function(_, _) => panic!("function type in label"),
+            Type::Polymorphic(var) => Parameter::Abstract(var.1.clone()).to_label()
+        }
+    }
+}
+
+impl TypeClass {
+    fn to_label(&self) -> String {
+        match self {
+            TypeClass::Any => "Any".to_owned(),
+            TypeClass::Show => "Show".to_owned(),
+            TypeClass::Eq => "Eq".to_owned(),
+            TypeClass::Ord => "Ord".to_owned()
+        }
     }
 }
 
@@ -254,9 +326,9 @@ pub enum Instruction {
     /// Pushes multiple heap values on the stack.
     LoadMultiHeap { offset: isize, length: usize },
     /// Pops a value from the stack and stores it on the heap, pushes the address.
-    StoreHeap { offset: isize },
+    StoreHeap,
     /// Pops [`length`] values from the stack and stores them on the heap, pushes the last address.
-    StoreMultiHeap { offset: isize, length: usize },
+    StoreMultiHeap { length: usize },
 
     // Labels
 
@@ -330,10 +402,10 @@ impl fmt::Display for Instruction {
             Instruction::Annotate { reg, from, to, color, desc } =>
                 write!(f, "annote {} {} {} {} {}", reg, from, to, color, desc),
 
-            Instruction::LoadHeap { offset } => write!(f, "ldh, {}", offset),
-            Instruction::LoadMultiHeap { offset, length } => write!(f, "ldmh, {} {}", offset, length),
-            Instruction::StoreHeap { offset } => write!(f, "sth, {}", offset),
-            Instruction::StoreMultiHeap { offset, length } => write!(f, "stmh, {} {}", offset, length),
+            Instruction::LoadHeap { offset } => write!(f, "ldh {}", offset),
+            Instruction::LoadMultiHeap { offset, length } => write!(f, "ldmh {} {}", offset, length),
+            Instruction::StoreHeap => write!(f, "sth"),
+            Instruction::StoreMultiHeap { length } => write!(f, "stmh {}", length),
 
             Instruction::Labeled(label, instruction) => write!(f, "{}: {}", label, instruction)
         }
