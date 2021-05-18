@@ -1,19 +1,17 @@
-var x = 1;
-var y = 2;
+var tuple = (0, 1);
+var list = 3 : 7 : 11 : [];
 
+// Should print 01234
 main() {
-    var cond = True;
-    var z = 0;
-    var hi = 'H' : 'i' : [];
-    while(cond) {
-        x = x + 2;
-        cond = False;
+    var i = 0;
+    print(tuple.fst);
+    print(tuple.snd);
+    while(i < 2) {
+        i = i + 1;
+        tuple.fst = tuple.fst + tuple.snd;
     }
-    if(!cond) {
-        z = x - y;
-    } else {
-        z = x + y;
-    }
-    print(z);
-    print(hi);
+    print(tuple.fst);
+    print(list.hd);
+    list = list.tl;
+    print(list.hd / 2 + 1);
 }

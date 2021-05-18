@@ -7,10 +7,10 @@ use crate::generator::error::GenError;
 use crate::generator::prelude::*;
 // Reserve scratch register to keep track of global variables
 use crate::generator::Register::R7 as GP;
-use crate::lexer::Field;
-use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl, PStmt};
-use crate::typer::Space;
 use crate::generator::Suffix;
+use crate::lexer::Field;
+use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, PStmt, SPL, Stmt, VarDecl};
+use crate::typer::Space;
 
 const MAIN: &str = "main";
 
@@ -143,7 +143,7 @@ impl Gen for SPL<'_> {
         // Keep generating necessary variants until all are done
 
         // Generate core functions
-        instructions.append(&mut core::core());
+        instructions.append(&mut core::core().0);
 
         Ok(instructions)
     }
@@ -242,17 +242,23 @@ impl Gen for Stmt<'_> {
                     .clone()
                     .with_suffix(Suffix::EndIf(scope.ifs));
 
-                let mut c = c.generate(scope)?;
-                c.push(BranchFalse { label: else_label.clone() });
-                let mut t = t.generate(scope)?;
-                t.push(Branch { label: end_label.clone() });
-                let mut e = e.generate(scope)?;
-                let labeled = Labeled(else_label, Box::new(e[0].clone()));
-                e[0] = labeled;
-                e.push(Labeled(end_label, Box::new(Nop)));
-                c.append(&mut t);
-                c.append(&mut e);
-                c
+                let mut instructions = c.generate(scope)?;
+                if e.is_empty() {
+                    instructions.push(BranchFalse { label: end_label.clone() });
+                } else {
+                    instructions.push(BranchFalse { label: else_label.clone() });
+                }
+                let mut then = t.generate(scope)?;
+                instructions.append(&mut then);
+                if !e.is_empty() {
+                    instructions.push(Branch { label: end_label.clone() });
+                    let mut otherwise = e.generate(scope)?;
+                    let labeled = Labeled(else_label, Box::new(otherwise[0].clone()));
+                    otherwise[0] = labeled;
+                    instructions.append(&mut otherwise);
+                }
+                instructions.push(Labeled(end_label, Box::new(Nop)));
+                instructions
             }
             Stmt::While(c, t) => {
                 scope.whiles += 1;
@@ -263,15 +269,15 @@ impl Gen for Stmt<'_> {
                     .clone()
                     .with_suffix(Suffix::EndWhile(scope.whiles));
 
-                let mut c = c.generate(scope)?;
-                let labeled = Labeled(start_label.clone(), Box::new(c[0].clone()));
-                c[0] = labeled;
-                c.push(BranchFalse { label: end_label.clone() });
+                let mut instructions = c.generate(scope)?;
+                let labeled = Labeled(start_label.clone(), Box::new(instructions[0].clone()));
+                instructions[0] = labeled;
+                instructions.push(BranchFalse { label: end_label.clone() });
                 let mut t = t.generate(scope)?;
                 t.push(Branch { label: start_label });
                 t.push(Labeled(end_label, Box::new(Nop)));
-                c.append(&mut t);
-                c
+                instructions.append(&mut t);
+                instructions
             }
             Stmt::Assignment(id, fields, exp) => {
                 // Generate value
@@ -282,10 +288,7 @@ impl Gen for Stmt<'_> {
                 for f in fields {
                     match f.inner {
                         Field::Head | Field::First => instructions.push(LoadAddress { offset: 0 }),
-                        Field::Tail => instructions.append(&mut vec![
-                            LoadAddress { offset: 1 },
-                            LoadAddress { offset: 0 },
-                        ]),
+                        Field::Tail => instructions.push(LoadAddress { offset: -1 }),
                         Field::Second => instructions.push(LoadAddress { offset: 1 })
                     }
                 }
@@ -334,13 +337,10 @@ impl Gen for Exp<'_> {
             }
             Exp::Nil => vec![LoadConstant(0)],
             Exp::Tuple(l, r) => {
-                let mut x = l.generate(scope)?;
-                x.push(StoreHeap);
-                let mut y = r.generate(scope)?;
-                y.push(StoreHeap);
-                y.push(AdjustStack { offset: -1 });
-                x.append(&mut y);
-                x
+                let mut instructions = r.generate(scope)?;
+                instructions.append(&mut l.generate(scope)?);
+                instructions.push(StoreMultiHeap { length: 2 });
+                instructions
             }
         };
 
@@ -392,10 +392,10 @@ impl FunCall<'_> {
     fn label(&self) -> Label {
         let mut name = format!("{}", self.id.inner);
         if !self.type_args.borrow().is_empty() {
-            name.push_str(format!("-t{}", self.type_args
+            name.push_str(format!("{}", self.type_args
                 .borrow()
                 .iter()
-                .map(|(_, t)| format!("{}", t))
+                .map(|(_, t)| format!("-t{}", t))
                 .collect::<Vec<String>>()
                 .join("-a")
             ).as_str());
@@ -406,103 +406,242 @@ impl FunCall<'_> {
 
 mod core {
     use crate::generator::prelude::*;
-    use crate::typer::Type;
 
-    pub fn core() -> Vec<Instruction> {
-        std::iter::empty()
+    pub fn core() -> (Vec<Instruction>, Vec<Label>) {
+        let mut instructions = Vec::new();
+        let mut labels = Vec::new();
 
-            .chain(print_int())
-            .chain(print_bool())
-            .chain(print_char())
+        let cores = vec![
+            bin_op(vec![Label::new("eq-tInt"), Label::new("eq-tBool"), Label::new("eq-tChar")], Eq),
+            bin_op(vec![Label::new("ne-tInt"), Label::new("ne-tBool"), Label::new("ne-tChar")], Ne),
+            bin_op(vec![Label::new("lt-tInt"), Label::new("lt-tChar")], Lt),
+            bin_op(vec![Label::new("gt-tInt"), Label::new("gt-tChar")], Gt),
+            bin_op(vec![Label::new("le-tInt"), Label::new("le-tChar")], Le),
+            bin_op(vec![Label::new("ge-tInt"), Label::new("ge-tChar")], Ge),
+            bin_op(vec![Label::new("add")], Add),
+            bin_op(vec![Label::new("add")], Add),
+            bin_op(vec![Label::new("sub")], Sub),
+            bin_op(vec![Label::new("mul")], Mul),
+            bin_op(vec![Label::new("div")], Div),
+            bin_op(vec![Label::new("mod")], Mod),
+            bin_op(vec![Label::new("and")], And),
+            bin_op(vec![Label::new("or")], Or),
 
-            .chain(bin_op(Label::new("add"), Add))
-            .chain(bin_op(Label::new("sub"), Sub))
-            .chain(bin_op(Label::new("mul"), Mul))
-            .chain(bin_op(Label::new("div"), Div))
-            .chain(bin_op(Label::new("mod"), Mod))
-            .chain(bin_op(Label::new("and"), And))
-            .chain(bin_op(Label::new("or"), Or))
+            un_op(Label::new("neg"), Neg),
+            un_op(Label::new("not"), Not),
 
-            .chain(un_op(Label::new("neg"), Neg))
-            .chain(un_op(Label::new("not"), Not))
+            hd_basic(),
+            tl_basic(),
+            cons_basic(),
+            is_empty_basic(),
 
-            .chain(cons_any(Label::new("cons-tInt")))
-            .chain(cons_any(Label::new("cons-tBool")))
-            .chain(cons_any(Label::new("cons-tChar")))
+            fst_basic(),
+            snd_basic(),
 
-            .collect()
+            print_int(),
+            print_bool(),
+            print_char()
+        ];
+
+        for (i, l) in cores {
+            instructions.push(i);
+            labels.push(l);
+        }
+
+        (instructions.into_iter().flatten().collect(), labels.into_iter().flatten().collect())
     }
 
-    fn un_op(label: Label, op: Instruction) -> Vec<Instruction> {
-        vec![
-            Labeled(label, Box::new(LoadStack { offset: -1 })),
+    fn un_op(label: Label, op: Instruction) -> (Vec<Instruction>, Vec<Label>) {
+        (vec![
+            Labeled(label.clone(), Box::new(LoadStack { offset: -1 })),
             op,
             StoreRegister { reg: RR },
             Return
-        ]
+        ], vec![label])
     }
 
-    fn bin_op(label: Label, op: Instruction) -> Vec<Instruction> {
-        vec![
-            Labeled(label, Box::new(LoadStack { offset: -2 })),
+    fn bin_op(labels: Vec<Label>, op: Instruction) -> (Vec<Instruction>, Vec<Label>) {
+        (vec![
+            labels
+                .iter()
+                .cloned()
+                .fold(LoadStack { offset: -2 }, |instruction, label|
+                    Labeled(label, Box::new(instruction)),
+                ),
             LoadStack { offset: -2 },
             op,
             StoreRegister { reg: RR },
             Return
-        ]
+        ], labels)
     }
 
-    fn cons_any(label: Label) -> Vec<Instruction> {
-        vec![
-            Labeled(label, Box::new(LoadStack { offset: -2 })),
-            LoadStack { offset: -2 },
+    fn hd_basic() -> (Vec<Instruction>, Vec<Label>) {
+        let labels = vec![
+            Label::new("hd-tInt"),
+            Label::new("hd-tBool"),
+            Label::new("hd-tChar")
+        ];
+        let mut instructions = vec![
+            labels
+                .iter()
+                .cloned()
+                .fold(LoadStack { offset: -1 }, |instruction, label|
+                    Labeled(label, Box::new(instruction)),
+                ),
+            LoadStack { offset: 0 },
+            BranchTrue { label: Label::new("hd-tInt--continue") },
+        ];
+        instructions.append(&mut Instruction::print_string("Error: head of empty list"));
+        instructions.append(&mut vec![
+            Halt,
+            Labeled(Label::new("hd-tInt--continue"), Box::new(LoadHeap { offset: 0 })),
+            StoreRegister { reg: RR },
+            Return
+        ]);
+
+        (instructions, labels)
+    }
+
+    fn tl_basic() -> (Vec<Instruction>, Vec<Label>) {
+        let labels = vec![
+            Label::new("tl-tInt"),
+            Label::new("tl-tBool"),
+            Label::new("tl-tChar")
+        ];
+        let mut instructions = vec![
+            labels
+                .iter()
+                .cloned()
+                .fold(LoadStack { offset: -1 }, |instruction, label|
+                    Labeled(label, Box::new(instruction)),
+                ),
+            LoadStack { offset: 0 },
+            BranchTrue { label: Label::new("tl-tInt--continue") },
+        ];
+        instructions.append(&mut Instruction::print_string("Error: tail of empty list"));
+        instructions.append(&mut vec![
+            Halt,
+            Labeled(Label::new("tl-tInt--continue"), Box::new(LoadHeap { offset: -1 })),
+            StoreRegister { reg: RR },
+            Return
+        ]);
+
+        (instructions, labels)
+    }
+
+    fn cons_basic() -> (Vec<Instruction>, Vec<Label>) {
+        let labels = vec![
+            Label::new("cons-tInt"),
+            Label::new("cons-tBool"),
+            Label::new("cons-tChar")
+        ];
+        let instructions = vec![
+            labels
+                .iter()
+                .cloned()
+                .fold(LoadStack { offset: -1 }, |instruction, label|
+                    Labeled(label, Box::new(instruction)),
+                ),
+            LoadStack { offset: -3 },
             StoreMultiHeap { length: 2 },
             StoreRegister { reg: RR },
             Return
-        ]
+        ];
+        (instructions, labels)
     }
 
-    fn print_char() -> Vec<Instruction> {
-        vec![
-            Labeled(Label::new(format!("print-t{}", Type::Char)), Box::new(LoadStack { offset: -1 })),
-            Trap { call: PrintChar },
+    fn is_empty_basic() -> (Vec<Instruction>, Vec<Label>) {
+        let labels = vec![
+            Label::new("isEmpty-tInt"),
+            Label::new("isEmpty-tBool"),
+            Label::new("isEmpty-tChar")
+        ];
+        (vec![
+            labels
+                .iter()
+                .cloned()
+                .fold(LoadStack { offset: -1 }, |instruction, label|
+                    Labeled(label, Box::new(instruction)),
+                ),
+            LoadConstant(0),
+            Eq,
+            StoreRegister { reg: RR },
             Return
-        ]
+        ], labels)
     }
 
-    fn print_int() -> Vec<Instruction> {
-        vec![
-            Labeled(Label::new(format!("print-t{}", Type::Int)), Box::new(LoadStack { offset: -1 })),
+    fn fst_basic() -> (Vec<Instruction>, Vec<Label>) {
+        let types = vec!["Int", "Bool", "Char"];
+        let labels: Vec<Label> = types
+            .iter()
+            .flat_map(|a| types.iter().map(move |b| format!("fst-t{}-a-t{}", a, b)))
+            .map(|s| Label::new(s))
+            .collect();
+
+        (vec![
+            labels
+                .iter()
+                .cloned()
+                .fold(LoadStack { offset: -1 }, |instruction, label|
+                    Labeled(label, Box::new(instruction)),
+                ),
+            LoadHeap { offset: 0 },
+            StoreRegister { reg: RR },
+            Return
+        ], labels)
+    }
+
+    fn snd_basic() -> (Vec<Instruction>, Vec<Label>) {
+        let types = vec!["Int", "Bool", "Char"];
+        let labels: Vec<Label> = types
+            .iter()
+            .flat_map(|a| types.iter().map(move |b| format!("snd-t{}-a-t{}", a, b)))
+            .map(|s| Label::new(s))
+            .collect();
+
+        (vec![
+            labels
+                .iter()
+                .cloned()
+                .fold(LoadStack { offset: -1 }, |instruction, label|
+                    Labeled(label, Box::new(instruction)),
+                ),
+            LoadHeap { offset: -1 },
+            StoreRegister { reg: RR },
+            Return
+        ], labels)
+    }
+
+    fn print_int() -> (Vec<Instruction>, Vec<Label>) {
+        (vec![
+            Labeled(Label::new("print-tInt"), Box::new(LoadStack { offset: -1 })),
             Trap { call: PrintInt },
             Return
-        ]
+        ], vec![Label::new("print-tInt")])
     }
 
-    fn print_bool() -> Vec<Instruction> {
-        vec![
-            Labeled(Label::new(format!("print-t{}", Type::Bool)), Box::new(LoadStack { offset: -1 })),
-            BranchFalse { label: Label::new(format!("print-t{}--else1", Type::Bool)) },
-            LoadConstant('T' as i32),
+    fn print_bool() -> (Vec<Instruction>, Vec<Label>) {
+        let mut instructions = vec![
+            Labeled(Label::new("print-tBool"), Box::new(LoadStack { offset: -1 })),
+            BranchFalse { label: Label::new("print-tBool--else1") },
+        ];
+        instructions.append(&mut Instruction::print_string("True"));
+        instructions.append(&mut vec![
+            Branch { label: Label::new("print-tBool--endif1") },
+            Labeled(Label::new("print-tBool--else1"), Box::new(Nop))
+        ]);
+        instructions.append(&mut Instruction::print_string("False"));
+        instructions.push(Labeled(Label::new("print-tBool--endif1"), Box::new(Return)));
+
+        (instructions, vec![Label::new("print-tBool")])
+    }
+
+    fn print_char() -> (Vec<Instruction>, Vec<Label>) {
+        (vec![
+            Labeled(Label::new("print-tChar"), Box::new(LoadStack { offset: -1 })),
             Trap { call: PrintChar },
-            LoadConstant('r' as i32),
-            Trap { call: PrintChar },
-            LoadConstant('u' as i32),
-            Trap { call: PrintChar },
-            LoadConstant('e' as i32),
-            Trap { call: PrintChar },
-            Branch { label: Label::new(format!("print-t{}--endif1", Type::Bool)) },
-            Labeled(Label::new(format!("print-t{}--else1", Type::Bool)), Box::new(LoadConstant('F' as i32))),
-            Trap { call: PrintChar },
-            LoadConstant('a' as i32),
-            Trap { call: PrintChar },
-            LoadConstant('l' as i32),
-            Trap { call: PrintChar },
-            LoadConstant('s' as i32),
-            Trap { call: PrintChar },
-            LoadConstant('e' as i32),
-            Trap { call: PrintChar },
-            Labeled(Label::new(format!("print-t{}--endif1", Type::Bool)), Box::new(Return)),
-        ]
+            Return
+        ], vec![Label::new("print-tChar")])
     }
 }
 

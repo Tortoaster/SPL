@@ -336,6 +336,17 @@ pub enum Instruction {
     Labeled(Label, Box<Instruction>),
 }
 
+impl Instruction {
+    pub fn print_string(string: &str) -> Vec<Self> {
+        let mut instructions = Vec::new();
+        for c in string.chars() {
+            instructions.push(Self::LoadConstant(c as i32));
+            instructions.push(Self::Trap { call: Call::PrintChar });
+        }
+        instructions
+    }
+}
+
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -407,7 +418,7 @@ impl fmt::Display for Instruction {
             Instruction::StoreHeap => write!(f, "sth"),
             Instruction::StoreMultiHeap { length } => write!(f, "stmh {}", length),
 
-            Instruction::Labeled(label, instruction) => write!(f, "{}: {}", label, instruction)
+            Instruction::Labeled(label, instruction) => write!(f, "{}:\n{}", label, instruction)
         }
     }
 }
