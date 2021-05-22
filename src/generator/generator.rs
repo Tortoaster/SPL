@@ -1,5 +1,8 @@
-use std::collections::HashMap;
+use std::borrow::Borrow;
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
+use std::ops::Deref;
 
 use error::Result;
 
@@ -10,41 +13,63 @@ use crate::generator::Register::R7 as GP;
 use crate::generator::Suffix;
 use crate::lexer::Field;
 use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, PStmt, SPL, Stmt, VarDecl};
-use crate::typer::Space;
+use crate::position::Pos;
+use crate::typer::{Space, Substitution};
 
 const MAIN: &str = "main";
 
-#[derive(Clone)]
-struct Scope {
+#[derive(Debug)]
+struct Context<'a> {
+    /// Function variants that still need to be generated
+    needed: BTreeSet<FunCall<'a>>,
+    /// Function variants that have been generated
+    generated: HashSet<Label>,
+}
+
+impl Context<'_> {
+    fn new() -> Self {
+        Context {
+            needed: BTreeSet::new(),
+            generated: HashSet::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Scope<'a> {
+    /// Get the value of a global variable
     global_values: HashMap<Id, Vec<Instruction>>,
+    /// Get the address of a global variable
     global_addresses: HashMap<Id, Vec<Instruction>>,
+    /// Get the value of a local variable
     local_values: HashMap<Id, Vec<Instruction>>,
+    /// Get the address of a local variable
     local_addresses: HashMap<Id, Vec<Instruction>>,
-    arg_values: HashMap<Id, Vec<Instruction>>,
-    arg_addresses: HashMap<Id, Vec<Instruction>>,
-    function_args: HashMap<Id, Vec<Id>>,
-    current_label: Label,
+    /// Get the names of the arguments of a function
+    arg_names: HashMap<Id, Vec<Id>>,
+    /// The call to the current function
+    current_call: Option<FunCall<'a>>,
+    /// Keeps track of the number of if statements in the current function
     ifs: usize,
+    /// Keeps track of the number of while statements in the current function
     whiles: usize,
 }
 
-impl Scope {
-    fn new(spl: &SPL) -> Self {
+impl<'a> Scope<'a> {
+    fn new(spl: &SPL<'a>) -> Self {
         Scope {
             global_values: HashMap::new(),
             global_addresses: HashMap::new(),
             local_values: HashMap::new(),
             local_addresses: HashMap::new(),
-            arg_values: HashMap::new(),
-            arg_addresses: HashMap::new(),
-            current_label: Label::new(MAIN),
-            function_args: spl.decls
+            arg_names: spl.decls
                 .iter()
                 .filter_map(|decl| match &decl.inner {
                     Decl::VarDecl(_) => None,
                     Decl::FunDecl(fun_decl) => Some((fun_decl.id.inner.clone(), fun_decl.args.iter().map(|id| id.inner.clone()).collect()))
                 })
                 .collect(),
+            current_call: None,
             ifs: 0,
             whiles: 0,
         }
@@ -52,7 +77,8 @@ impl Scope {
 
     fn clear_local(&mut self) {
         self.local_values.clear();
-        self.arg_values.clear();
+        self.local_addresses.clear();
+        self.current_call = None;
         self.ifs = 0;
         self.whiles = 0;
     }
@@ -60,8 +86,14 @@ impl Scope {
     fn push_address(&self, id: &Id) -> Vec<Instruction> {
         self.local_addresses
             .get(id)
-            .or(self.arg_addresses.get(id))
-            .or(self.global_addresses.get(id))
+            .cloned()
+            .or_else(|| {
+                let index = self.arg_names
+                    .get(&self.current_call.as_ref().unwrap().id.inner)?
+                    .iter().position(|key| key == id);
+                index.map(|index| vec![LoadLocalAddress { offset: -(index as isize) - 2 }])
+            })
+            .or(self.global_addresses.get(id).cloned())
             .unwrap()
             .clone()
     }
@@ -69,16 +101,22 @@ impl Scope {
     fn push_var(&self, id: &Id) -> Vec<Instruction> {
         self.local_values
             .get(id)
-            .or(self.arg_values.get(id))
-            .or(self.global_values.get(id))
-            .unwrap()
+            .cloned()
+            .or_else(|| {
+                let index = self.arg_names
+                    .get(&self.current_call.as_ref().unwrap().id.inner)?
+                    .iter().position(|key| key == id);
+                index.map(|index| vec![LoadLocal { offset: -(index as isize) - 2 }])
+            })
+            .or(self.global_values.get(id).cloned())
+            .expect(format!("Cannot find value {}", id).as_str())
             .clone()
     }
 }
 
 impl SPL<'_> {
     pub fn generate_code(&self) -> Result<Program> {
-        Ok(Program { instructions: self.generate(&mut Scope::new(self))? })
+        Ok(Program { instructions: self.generate(&mut Scope::new(self), &mut Context::new())? })
     }
 }
 
@@ -95,12 +133,15 @@ impl fmt::Display for Program {
     }
 }
 
-trait Gen {
-    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>>;
+trait Gen<'a> {
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>>;
 }
 
-impl Gen for SPL<'_> {
-    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
+impl<'a> Gen<'a> for SPL<'a> {
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
+        let (mut core_functions, core_labels) = core::core();
+        context.generated.extend(core_labels);
+
         // Reserve space for global variables
         let globals = self.decls
             .iter()
@@ -116,7 +157,7 @@ impl Gen for SPL<'_> {
             .iter()
             .enumerate()
             .map(|(index, decl)| match &decl.inner {
-                Decl::VarDecl(var_decl) => var_decl.generate_global(index as isize, scope),
+                Decl::VarDecl(var_decl) => var_decl.generate_global(index as isize, scope, context),
                 _ => Ok(Vec::new())
             })
             .collect::<Result<Vec<Vec<Instruction>>>>()?
@@ -129,32 +170,47 @@ impl Gen for SPL<'_> {
         instructions.push(BranchSubroutine { label: Label::new(MAIN) });
         instructions.push(Halt);
 
+        // Generate core functions
+        instructions.append(&mut core_functions);
+
         // Generate code for main function
-        let mut functions = self.decls
-            .iter()
-            .find_map(|decl| match &decl.inner {
-                Decl::FunDecl(fun_decl) => (fun_decl.id.inner == Id(MAIN.to_owned())).then(|| fun_decl),
-                _ => None
-            })
-            .ok_or(GenError::MissingMain)?
-            .generate(Label::new(MAIN), scope)?;
-        instructions.append(&mut functions);
+        let main_call = FunCall {
+            id: Pos {
+                row: 1,
+                col: 1,
+                code: "TODO",
+                inner: Id(MAIN.to_owned()),
+            },
+            args: Vec::new(),
+            type_args: RefCell::new(Substitution::new()),
+        };
+        context.needed.insert(main_call);
 
         // Keep generating necessary variants until all are done
-
-        // Generate core functions
-        instructions.append(&mut core::core().0);
+        while !context.needed.is_empty() {
+            let fun_call = context.needed.iter().next().unwrap().clone();
+            let mut function = self.decls
+                .iter()
+                .find_map(|decl| match &decl.inner {
+                    Decl::FunDecl(fun_decl) => (fun_decl.id == fun_call.id).then(|| fun_decl),
+                    _ => None
+                })
+                .expect(format!("Cannot find function {}", fun_call.label()).as_str())
+                // .ok_or(GenError::MissingMain)?
+                .generate(&fun_call, scope, context)?;
+            instructions.append(&mut function)
+        }
 
         Ok(instructions)
     }
 }
 
-impl VarDecl<'_> {
-    fn generate_global(&self, index: isize, scope: &mut Scope) -> Result<Vec<Instruction>> {
+impl<'a> VarDecl<'a> {
+    fn generate_global(&self, index: isize, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
         let offset = -index;
 
         // Initialization
-        let mut instructions = self.exp.generate(scope)?;
+        let mut instructions = self.exp.generate(scope, context)?;
         instructions.push(LoadRegister { reg: GP });
         instructions.push(StoreByAddress { offset });
 
@@ -171,10 +227,10 @@ impl VarDecl<'_> {
         Ok(instructions)
     }
 
-    fn generate_local(&self, index: isize, scope: &mut Scope) -> Result<Vec<Instruction>> {
+    fn generate_local(&self, index: isize, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
         let offset = index + 1;
         // Initialization
-        let mut instructions = self.exp.generate(scope)?;
+        let mut instructions = self.exp.generate(scope, context)?;
         instructions.push(StoreLocal { offset });
 
         // Retrieving
@@ -183,32 +239,26 @@ impl VarDecl<'_> {
 
         Ok(instructions)
     }
-
-    fn generate_arg(id: Id, arg: &Exp, index: isize, scope: &mut Scope) -> Result<Vec<Instruction>> {
-        let offset = -index - 2;
-        let instructions = arg.generate(scope)?;
-
-        scope.arg_values.insert(id.clone(), vec![LoadLocal { offset }]);
-        scope.arg_addresses.insert(id, vec![LoadLocalAddress { offset }]);
-
-        Ok(instructions)
-    }
 }
 
-impl FunDecl<'_> {
-    fn generate(&self, label: Label, scope: &mut Scope) -> Result<Vec<Instruction>> {
-        let mut instructions = Vec::new();
-        let scope = &mut scope.clone();
-        scope.clear_local();
-        scope.current_label = label;
+impl<'a> FunDecl<'a> {
+    fn generate(&self, fun_call: &FunCall<'a>, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
+        let label = fun_call.label();
+        context.needed.remove(fun_call);
+        context.generated.insert(label.clone());
 
-        instructions.push(Labeled(Label::new(&self.id.inner.to_string()), Box::new(Link { length: self.var_decls.len() })));
+        let mut scope = scope.clone();
+        scope.clear_local();
+        scope.current_call = Some(fun_call.clone());
+
+        let mut instructions = Vec::new();
+        instructions.push(Labeled(label, Box::new(Link { length: self.var_decls.len() })));
         for (index, var) in self.var_decls.iter().enumerate() {
-            let mut vars = var.generate_local(index as isize, scope)?;
+            let mut vars = var.generate_local(index as isize, &mut scope, context)?;
             instructions.append(&mut vars);
         }
         for stmt in &self.stmts {
-            let mut stmts = stmt.generate(scope)?;
+            let mut stmts = stmt.generate(&mut scope, context)?;
             instructions.append(&mut stmts);
         }
         instructions.push(Unlink);
@@ -218,11 +268,11 @@ impl FunDecl<'_> {
     }
 }
 
-impl Gen for Vec<PStmt<'_>> {
-    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
+impl<'a> Gen<'a> for Vec<PStmt<'a>> {
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
         Ok(self
             .iter()
-            .map(|stmt| stmt.generate(scope))
+            .map(|stmt| stmt.generate(scope, context))
             .collect::<Result<Vec<Vec<Instruction>>>>()?
             .into_iter()
             .flatten()
@@ -230,29 +280,30 @@ impl Gen for Vec<PStmt<'_>> {
     }
 }
 
-impl Gen for Stmt<'_> {
-    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
+impl<'a> Gen<'a> for Stmt<'a> {
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
         let instructions = match self {
             Stmt::If(c, t, e) => {
                 scope.ifs += 1;
-                let else_label = scope.current_label
+                let label = scope.current_call.as_ref().unwrap().label();
+                let else_label = label
                     .clone()
                     .with_suffix(Suffix::Else(scope.ifs));
-                let end_label = scope.current_label
+                let end_label = label
                     .clone()
                     .with_suffix(Suffix::EndIf(scope.ifs));
 
-                let mut instructions = c.generate(scope)?;
+                let mut instructions = c.generate(scope, context)?;
                 if e.is_empty() {
                     instructions.push(BranchFalse { label: end_label.clone() });
                 } else {
                     instructions.push(BranchFalse { label: else_label.clone() });
                 }
-                let mut then = t.generate(scope)?;
+                let mut then = t.generate(scope, context)?;
                 instructions.append(&mut then);
                 if !e.is_empty() {
                     instructions.push(Branch { label: end_label.clone() });
-                    let mut otherwise = e.generate(scope)?;
+                    let mut otherwise = e.generate(scope, context)?;
                     let labeled = Labeled(else_label, Box::new(otherwise[0].clone()));
                     otherwise[0] = labeled;
                     instructions.append(&mut otherwise);
@@ -262,18 +313,19 @@ impl Gen for Stmt<'_> {
             }
             Stmt::While(c, t) => {
                 scope.whiles += 1;
-                let start_label = scope.current_label
+                let label = scope.current_call.as_ref().unwrap().label();
+                let start_label = label
                     .clone()
                     .with_suffix(Suffix::While(scope.whiles));
-                let end_label = scope.current_label
+                let end_label = label
                     .clone()
                     .with_suffix(Suffix::EndWhile(scope.whiles));
 
-                let mut instructions = c.generate(scope)?;
+                let mut instructions = c.generate(scope, context)?;
                 let labeled = Labeled(start_label.clone(), Box::new(instructions[0].clone()));
                 instructions[0] = labeled;
                 instructions.push(BranchFalse { label: end_label.clone() });
-                let mut t = t.generate(scope)?;
+                let mut t = t.generate(scope, context)?;
                 t.push(Branch { label: start_label });
                 t.push(Labeled(end_label, Box::new(Nop)));
                 instructions.append(&mut t);
@@ -281,7 +333,7 @@ impl Gen for Stmt<'_> {
             }
             Stmt::Assignment(id, fields, exp) => {
                 // Generate value
-                let mut instructions = exp.generate(scope)?;
+                let mut instructions = exp.generate(scope, context)?;
 
                 // Generate address
                 instructions.append(&mut scope.push_address(id));
@@ -298,7 +350,7 @@ impl Gen for Stmt<'_> {
 
                 instructions
             }
-            Stmt::FunCall(fun_call) => fun_call.generate(scope)?,
+            Stmt::FunCall(fun_call) => fun_call.generate(scope, context)?,
             Stmt::Return(ret) => {
                 match ret {
                     None => vec![
@@ -306,7 +358,7 @@ impl Gen for Stmt<'_> {
                         Return
                     ],
                     Some(exp) => exp
-                        .generate(scope)?
+                        .generate(scope, context)?
                         .into_iter()
                         .chain(vec![
                             StoreRegister { reg: RR },
@@ -323,22 +375,22 @@ impl Gen for Stmt<'_> {
 }
 
 /// Generates an expression, leaving the result on top of the stack
-impl Gen for Exp<'_> {
-    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
+impl<'a> Gen<'a> for Exp<'a> {
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
         let instructions = match self {
             Exp::Variable(id) => scope.push_var(id),
             Exp::Number(n) => vec![LoadConstant(*n)],
             Exp::Character(c) => vec![LoadConstant(*c as i32)],
             Exp::Boolean(b) => vec![LoadConstant(if *b { -1 } else { 0 })],
             Exp::FunCall(fun_call) => {
-                let mut instructions = fun_call.generate(scope)?;
+                let mut instructions = fun_call.generate(scope, context)?;
                 instructions.push(LoadRegister { reg: RR });
                 instructions
             }
             Exp::Nil => vec![LoadConstant(0)],
             Exp::Tuple(l, r) => {
-                let mut instructions = r.generate(scope)?;
-                instructions.append(&mut l.generate(scope)?);
+                let mut instructions = r.generate(scope, context)?;
+                instructions.append(&mut l.generate(scope, context)?);
                 instructions.push(StoreMultiHeap { length: 2 });
                 instructions
             }
@@ -348,41 +400,41 @@ impl Gen for Exp<'_> {
     }
 }
 
-impl Gen for FunCall<'_> {
-    fn generate(&self, scope: &mut Scope) -> Result<Vec<Instruction>> {
-        let arg_names = scope.function_args.get(&self.id);
-        let instructions = match arg_names {
-            // Builtin function
-            None => self.args
-                .iter()
-                .map(|arg| arg.generate(scope))
-                .collect::<Result<Vec<Vec<Instruction>>>>()?
-                .into_iter()
-                .flatten()
-                .chain(vec![
-                    // Branch to function
-                    BranchSubroutine { label: self.label() },
-                    // Remove arguments
-                    AdjustStack { offset: -(self.args.len() as isize) },
-                ])
-                .collect(),
-            // Custom function
-            Some(names) => self.args
-                .iter()
-                .zip(names.clone())
-                .enumerate()
-                .map(|(index, (arg, id))| VarDecl::generate_arg(id, arg, index as isize, scope))
-                .collect::<Result<Vec<Vec<Instruction>>>>()?
-                .into_iter()
-                .flatten()
-                .chain(vec![
-                    // Branch to function
-                    BranchSubroutine { label: self.label() },
-                    // Remove arguments
-                    AdjustStack { offset: -(self.args.len() as isize) },
-                ])
-                .collect()
+impl<'a> Gen<'a> for FunCall<'a> {
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
+        let fun_call = {
+            match scope.current_call.borrow().as_ref() {
+                None => self.clone(),
+                Some(current_call) => {
+                    let subst = current_call.type_args.borrow();
+                    let type_args = self.type_args.clone();
+                    type_args.borrow_mut().apply(subst.deref());
+                    FunCall {
+                        id: self.id.clone(),
+                        args: self.args.clone(),
+                        type_args,
+                    }
+                }
+            }
         };
+        let label = fun_call.label();
+        if !context.generated.contains(&label) {
+            context.needed.insert(fun_call.clone());
+        }
+
+        let instructions = fun_call.args
+            .iter()
+            .map(|arg| arg.generate(scope, context))
+            .collect::<Result<Vec<Vec<Instruction>>>>()?
+            .into_iter()
+            .flatten()
+            .chain(vec![
+                // Branch to function
+                BranchSubroutine { label },
+                // Remove arguments
+                AdjustStack { offset: -(fun_call.args.len() as isize) },
+            ])
+            .collect();
 
         Ok(instructions)
     }
@@ -426,18 +478,14 @@ mod core {
             bin_op(vec![Label::new("mod")], Mod),
             bin_op(vec![Label::new("and")], And),
             bin_op(vec![Label::new("or")], Or),
-
             un_op(Label::new("neg"), Neg),
             un_op(Label::new("not"), Not),
-
             hd_basic(),
             tl_basic(),
             cons_basic(),
             is_empty_basic(),
-
             fst_basic(),
             snd_basic(),
-
             print_int(),
             print_bool(),
             print_char()

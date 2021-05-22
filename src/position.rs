@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 
 #[must_use]
-#[derive(Clone, Eq, Debug)]
+#[derive(Clone, Debug, Eq, Ord)]
 pub struct Pos<'a, T> {
     pub row: usize,
     pub col: usize,
@@ -16,6 +16,12 @@ pub struct Pos<'a, T> {
 impl<'a, T: PartialEq> PartialEq for Pos<'a, T> {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner
+    }
+}
+
+impl<'a, T: PartialOrd> PartialOrd for Pos<'a, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.inner.partial_cmp(&other.inner)
     }
 }
 

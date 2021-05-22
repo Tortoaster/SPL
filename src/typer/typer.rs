@@ -124,6 +124,8 @@ impl<'a> SPL<'a> {
             }
         }
 
+        // TODO: sort decls
+
         Ok(())
     }
 }

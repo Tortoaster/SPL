@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, BTreeMap};
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
@@ -346,12 +346,12 @@ impl DerefMut for Environment {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Substitution(HashMap<TypeVariable, Type>);
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+pub struct Substitution(BTreeMap<TypeVariable, Type>);
 
 impl Substitution {
     pub fn new() -> Self {
-        Substitution(HashMap::new())
+        Substitution(BTreeMap::new())
     }
 
     pub fn compose(&self, other: &Self) -> Self {
@@ -371,7 +371,7 @@ impl Substitution {
 }
 
 impl Deref for Substitution {
-    type Target = HashMap<TypeVariable, Type>;
+    type Target = BTreeMap<TypeVariable, Type>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

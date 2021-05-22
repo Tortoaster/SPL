@@ -49,7 +49,7 @@ pub enum Stmt<'a> {
     Return(Option<PExp<'a>>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Exp<'a> {
     Variable(Id),
     Number(i32),
@@ -60,7 +60,7 @@ pub enum Exp<'a> {
     Tuple(Box<PExp<'a>>, Box<PExp<'a>>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct FunCall<'a> {
     pub id: PId<'a>,
     pub args: Vec<PExp<'a>>,
