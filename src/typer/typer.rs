@@ -455,11 +455,11 @@ impl Infer for FunCall<'_> {
         let subst_i = self.args
             .iter()
             .fold(Ok(Substitution::new()), |acc, exp| {
-                let subst_a = acc?;
+                let subst = acc?;
                 let (subst_i, inferred) = exp.infer_type(&env, gen)?;
                 env = env.apply(&subst_i);
                 types.push(inferred);
-                Ok(subst_i.compose(&subst_a))
+                Ok(subst_i.compose(&subst))
             })?;
 
         types.apply(&subst_i);
@@ -475,12 +475,14 @@ impl Infer for FunCall<'_> {
             })?;
 
         let subst = subst_u.compose(&subst_i);
+        types = types.apply(&subst);
         let t = ret_type.apply(&subst);
 
         // Decorate function call with filled-in type arguments
         let full_type = types
             .into_iter()
             .rfold(t.clone(), |acc, t| Type::Function(Box::new(t), Box::new(acc)));
+
         *self.type_args.borrow_mut() = function.inner.find_substitution(&full_type);
 
         Ok((subst, t))

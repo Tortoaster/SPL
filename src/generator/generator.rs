@@ -409,11 +409,12 @@ impl<'a> Gen<'a> for FunCall<'a> {
                     let subst = current_call.type_args.borrow();
                     let type_args = self.type_args.clone();
                     type_args.borrow_mut().apply(subst.deref());
-                    FunCall {
+                    let fun_call = FunCall {
                         id: self.id.clone(),
                         args: self.args.clone(),
                         type_args,
-                    }
+                    };
+                    fun_call
                 }
             }
         };
