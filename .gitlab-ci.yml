@@ -1,6 +1,9 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
+before_script:
+  - apt-get install default-jre
+
 stages:
   - build
 
