@@ -10,13 +10,7 @@ fn file_try() {
 
     fs::write("tests/out/try.ssm", format!("{}", program)).expect("Unable to write file");
 
-    let output = Command::new("java")
-        .arg("-jar")
-        .arg("ssm/ssm.jar")
-        .arg("--file")
-        .arg("tests/out/try.ssm")
-        .arg("--cli")
-        .arg("--haltonerror")
+    let output = Command::new("java -jar ssm/ssm.jar --file tests/out/try.ssm --cli --haltonerror")
         .output()
         .expect("Error running SSM");
 
