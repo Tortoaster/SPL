@@ -1,3 +1,3 @@
 [submodule "ssm"]
 	path = ssm
-	url = https://gitlab.science.ru.nl/compilerconstruction/ssm.git
+	url = ../../ssm.git
