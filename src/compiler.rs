@@ -14,12 +14,12 @@ pub fn compile(code: &str) -> Result<Program> {
 
     ast.infer_types(&mut env, &mut gen)?;
 
-    println!("{}", env
-        .iter()
-        .map(|((id, _), t)| format!("{}: {}", id, t))
-        .collect::<Vec<String>>()
-        .join("\n")
-    );
+    // println!("{}", env
+    //     .iter()
+    //     .map(|((id, _), t)| format!("{}: {}", id, t))
+    //     .collect::<Vec<String>>()
+    //     .join("\n")
+    // );
 
     let program = ast.generate_code()?;
 

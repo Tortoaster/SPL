@@ -1,26 +1,43 @@
 use std::process::Command;
 use spl::compiler;
 use std::fs;
+use std::path::Path;
+use spl::compiler::error::CompileError;
 
-#[test]
-fn file_try() {
-    let code = fs::read_to_string("tests/res/try.spl").expect("File inaccessible");
+const TEST_DIR: &str = "tests/res/";
 
-    let program = compiler::compile(code.as_str()).unwrap();
+fn get_output<P: AsRef<Path>>(path: P) -> Option<String> {
+    const TEMP: &str = "tests/out/";
+    let name = path
+        .as_ref()
+        .file_stem()
+        .expect("Not a file")
+        .to_str()
+        .unwrap();
+    let file = TEMP.to_owned() + name + ".ssm";
 
-    fs::write("tests/out/try.ssm", format!("{}", program)).expect("Unable to write file");
+    let code = fs::read_to_string(path).expect("File inaccessible");
+    let program = compiler::compile(code.as_str()).ok()?;
+
+    fs::write(&file, format!("{}", program))
+        .expect("Unable to write file");
 
     let output = Command::new("java")
         .arg("-jar")
         .arg("ssm/ssm.jar")
         .arg("--file")
-        .arg("tests/out/try.ssm")
+        .arg(file)
         .arg("--cli")
         .arg("--haltonerror")
         .output()
         .expect("Error running SSM");
 
-    let numbers = String::from_utf8(output.stdout)
+    Some(String::from_utf8(output.stdout).unwrap())
+}
+
+#[test]
+fn run_try() {
+    let numbers = get_output(TEST_DIR.to_owned() + "try.spl")
         .unwrap()
         .lines()
         .next()
@@ -28,4 +45,28 @@ fn file_try() {
         .to_owned();
 
     assert_eq!(numbers, "012345678");
+}
+
+#[test]
+fn run_lists() {
+    let numbers = get_output(TEST_DIR.to_owned() + "lists.spl")
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_owned();
+
+    assert_eq!(numbers, "915");
+}
+
+#[test]
+fn run_sum() {
+    let numbers = get_output(TEST_DIR.to_owned() + "sum.spl")
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_owned();
+
+    assert_eq!(numbers, "666");
 }
