@@ -47,14 +47,14 @@ impl<'a> SPL<'a> {
                 })
                 .collect();
             if vars.len() > 1 {
-                return Err(TypeError::Codependent(vars[0].id.inner.clone(), vars[1].id.inner.clone()))
+                return Err(TypeError::Codependent(vars[0].id.inner.clone(), vars[1].id.inner.clone()));
             }
         }
 
         // Type all declarations in the right order
-        for scc in sccs {
+        for scc in &sccs {
             // First add all members of this scc to the environment
-            for decl in &scc {
+            for decl in scc {
                 let inner = match decl {
                     Decl::VarDecl(decl) => match &decl.var_type.borrow().inner {
                         None => Type::Polymorphic(gen.fresh()),
@@ -79,14 +79,14 @@ impl<'a> SPL<'a> {
 
             // Then infer their types
             let mut subst = Substitution::new();
-            for decl in &scc {
+            for decl in scc {
                 let (s, _) = decl.infer_type(env, gen)?;
                 *env = env.apply(&s);
                 subst = subst.compose(&s);
             }
 
             // Generalize them, so their type does change anymore
-            for decl in &scc {
+            for decl in scc {
                 if let Decl::FunDecl(decl) = decl {
                     let old = env.remove(&(decl.id.inner.clone(), Space::Fun)).unwrap();
                     let new = old.inner.generalize(env);
@@ -95,7 +95,7 @@ impl<'a> SPL<'a> {
             }
 
             // Update their types in the tree
-            for decl in &scc {
+            for decl in scc {
                 match decl {
                     Decl::VarDecl(var_decl) => {
                         let t = env.get(&(var_decl.id.inner.clone(), Space::Var)).unwrap();
@@ -109,7 +109,7 @@ impl<'a> SPL<'a> {
             }
 
             // Update function call type arguments with most recent substitution
-            for decl in &scc {
+            for decl in scc {
                 match decl {
                     Decl::VarDecl(var_decl) => var_decl.exp.update_fun_calls(&subst),
                     Decl::FunDecl(fun_decl) => {
@@ -124,7 +124,15 @@ impl<'a> SPL<'a> {
             }
         }
 
-        // TODO: sort decls
+        // Sort declarations in topological order
+        let mut sorted_decls = self.decls.clone();
+        sorted_decls.sort_by(|a, b| sccs
+            .iter()
+            .position(|d| d.contains(&&a.inner))
+            .cmp(&sccs.iter().position(|d| d.contains(&&b.inner))));
+        println!("{}\n", sorted_decls.iter().map(|d| d.inner.id().0).collect::<Vec<String>>().join("\n"));
+        println!("{}\n", self.decls.iter().map(|d| d.inner.id().0).collect::<Vec<String>>().join("\n"));
+        self.decls = sorted_decls;
 
         Ok(())
     }
@@ -519,7 +527,7 @@ pub mod error {
             required: usize,
             got: usize,
         },
-        Codependent(Id, Id)
+        Codependent(Id, Id),
         // UndefinedClass(TypeClass),
     }
 

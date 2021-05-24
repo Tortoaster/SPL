@@ -104,7 +104,7 @@ impl<'a> Scope<'a> {
             .cloned()
             .or_else(|| {
                 let index = self.arg_names
-                    .get(&self.current_call.as_ref().unwrap().id.inner)?
+                    .get(&self.current_call.as_ref()?.id.inner)?
                     .iter().position(|key| key == id);
                 index.map(|index| vec![LoadLocal { offset: -(index as isize) - 2 }])
             })
@@ -195,8 +195,7 @@ impl<'a> Gen<'a> for SPL<'a> {
                     Decl::FunDecl(fun_decl) => (fun_decl.id == fun_call.id).then(|| fun_decl),
                     _ => None
                 })
-                .expect(format!("Cannot find function {}", fun_call.label()).as_str())
-                // .ok_or(GenError::MissingMain)?
+                .ok_or(GenError::MissingMain)?
                 .generate(&fun_call, scope, context)?;
             instructions.append(&mut function)
         }

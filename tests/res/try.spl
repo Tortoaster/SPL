@@ -1,8 +1,8 @@
 var tuple = (0, 1);
 var list = 3 : 7 : 11 : [];
 
-//var value1 = 4 + value2;
-//var value2 = 4;
+var value1 = 4 + value2;
+var value2 = 4;
 
 isPrime(n) {
     var i = 2;
@@ -16,6 +16,7 @@ isPrime(n) {
         if(n % i == 0) {
             return False;
         }
+        i = i + 1;
     }
     return True;
 }
@@ -42,14 +43,14 @@ main() {
     list = list.tl;
     print(list.hd / 2 + 1); // 4
     list = list.tl;
-//    if(isPrime(list.hd)) {
-//        print(list.hd / 2); // 5
-//    } else {
-//        print(0);
-//    }
+    if(isPrime(list.hd)) {
+        print(list.hd / 2); // 5
+    } else {
+        print(0);
+    }
     print(polySix(True)); // 6
     if(monomorphic(3, 3)) {
         print(7); // 7
     }
-//    print(value1); // 8
+    print(value1); // 8
 }
