@@ -1,23 +1,17 @@
+image: "rust:latest"
+
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
 before_script:
-  - apt-get install default-jre
+  - apt-get update
+  - apt-get install -y openjdk-8-jdk
+  - apt-get install -y ant
+  - apt-get install ca-certificates-java
+  - apt-get clean
+  - update-ca-certificates -f
 
-stages:
-  - build
-
-rust-latest:
-  stage: build
-  image: rust:latest
+test:cargo:
   script:
-    - cargo build --verbose
-    - cargo test --verbose
-
-rust-nightly:
-  stage: build
-  image: rustlang/rust:nightly
-  script:
-    - cargo build --verbose
-    - cargo test --verbose
-  allow_failure: true
+    - rustc --version && cargo --version
+    - cargo test --workspace --verbose
