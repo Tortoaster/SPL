@@ -21,10 +21,10 @@ fn file_try() {
         .expect("Error running SSM");
 
     let numbers = String::from_utf8(output.stdout)
-        .expect("No output")
+        .unwrap()
         .lines()
         .next()
-        .unwrap()
+        .unwrap_or(String::from_utf8(output.stderr).unwrap().as_str())
         .to_owned();
 
     assert_eq!(numbers, "012345678");
