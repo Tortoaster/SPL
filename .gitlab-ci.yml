@@ -6,6 +6,11 @@ variables:
 before_script:
   - apt-get update
   - apt-get install -y openjdk-11-jdk
+  - apt-get install -y ant
+  - apt-get install ca-certificates-java
+  - apt-get clean
+  - update-ca-certificates -f
+  - ant
 
 test:cargo:
   script:

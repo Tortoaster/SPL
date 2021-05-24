@@ -10,18 +10,21 @@ fn file_try() {
 
     fs::write("tests/out/try.ssm", format!("{}", program)).expect("Unable to write file");
 
-    let output = Command::new("java -jar ssm/ssm.jar --file tests/out/try.ssm --cli --haltonerror")
+    let output = Command::new("java")
+        .arg("-jar")
+        .arg("ssm/ssm.jar")
+        .arg("--file")
+        .arg("tests/out/try.ssm")
+        .arg("--cli")
+        .arg("--haltonerror")
         .output()
         .expect("Error running SSM");
 
-    let out = String::from_utf8(output.stdout).unwrap();
-
-    println!("{}", out);
-
-    let numbers = out
+    let numbers = String::from_utf8(output.stdout)
+        .unwrap()
         .lines()
         .next()
-        .unwrap_or(String::from_utf8(output.stderr).unwrap().as_str())
+        .unwrap()
         .to_owned();
 
     assert_eq!(numbers, "012345678");
