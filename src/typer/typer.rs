@@ -502,8 +502,9 @@ pub mod error {
 
     use crate::parser::Id;
     use crate::typer::{Type, TypeClass, TypeVariable};
+    use crate::position::Pos;
 
-    pub type Result<T, E = TypeError> = std::result::Result<T, E>;
+    pub type Result<'a, T, E = Pos<'a, TypeError>> = std::result::Result<T, E>;
 
     #[derive(Eq, PartialEq)]
     pub enum TypeError {
