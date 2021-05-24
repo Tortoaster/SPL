@@ -130,8 +130,6 @@ impl<'a> SPL<'a> {
             .iter()
             .position(|d| d.contains(&&a.inner))
             .cmp(&sccs.iter().position(|d| d.contains(&&b.inner))));
-        println!("{}\n", sorted_decls.iter().map(|d| d.inner.id().0).collect::<Vec<String>>().join("\n"));
-        println!("{}\n", self.decls.iter().map(|d| d.inner.id().0).collect::<Vec<String>>().join("\n"));
         self.decls = sorted_decls;
 
         Ok(())
