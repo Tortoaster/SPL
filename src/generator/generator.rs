@@ -178,7 +178,7 @@ impl<'a> Gen<'a> for SPL<'a> {
             id: Pos {
                 row: 1,
                 col: 1,
-                code: "TODO",
+                code: " ",
                 content: Id(MAIN.to_owned()),
             },
             args: Vec::new(),
@@ -447,7 +447,7 @@ impl FunCall<'_> {
             name.push_str(format!("{}", self.type_args
                 .borrow()
                 .iter()
-                .map(|(_, t)| format!("-t{}", t))
+                .map(|(_, t)| format!("-t{}", t.content))
                 .collect::<Vec<String>>()
                 .join("-a")
             ).as_str());

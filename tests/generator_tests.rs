@@ -37,7 +37,7 @@ fn get_output<P: AsRef<Path>>(path: P) -> Option<String> {
 #[test]
 fn run_try() {
     let numbers = get_output(TEST_DIR.to_owned() + "try.spl")
-        .unwrap()
+        .expect("Failed to get output")
         .lines()
         .next()
         .unwrap()
@@ -49,7 +49,7 @@ fn run_try() {
 #[test]
 fn run_lists() {
     let numbers = get_output(TEST_DIR.to_owned() + "lists.spl")
-        .unwrap()
+        .expect("Failed to get output")
         .lines()
         .next()
         .unwrap()
@@ -61,7 +61,7 @@ fn run_lists() {
 #[test]
 fn run_sum() {
     let numbers = get_output(TEST_DIR.to_owned() + "sum.spl")
-        .unwrap()
+        .expect("Failed to get output")
         .lines()
         .next()
         .unwrap()
