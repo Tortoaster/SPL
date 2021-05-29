@@ -11,7 +11,7 @@ fn nested_comments() {
         } */
     } */
     ";
-    let tokens: Vec<Token> = code.tokenize().expect("Failed to tokenize").map(|p| p.inner).collect();
+    let tokens: Vec<Token> = code.tokenize().expect("Failed to tokenize").map(|p| p.content).collect();
     assert!(tokens.is_empty())
 }
 
@@ -26,7 +26,7 @@ fn fac() {
         }
     }
     ";
-    let tokens: Vec<Token> = code.tokenize().expect("Failed to tokenize").map(|p| p.inner).collect();
+    let tokens: Vec<Token> = code.tokenize().expect("Failed to tokenize").map(|p| p.content).collect();
     let expected = vec![
         Token::Identifier("fac".into()),
         Token::OpenParen,

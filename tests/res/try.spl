@@ -54,3 +54,9 @@ main() {
     }
     print(value1); // 8
 }
+
+var l = [];
+f() {
+    l = 1 : l;
+    l = True : l;
+}

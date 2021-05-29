@@ -8,7 +8,7 @@ use crate::lexer::{Field, Operator, PeekLexer, Token};
 use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 use crate::parser::error::ParseError;
 use crate::position::{Join, Pos};
-use crate::typer::{Environment, Generator, Substitution, Type, TypeClass, TypeVariable};
+use crate::typer::{Environment, Generator, Substitution, Type, TypeClass, TypeVariable, PType};
 
 trait Util<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;
@@ -24,7 +24,7 @@ impl<'a> Util<'a> for PeekLexer<'a> {
             row: self.code.lines().count(),
             col: self.code.lines().last().unwrap_or("").len() + 1,
             code: self.code,
-            inner: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
+            content: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
         })
     }
 
@@ -33,14 +33,14 @@ impl<'a> Util<'a> for PeekLexer<'a> {
             row: 1,
             col: 1,
             code: "",
-            inner: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
+            content: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
         })
     }
 
     fn consume<T: AsRef<Token>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>> {
         let token = self.next_or_eof(format!("{:?}", expected.as_ref()))?;
 
-        if token.inner == *expected.as_ref() {
+        if token.content == *expected.as_ref() {
             Ok(token)
         } else {
             let (pos, inner) = token.eject();
@@ -82,7 +82,7 @@ pub trait Parsable<'a>: Sized + Clone + Debug {
             parsed.push(p);
             match tokens.peek() {
                 None => break,
-                Some(s) => if *separator.as_ref() != s.inner { break; }
+                Some(s) => if *separator.as_ref() != s.content { break; }
             }
             // TODO: Include?
             let _ = tokens.consume(&separator)?;
@@ -111,7 +111,7 @@ impl<'a> Parsable<'a> for SPL<'a> {
             row: 0,
             col: 0,
             code: tokens.code,
-            inner: (),
+            content: (),
         });
 
         Ok(pos.with(SPL { decls }))
@@ -121,7 +121,7 @@ impl<'a> Parsable<'a> for SPL<'a> {
 impl<'a> Parsable<'a> for Decl<'a> {
     fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.peek_or_eof("declaration")?;
-        let decl = match token.inner {
+        let decl = match token.content {
             Token::Identifier(_) => {
                 let fun_decl = FunDecl::parse(tokens)?;
                 let (pos, inner) = fun_decl.eject();
@@ -140,7 +140,7 @@ impl<'a> Parsable<'a> for Decl<'a> {
 
 impl<'a> Parsable<'a> for VarDecl<'a> {
     fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
-        let var_type = <Option<Type>>::parse(tokens)?;
+        let var_type = <Option<PType>>::parse(tokens)?;
         let id = Id::parse(tokens)?;
         let equals = tokens.consume(Token::Assign)?;
         let exp = Exp::parse(tokens)?;
@@ -166,7 +166,7 @@ impl<'a> Parsable<'a> for FunDecl<'a> {
         let close = tokens.consume(Token::CloseParen)?;
         positions.push(close.clone());
 
-        let fun_type = if let Some(Pos { inner: Token::HasType, .. }) = tokens.peek() {
+        let fun_type = if let Some(Pos { content: Token::HasType, .. }) = tokens.peek() {
             positions.push(tokens.consume(Token::HasType)?);
             let function = Type::parse_function(tokens, &mut Generator::new(), &mut HashMap::new())?;
             let scheme = function.generalize(&Environment::new());
@@ -208,19 +208,19 @@ impl<'a> Parsable<'a> for FunDecl<'a> {
 }
 
 /// Parsable for variable type annotations
-impl<'a> Parsable<'a> for Option<Type> {
+impl<'a> Parsable<'a> for Option<PType<'a>> {
     fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.peek_or_eof("variable type")?;
-        match token.inner {
+        match token.content {
             Token::Var => {
                 Ok(tokens.consume(Token::Var)?.with(None))
             }
             _ => {
                 let parsed = Type::parse_basic(tokens, &mut Generator::new(), &mut HashMap::new())?;
-                match parsed.inner {
+                match parsed.content {
                     Type::Int | Type::Bool | Type::Char | Type::Tuple(_, _) | Type::Array(_) => {
                         let (pos, inner) = parsed.eject();
-                        Ok(pos.with(Some(inner)))
+                        Ok(pos.with(Some(pos.with(inner))))
                     }
                     Type::Polymorphic(_) => Err(parsed.with(ParseError::PolyVar)),
                     _ => Err(parsed.with(ParseError::InvalidAnnotation))
@@ -244,7 +244,7 @@ impl<'a> Parsable<'a> for Vec<Pos<'a, (TypeClass, Id)>> {
 impl<'a> Parsable<'a> for (TypeClass, Id) {
     fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let id = Id::parse(tokens)?;
-        let class = match id.inner.0.as_str() {
+        let class = match id.content.0.as_str() {
             "Any" => TypeClass::Any,
             "Show" => TypeClass::Show,
             "Eq" => TypeClass::Eq,
@@ -253,7 +253,7 @@ impl<'a> Parsable<'a> for (TypeClass, Id) {
         };
         let var = Id::parse(tokens)?;
 
-        Ok(id.extend(&var).with((class, var.inner)))
+        Ok(id.extend(&var).with((class, var.content)))
     }
 }
 
@@ -263,11 +263,11 @@ impl AsRef<Token> for Token {
     }
 }
 
-impl Type {
+impl<'a> Type<'a> {
     /// Parses any type other than a function
-    fn parse_basic<'a>(tokens: &mut PeekLexer<'a>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
+    fn parse_basic(tokens: &mut PeekLexer<'a>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.next_or_eof("type")?;
-        let t = match token.inner {
+        let t = match token.content {
             Token::Void => token.with(Type::Void),
             Token::Int => token.with(Type::Int),
             Token::Bool => token.with(Type::Bool),
@@ -282,7 +282,7 @@ impl Type {
                     .extend(&comma)
                     .extend(&r)
                     .extend(&close)
-                    .with(Type::Tuple(Box::new(l.inner), Box::new(r.inner)))
+                    .with(Type::Tuple(Box::new(l), Box::new(r)))
             }
             Token::OpenArr => {
                 let t = Type::parse_basic(tokens, gen, poly_names)?;
@@ -290,7 +290,7 @@ impl Type {
                 token
                     .extend(&t)
                     .extend(&close)
-                    .with(Type::Array(Box::new(t.inner)))
+                    .with(Type::Array(Box::new(t)))
             }
             Token::Identifier(ref s) => {
                 let id = Id(s.clone());
@@ -300,7 +300,7 @@ impl Type {
                 ))
             }
             _ => return Err(token.with(ParseError::BadToken {
-                found: token.inner.clone(),
+                found: token.content.clone(),
                 expected: "type".to_owned(),
             }))
         };
@@ -309,18 +309,18 @@ impl Type {
     }
 
     /// Parses a function type, including type class constraints
-    pub fn parse_function<'a>(tokens: &mut PeekLexer<'a>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
+    pub fn parse_function(tokens: &mut PeekLexer<'a>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
         // Read optional type class constraints
         let type_classes = <Vec<Pos<(TypeClass, Id)>>>::try_parse(tokens).unwrap_or(tokens.peek_or_eof("function type")?.with(Vec::new()));
-        for p in type_classes.inner {
-            let (class, var) = p.inner;
+        for p in type_classes.content {
+            let (class, var) = p.content;
             poly_names.entry(var).or_insert(gen.fresh()).impose(class);
         }
 
         let mut arg_types = Vec::new();
         loop {
             let token = tokens.peek_or_eof("type")?;
-            match token.inner {
+            match token.content {
                 Token::To => break,
                 _ => arg_types.push(Type::parse_basic(tokens, gen, poly_names)?)
             }
@@ -330,10 +330,10 @@ impl Type {
         let fun_type = arg_types
             .into_iter()
             .rfold(ret_type, |res, arg| {
-                let (pos, inner) = res.eject();
-                pos
+                res
+                    .with(())
                     .extend(&arg)
-                    .with(Type::Function(Box::new(arg.inner), Box::new(inner)))
+                    .with(Type::Function(Box::new(arg), Box::new(res)))
             });
 
         Ok(fun_type)
@@ -344,7 +344,7 @@ impl<'a> Parsable<'a> for Stmt<'a> {
     fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.next_or_eof("statement")?;
 
-        let t = match token.inner {
+        let t = match token.content {
             Token::If => {
                 let mut positions = vec![token];
 
@@ -354,7 +354,7 @@ impl<'a> Parsable<'a> for Stmt<'a> {
                 positions.push(tokens.consume(Token::OpenBracket)?);
                 let then = Stmt::parse_many(tokens);
                 positions.push(tokens.consume(Token::CloseBracket)?);
-                let otherwise = if let Some(Pos { inner: Token::Else, .. }) = tokens.peek() {
+                let otherwise = if let Some(Pos { content: Token::Else, .. }) = tokens.peek() {
                     positions.push(tokens.consume(Token::Else)?);
                     positions.push(tokens.consume(Token::OpenBracket)?);
                     let result = Stmt::parse_many(tokens);
@@ -399,7 +399,7 @@ impl<'a> Parsable<'a> for Stmt<'a> {
                     .with(Stmt::While(condition, repeat))
             }
             Token::Return => {
-                if let Some(Pos { inner: Token::Semicolon, .. }) = tokens.peek() {
+                if let Some(Pos { content: Token::Semicolon, .. }) = tokens.peek() {
                     let end = tokens.consume(Token::Semicolon)?;
                     token
                         .with(Stmt::Return(None))
@@ -415,7 +415,7 @@ impl<'a> Parsable<'a> for Stmt<'a> {
             }
             Token::Identifier(ref s) => {
                 let id = token.with(Id(s.clone()));
-                if let Some(Pos { inner: Token::OpenParen, .. }) = tokens.peek() {
+                if let Some(Pos { content: Token::OpenParen, .. }) = tokens.peek() {
                     let open = tokens.consume(Token::OpenParen)?;
                     let args = Exp::parse_many_sep(tokens, Token::Comma)?;
                     let close = tokens.consume(Token::CloseParen)?;
@@ -447,11 +447,11 @@ impl<'a> Parsable<'a> for Stmt<'a> {
                         .extend(&equals)
                         .extend(&exp)
                         .extend(&end)
-                        .with(Stmt::Assignment(id, selector.inner, exp))
+                        .with(Stmt::Assignment(id, selector.content, exp))
                 }
             }
             _ => return Err(token.pos().with(ParseError::BadToken {
-                found: token.inner,
+                found: token.content,
                 expected: "statement".to_owned(),
             }))
         };
@@ -464,10 +464,10 @@ impl<'a> Exp<'a> {
     fn parse_exp(tokens: &mut PeekLexer<'a>, min_bp: u8) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.next_or_eof("expression")?;
 
-        let mut lhs = match token.inner {
+        let mut lhs = match token.content {
             Token::Identifier(ref s) => {
                 let id = Id(s.clone());
-                if let Some(Pos { inner: Token::OpenParen, .. }) = tokens.peek() {
+                if let Some(Pos { content: Token::OpenParen, .. }) = tokens.peek() {
                     let open = tokens.consume(Token::OpenParen)?;
                     let fun_call = FunCall {
                         id: token.with(id),
@@ -483,12 +483,12 @@ impl<'a> Exp<'a> {
                         .with(Exp::FunCall(fun_call))
                 } else {
                     let fields = <Vec<Pos<Field>>>::parse(tokens)?;
-                    fields.inner
+                    fields.content
                         .into_iter()
                         .fold(token.with(Exp::Variable(id)), |e, f| {
                             let pos = e.pos();
                             let fun_call = FunCall {
-                                id: f.with(Id(format!("{}", f.inner))),
+                                id: f.with(Id(format!("{}", f.content))),
                                 args: vec![e],
                                 type_args: RefCell::new(Substitution::new()),
                             };
@@ -516,7 +516,7 @@ impl<'a> Exp<'a> {
             Token::True => token.with(Exp::Boolean(true)),
             Token::OpenParen => {
                 let lhs = Self::parse_exp(tokens, 0)?;
-                if let Some(Pos { inner: Token::CloseParen, .. }) = tokens.peek() {
+                if let Some(Pos { content: Token::CloseParen, .. }) = tokens.peek() {
                     let close = tokens.consume(Token::CloseParen)?;
                     lhs
                         .extend(&token)
@@ -535,12 +535,12 @@ impl<'a> Exp<'a> {
             }
             Token::Nil => token.with(Exp::Nil),
             _ => return Err(token.pos().with(ParseError::BadToken {
-                found: token.inner,
+                found: token.content,
                 expected: "expression".to_owned(),
             }))
         };
 
-        while let Some(Pos { inner: Token::Operator(op), .. }) = tokens.peek() {
+        while let Some(Pos { content: Token::Operator(op), .. }) = tokens.peek() {
             let op = op.clone();
             let op = tokens.peek().unwrap().with(op);
             let (l_bp, r_bp) = op.infix_binding_power()?;
@@ -572,11 +572,11 @@ impl<'a> Exp<'a> {
 
 impl<'a> Pos<'a, Operator> {
     fn prefix_binding_power(&self) -> Result<'a, u8> {
-        let bp = match self.inner {
+        let bp = match self.content {
             Operator::Minus => 17,
             Operator::Not => 7,
             _ => return Err(self.with(ParseError::Fixity {
-                found: self.inner.clone(),
+                found: self.content.clone(),
                 prefix: true,
             }))
         };
@@ -585,7 +585,7 @@ impl<'a> Pos<'a, Operator> {
     }
 
     fn infix_binding_power(&self) -> Result<'a, (u8, u8)> {
-        let bp = match self.inner {
+        let bp = match self.content {
             Operator::Times | Operator::Divide | Operator::Modulo => (15, 16),
             Operator::Plus | Operator::Minus => (13, 14),
             Operator::Smaller | Operator::Greater |
@@ -595,7 +595,7 @@ impl<'a> Pos<'a, Operator> {
             Operator::Or => (4, 3),
             Operator::Cons => (2, 1),
             _ => return Err(self.with(ParseError::Fixity {
-                found: self.inner.clone(),
+                found: self.content.clone(),
                 prefix: false,
             }))
         };
@@ -604,11 +604,11 @@ impl<'a> Pos<'a, Operator> {
     }
 
     pub fn prefix_id(&self) -> Result<'a, Pos<'a, Id>> {
-        let name = match self.inner {
+        let name = match self.content {
             Operator::Not => "not",
             Operator::Minus => "neg",
             _ => return Err(self.with(ParseError::Fixity {
-                found: self.inner.clone(),
+                found: self.content.clone(),
                 prefix: true,
             }))
         };
@@ -617,7 +617,7 @@ impl<'a> Pos<'a, Operator> {
     }
 
     pub fn infix_id(&self) -> Result<'a, Pos<'a, Id>> {
-        let name = match self.inner {
+        let name = match self.content {
             Operator::Plus => "add",
             Operator::Minus => "sub",
             Operator::Times => "mul",
@@ -633,7 +633,7 @@ impl<'a> Pos<'a, Operator> {
             Operator::Or => "or",
             Operator::Cons => "cons",
             _ => return Err(self.with(ParseError::Fixity {
-                found: self.inner.clone(),
+                found: self.content.clone(),
                 prefix: false,
             }))
         };
@@ -654,10 +654,10 @@ impl<'a> Parsable<'a> for Vec<Pos<'a, Field>> {
 
         let pos = tokens.peek_or_eof("fields")?.with(());
 
-        while let Some(Pos { inner: Token::Field(_), .. }) = tokens.peek() {
+        while let Some(Pos { content: Token::Field(_), .. }) = tokens.peek() {
             let token = tokens.next().unwrap();
             let pos = token.pos();
-            if let Token::Field(field) = token.inner {
+            if let Token::Field(field) = token.content {
                 fields.push(pos.with(field));
             }
         }
@@ -669,10 +669,10 @@ impl<'a> Parsable<'a> for Vec<Pos<'a, Field>> {
 impl<'a> Parsable<'a> for Id {
     fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let token = tokens.next_or_eof("identifier")?;
-        match token.inner {
+        match token.content {
             Token::Identifier(ref s) => Ok(token.with(Id(s.clone()))),
             _ => Err(token.pos().with(ParseError::BadToken {
-                found: token.inner,
+                found: token.content,
                 expected: "identifier".to_owned(),
             }))
         }

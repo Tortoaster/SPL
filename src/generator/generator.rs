@@ -64,9 +64,9 @@ impl<'a> Scope<'a> {
             local_addresses: HashMap::new(),
             arg_names: spl.decls
                 .iter()
-                .filter_map(|decl| match &decl.inner {
+                .filter_map(|decl| match &decl.content {
                     Decl::VarDecl(_) => None,
-                    Decl::FunDecl(fun_decl) => Some((fun_decl.id.inner.clone(), fun_decl.args.iter().map(|id| id.inner.clone()).collect()))
+                    Decl::FunDecl(fun_decl) => Some((fun_decl.id.content.clone(), fun_decl.args.iter().map(|id| id.content.clone()).collect()))
                 })
                 .collect(),
             current_call: None,
@@ -89,7 +89,7 @@ impl<'a> Scope<'a> {
             .cloned()
             .or_else(|| {
                 let index = self.arg_names
-                    .get(&self.current_call.as_ref().unwrap().id.inner)?
+                    .get(&self.current_call.as_ref().unwrap().id.content)?
                     .iter().position(|key| key == id);
                 index.map(|index| vec![LoadLocalAddress { offset: -(index as isize) - 2 }])
             })
@@ -104,7 +104,7 @@ impl<'a> Scope<'a> {
             .cloned()
             .or_else(|| {
                 let index = self.arg_names
-                    .get(&self.current_call.as_ref()?.id.inner)?
+                    .get(&self.current_call.as_ref()?.id.content)?
                     .iter().position(|key| key == id);
                 index.map(|index| vec![LoadLocal { offset: -(index as isize) - 2 }])
             })
@@ -156,7 +156,7 @@ impl<'a> Gen<'a> for SPL<'a> {
         let mut variables = self.decls
             .iter()
             .enumerate()
-            .map(|(index, decl)| match &decl.inner {
+            .map(|(index, decl)| match &decl.content {
                 Decl::VarDecl(var_decl) => var_decl.generate_global(index as isize, scope, context),
                 _ => Ok(Vec::new())
             })
@@ -179,7 +179,7 @@ impl<'a> Gen<'a> for SPL<'a> {
                 row: 1,
                 col: 1,
                 code: "TODO",
-                inner: Id(MAIN.to_owned()),
+                content: Id(MAIN.to_owned()),
             },
             args: Vec::new(),
             type_args: RefCell::new(Substitution::new()),
@@ -191,7 +191,7 @@ impl<'a> Gen<'a> for SPL<'a> {
             let fun_call = context.needed.iter().next().unwrap().clone();
             let mut function = self.decls
                 .iter()
-                .find_map(|decl| match &decl.inner {
+                .find_map(|decl| match &decl.content {
                     Decl::FunDecl(fun_decl) => (fun_decl.id == fun_call.id).then(|| fun_decl),
                     _ => None
                 })
@@ -214,11 +214,11 @@ impl<'a> VarDecl<'a> {
         instructions.push(StoreByAddress { offset });
 
         // Retrieving
-        scope.global_values.insert(self.id.inner.clone(), vec![
+        scope.global_values.insert(self.id.content.clone(), vec![
             LoadRegister { reg: GP },
             LoadAddress { offset }
         ]);
-        scope.global_addresses.insert(self.id.inner.clone(), vec![
+        scope.global_addresses.insert(self.id.content.clone(), vec![
             LoadRegister { reg: GP },
             ChangeAddress { offset }
         ]);
@@ -233,8 +233,8 @@ impl<'a> VarDecl<'a> {
         instructions.push(StoreLocal { offset });
 
         // Retrieving
-        scope.local_values.insert(self.id.inner.clone(), vec![LoadLocal { offset }]);
-        scope.local_addresses.insert(self.id.inner.clone(), vec![LoadLocalAddress { offset }]);
+        scope.local_values.insert(self.id.content.clone(), vec![LoadLocal { offset }]);
+        scope.local_addresses.insert(self.id.content.clone(), vec![LoadLocalAddress { offset }]);
 
         Ok(instructions)
     }
@@ -337,7 +337,7 @@ impl<'a> Gen<'a> for Stmt<'a> {
                 // Generate address
                 instructions.append(&mut scope.push_address(id));
                 for f in fields {
-                    match f.inner {
+                    match f.content {
                         Field::Head | Field::First => instructions.push(LoadAddress { offset: 0 }),
                         Field::Tail => instructions.push(LoadAddress { offset: -1 }),
                         Field::Second => instructions.push(LoadAddress { offset: 1 })
@@ -442,7 +442,7 @@ impl<'a> Gen<'a> for FunCall<'a> {
 
 impl FunCall<'_> {
     fn label(&self) -> Label {
-        let mut name = format!("{}", self.id.inner);
+        let mut name = format!("{}", self.id.content);
         if !self.type_args.borrow().is_empty() {
             name.push_str(format!("{}", self.type_args
                 .borrow()

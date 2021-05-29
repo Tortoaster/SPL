@@ -10,30 +10,30 @@ pub struct Pos<'a, T> {
     pub row: usize,
     pub col: usize,
     pub code: &'a str,
-    pub inner: T,
+    pub content: T,
 }
 
 impl<'a, T: PartialEq> PartialEq for Pos<'a, T> {
     fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner
+        self.content == other.content
     }
 }
 
 impl<'a, T: PartialOrd> PartialOrd for Pos<'a, T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.inner.partial_cmp(&other.inner)
+        self.content.partial_cmp(&other.content)
     }
 }
 
 impl<'a, T: Hash> Hash for Pos<'a, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.inner.hash(state)
+        self.content.hash(state)
     }
 }
 
 impl<'a, T: Display> fmt::Display for Pos<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.inner)?;
+        write!(f, "{}", self.content)?;
         writeln!(f,
                  " at {}:{}:\n{}\n{: >indent$}",
                  self.row,
@@ -51,7 +51,7 @@ impl<'a, T> Pos<'a, T> {
             row: self.row,
             col: self.col,
             code: self.code,
-            inner,
+            content: inner,
         }
     }
 
@@ -67,7 +67,7 @@ impl<'a, T> Pos<'a, T> {
     }
 
     pub fn eject(self) -> (Pos<'a, ()>, T) {
-        (self.with(()), self.inner)
+        (self.with(()), self.content)
     }
 
     pub fn pos(&self) -> Pos<'a, ()> {
@@ -104,12 +104,12 @@ impl<'a, T> Deref for Pos<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.content
     }
 }
 
 impl<'a, T> DerefMut for Pos<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
+        &mut self.content
     }
 }

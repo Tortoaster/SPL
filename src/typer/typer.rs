@@ -3,32 +3,28 @@ use std::collections::HashSet;
 use error::Result;
 
 use crate::lexer::Field;
-use crate::parser::{Decl, Exp, FunCall, FunDecl, PStmt, SPL, Stmt, VarDecl};
-use crate::typer::{Environment, Generator, Space, Substitution, Type, Typed};
+use crate::parser::{Decl, Exp, FunCall, FunDecl, PStmt, SPL, Stmt, VarDecl, PExp};
+use crate::typer::{Environment, Generator, Space, Substitution, Type, Typed, PType};
 use crate::typer::call_graph;
 use crate::typer::error::TypeError;
 
-pub trait Infer {
-    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)>;
+pub trait Infer<'a> {
+    fn infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, PType<'a>)>;
 }
 
-pub trait InferMut {
-    fn infer_type_mut(&self, env: &mut Environment, gen: &mut Generator) -> Result<Type>;
-}
-
-pub trait TryInfer {
-    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<(Type, bool)>)>;
+pub trait TryInfer<'a> {
+    fn try_infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, Option<(PType<'a>, bool)>)>;
 }
 
 impl<'a> SPL<'a> {
-    pub fn infer_types(&mut self, env: &mut Environment, gen: &mut Generator) -> Result<()> {
+    pub fn infer_types(&mut self, env: &mut Environment<'a>, gen: &mut Generator) -> Result<'a, ()> {
         // Check for duplicate functions
         let mut names = HashSet::new();
         for decl in &self.decls {
-            if let Decl::FunDecl(fun_decl) = &decl.inner {
-                let id = &fun_decl.id.inner;
+            if let Decl::FunDecl(fun_decl) = &decl.content {
+                let id = &fun_decl.id.content;
                 if !names.insert(id.clone()) {
-                    return Err(TypeError::FunConflict(id.clone()));
+                    return Err(decl.with(TypeError::FunConflict(id.clone())));
                 }
             }
         }
@@ -40,14 +36,15 @@ impl<'a> SPL<'a> {
         for scc in &sccs {
             let vars: Vec<&VarDecl> = scc
                 .into_iter()
-                .filter_map(|decl| if let Decl::VarDecl(var_decl) = decl {
+                .filter_map(|decl| if let Decl::VarDecl(var_decl) = &decl.content {
                     Some(var_decl)
                 } else {
                     None
                 })
                 .collect();
             if vars.len() > 1 {
-                return Err(TypeError::Codependent(vars[0].id.inner.clone(), vars[1].id.inner.clone()));
+                let pos = vars[0].id.clone().extend(&vars[1].id);
+                return Err(pos.with(TypeError::Codependent(vars[0].id.content.clone(), vars[1].id.content.clone())));
             }
         }
 
@@ -55,62 +52,75 @@ impl<'a> SPL<'a> {
         for scc in &sccs {
             // First add all members of this scc to the environment
             for decl in scc {
-                let inner = match decl {
-                    Decl::VarDecl(decl) => match &decl.var_type.borrow().inner {
-                        None => Type::Polymorphic(gen.fresh()),
-                        Some(var_type) => var_type.generalize(env).instantiate(gen)
-                    },
-                    Decl::FunDecl(decl) => match &decl.fun_type.borrow().inner {
-                        None => {
-                            let args: Vec<Type> = std::iter::repeat_with(|| Type::Polymorphic(gen.fresh()))
-                                .take(decl.args.len())
-                                .collect();
-                            args
-                                .into_iter()
-                                .rfold(Type::Polymorphic(gen.fresh()), |res, arg| Type::Function(Box::new(arg), Box::new(res)))
+                let inner = match &decl.content {
+                    Decl::VarDecl(decl) => {
+                        let var_type = decl.var_type.borrow();
+                        match &var_type.content {
+                            None => var_type.with(Type::Polymorphic(gen.fresh())),
+                            Some(var_type) => var_type.generalize(env).instantiate(gen)
                         }
-                        Some(fun_type) => fun_type.instantiate(gen)
+                    },
+                    Decl::FunDecl(decl) => {
+                        let fun_type = decl.fun_type.borrow();
+                        match &fun_type.content {
+                            None => {
+                                let args: Vec<PType> = std::iter::repeat_with(||
+                                    fun_type.with(Type::Polymorphic(gen.fresh()))
+                                )
+                                    .take(decl.args.len())
+                                    .collect();
+                                args
+                                    .into_iter()
+                                    .rfold(fun_type.with(Type::Polymorphic(gen.fresh())), |res, arg|
+                                        res
+                                            .with(())
+                                            .extend(&arg)
+                                            .with(Type::Function(Box::new(arg), Box::new(res)))
+                                    )
+                            }
+                            Some(fun_type) => fun_type.instantiate(gen)
+                        }
                     }
                 };
                 if env.insert((decl.id(), decl.space()), inner.into()).is_some() {
-                    return Err(TypeError::VarConflict(decl.id()));
+                    return Err(decl.with(TypeError::VarConflict(decl.id())));
                 }
             }
 
             // Then infer their types
             let mut subst = Substitution::new();
             for decl in scc {
-                let (s, _) = decl.infer_type(env, gen)?;
+                let (s, _) = decl.infer(env, gen)?;
                 *env = env.apply(&s);
                 subst = subst.compose(&s);
             }
 
-            // Generalize them, so their type does change anymore
+            // Generalize them, so their type does not change anymore
             for decl in scc {
-                if let Decl::FunDecl(decl) = decl {
-                    let old = env.remove(&(decl.id.inner.clone(), Space::Fun)).unwrap();
+                if let Decl::FunDecl(decl) = &decl.content {
+                    let old = env.remove(&(decl.id.content.clone(), Space::Fun)).unwrap();
                     let new = old.inner.generalize(env);
-                    env.insert((decl.id.inner.clone(), Space::Fun), new);
+                    env.insert((decl.id.content.clone(), Space::Fun), new);
                 }
             }
 
             // Update their types in the tree
             for decl in scc {
-                match decl {
+                match &decl.content {
                     Decl::VarDecl(var_decl) => {
-                        let t = env.get(&(var_decl.id.inner.clone(), Space::Var)).unwrap();
-                        var_decl.var_type.borrow_mut().inner.replace(t.inner.clone());
+                        let t = env.get(&(var_decl.id.content.clone(), Space::Var)).unwrap();
+                        var_decl.var_type.borrow_mut().content.replace(t.inner.clone());
                     }
                     Decl::FunDecl(fun_decl) => {
-                        let t = env.get(&(fun_decl.id.inner.clone(), Space::Fun)).unwrap();
-                        fun_decl.fun_type.borrow_mut().inner.replace(t.clone());
+                        let t = env.get(&(fun_decl.id.content.clone(), Space::Fun)).unwrap();
+                        fun_decl.fun_type.borrow_mut().content.replace(t.clone());
                     }
                 }
             }
 
             // Update function call type arguments with most recent substitution
             for decl in scc {
-                match decl {
+                match &decl.content {
                     Decl::VarDecl(var_decl) => var_decl.exp.update_fun_calls(&subst),
                     Decl::FunDecl(fun_decl) => {
                         for var_decl in &fun_decl.var_decls {
@@ -128,16 +138,16 @@ impl<'a> SPL<'a> {
         let mut sorted_decls = self.decls.clone();
         sorted_decls.sort_by(|a, b| sccs
             .iter()
-            .position(|d| d.contains(&&a.inner))
-            .cmp(&sccs.iter().position(|d| d.contains(&&b.inner))));
+            .position(|d| d.contains(&a))
+            .cmp(&sccs.iter().position(|d| d.contains(&b))));
         self.decls = sorted_decls;
 
         Ok(())
     }
 }
 
-impl Exp<'_> {
-    fn update_fun_calls(&self, subst: &Substitution) {
+impl<'a> Exp<'a> {
+    fn update_fun_calls(&self, subst: &Substitution<'a>) {
         match self {
             Exp::Variable(_) | Exp::Number(_) | Exp::Character(_) | Exp::Boolean(_) | Exp::Nil => {}
             Exp::FunCall(fun_call) => fun_call.type_args.borrow_mut().apply(subst),
@@ -149,8 +159,8 @@ impl Exp<'_> {
     }
 }
 
-impl Stmt<'_> {
-    fn update_fun_calls(&self, subst: &Substitution) {
+impl<'a> Stmt<'a> {
+    fn update_fun_calls(&self, subst: &Substitution<'a>) {
         match self {
             Stmt::If(e, t, o) => {
                 e.update_fun_calls(subst);
@@ -173,50 +183,50 @@ impl Stmt<'_> {
     }
 }
 
-impl Infer for Decl<'_> {
-    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
+impl<'a> Infer<'a> for Decl<'a> {
+    fn infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, PType<'a>)> {
         match self {
-            Decl::VarDecl(var_decl) => var_decl.infer_type(env, gen),
-            Decl::FunDecl(fun_decl) => fun_decl.infer_type(env, gen)
+            Decl::VarDecl(var_decl) => var_decl.infer(env, gen),
+            Decl::FunDecl(fun_decl) => fun_decl.infer(env, gen)
         }
     }
 }
 
-impl Infer for VarDecl<'_> {
-    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
+impl<'a> Infer<'a> for VarDecl<'a> {
+    fn infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, PType<'a>)> {
         // Infer new type
-        let (subst_i, inferred) = self.exp.infer_type(env, gen)?;
+        let (subst_i, inferred) = self.exp.infer(env, gen)?;
 
         let env = &env.apply(&subst_i);
 
         // Get current type
         let var_type = env
-            .get(&(self.id.inner.clone(), Space::Var))
-            .ok_or(TypeError::Unbound(self.id.inner.clone()))?.inner
+            .get(&(self.id.content.clone(), Space::Var))
+            .ok_or(self.var_type.borrow().with(TypeError::Unbound(self.id.content.clone())))?.inner
             .clone();
 
         // Check if new type is compatible with old type
         let subst_u = var_type.unify_with(&inferred)?;
 
-        Ok((subst_u.compose(&subst_i), Type::Void))
+        Ok((subst_u.compose(&subst_i), self.id.with(Type::Void)))
     }
 }
 
-impl Infer for FunDecl<'_> {
-    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
+impl<'a> Infer<'a> for FunDecl<'a> {
+    fn infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, PType<'a>)> {
         // Check for double defined arguments
         let mut names = HashSet::new();
         for id in &self.args {
-            if !names.insert(id.inner.clone()) {
-                return Err(TypeError::VarConflict(id.inner.clone()));
+            if !names.insert(id.content.clone()) {
+                return Err(id.with(TypeError::VarConflict(id.content.clone())));
             }
         }
 
-        // Check for double defined variables
+        // Check for doubly defined variables
         let mut names = HashSet::new();
         for var_decl in &self.var_decls {
-            if !names.insert(var_decl.id.inner.clone()) {
-                return Err(TypeError::VarConflict(var_decl.id.inner.clone()));
+            if !names.insert(var_decl.id.content.clone()) {
+                return Err(var_decl.with(TypeError::VarConflict(var_decl.id.content.clone())));
             }
         }
 
@@ -225,8 +235,8 @@ impl Infer for FunDecl<'_> {
 
         // Get current type
         let mut arg_types = env
-            .get(&(self.id.inner.clone(), Space::Fun))
-            .ok_or(TypeError::Unbound(self.id.inner.clone()))?.inner
+            .get(&(self.id.content.clone(), Space::Fun))
+            .ok_or(self.id.with(TypeError::Unbound(self.id.content.clone())))?.inner
             .unfold();
         let ret_type = arg_types.pop().unwrap();
 
@@ -234,7 +244,7 @@ impl Infer for FunDecl<'_> {
         env.extend(self.args
             .iter()
             .cloned()
-            .map(|id| (id.inner, Space::Var))
+            .map(|id| (id.content, Space::Var))
             .zip(arg_types
                 .into_iter()
                 .map(|arg| arg.into())));
@@ -244,36 +254,42 @@ impl Infer for FunDecl<'_> {
             .iter()
             .fold(Ok(Substitution::new()), |acc, decl| {
                 let subst_a = acc?;
-                let inner = match &decl.var_type.borrow().inner {
-                    None => Type::Polymorphic(gen.fresh()),
+                let var_type = decl.var_type.borrow();
+                let inner = match &var_type.content {
+                    None => var_type.with(Type::Polymorphic(gen.fresh())),
                     Some(var_type) => var_type.generalize(&env).instantiate(gen)
                 };
-                env.insert((decl.id.inner.clone(), Space::Var), inner.into());
-                let (subst_i, _) = decl.infer_type(&env, gen)?;
+                env.insert((decl.id.content.clone(), Space::Var), inner.into());
+                let (subst_i, _) = decl.infer(&env, gen)?;
                 env = env.apply(&subst_i);
                 Ok(subst_i.compose(&subst_a))
             })?;
 
         // Infer types in inner statements
-        let (subst_i, result) = self.stmts.try_infer_type(&env, gen)?;
+        let (subst_i, result) = self.stmts.try_infer(&env, gen)?;
 
         // Check return type
-        let (inferred, complete) = result.unwrap_or((Type::Void, true));
-        if !complete && inferred != Type::Void {
-            return Err(TypeError::Incomplete(self.id.inner.clone()));
-        }
-        let subst_r = ret_type.unify_with(&inferred)?;
+        let inferred = match result {
+            None => Type::Void,
+            Some((inferred, complete)) => {
+                if !complete && inferred.content != Type::Void {
+                    return Err(self.id.with(TypeError::Incomplete(self.id.content.clone())));
+                }
+                inferred.content
+            }
+        };
+        let subst_r = ret_type.unify_with(&ret_type.with(inferred))?;
 
-        Ok((subst_r.compose(&subst_i.compose(&subst_v)), Type::Void))
+        Ok((subst_r.compose(&subst_i.compose(&subst_v)), self.id.with(Type::Void)))
     }
 }
 
-trait Combine {
-    fn combine_with(&self, other: &Self, both: bool) -> Result<(Substitution, Option<(Type, bool)>)>;
+trait Combine<'a> {
+    fn combine_with(&self, other: &Self, both: bool) -> Result<'a, (Substitution<'a>, Option<(PType<'a>, bool)>)>;
 }
 
-impl Combine for Option<(Type, bool)> {
-    fn combine_with(&self, other: &Self, both: bool) -> Result<(Substitution, Option<(Type, bool)>)> {
+impl<'a> Combine<'a> for Option<(PType<'a>, bool)> {
+    fn combine_with(&self, other: &Self, both: bool) -> Result<'a, (Substitution<'a>, Option<(PType<'a>, bool)>)> {
         match (self, other) {
             (Some((t1, b1)), Some((t2, b2))) => {
                 Ok((t1.unify_with(t2)?, Some((t1.clone(), if both { *b1 && *b2 } else { *b1 || *b2 }))))
@@ -286,16 +302,16 @@ impl Combine for Option<(Type, bool)> {
     }
 }
 
-impl TryInfer for Vec<PStmt<'_>> {
-    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<(Type, bool)>)> {
+impl<'a> TryInfer<'a> for Vec<PStmt<'a>> {
+    fn try_infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, Option<(PType<'a>, bool)>)> {
         let mut env = env.clone();
-        let mut current: Option<(Type, bool)> = None;
+        let mut current: Option<(PType, bool)> = None;
 
         let subst = self
             .iter()
             .fold(Ok(Substitution::new()), |acc, stmt| {
                 let subst_a = acc?;
-                let (subst_i, result) = stmt.try_infer_type(&env, gen)?;
+                let (subst_i, result) = stmt.try_infer(&env, gen)?;
                 let (subst_u, new) = current.combine_with(&result, false)?;
                 let subst = subst_u.compose(&subst_i);
                 env = env.apply(&subst);
@@ -312,19 +328,19 @@ impl TryInfer for Vec<PStmt<'_>> {
     }
 }
 
-impl TryInfer for Stmt<'_> {
-    fn try_infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Option<(Type, bool)>)> {
-        match self {
+impl<'a> TryInfer<'a> for PStmt<'a> {
+    fn try_infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, Option<(PType<'a>, bool)>)> {
+        match &self.content {
             Stmt::If(c, t, e) => {
-                let (subst_i, inferred) = c.infer_type(env, gen)?;
-                let subst_u = inferred.unify_with(&Type::Bool)?;
+                let (subst_i, inferred) = c.infer(env, gen)?;
+                let subst_u = inferred.unify_with(&c.with(Type::Bool))?;
                 let subst = subst_u.compose(&subst_i);
                 let env = &env.apply(&subst);
 
-                let (subst_t, ret_t) = t.try_infer_type(env, gen)?;
+                let (subst_t, ret_t) = t.try_infer(env, gen)?;
                 let env = &env.apply(&subst_t);
 
-                let (subst_e, ret_e) = e.try_infer_type(env, gen)?;
+                let (subst_e, ret_e) = e.try_infer(env, gen)?;
 
                 let (subst_r, mut ret_type) = ret_t.combine_with(&ret_e, true)?;
 
@@ -337,12 +353,12 @@ impl TryInfer for Stmt<'_> {
                 Ok((subst, ret_type))
             }
             Stmt::While(c, t) => {
-                let (subst_i, inferred) = c.infer_type(env, gen)?;
-                let subst_u = inferred.unify_with(&Type::Bool)?;
+                let (subst_i, inferred) = c.infer(env, gen)?;
+                let subst_u = inferred.unify_with(&c.with(Type::Bool))?;
                 let subst = subst_u.compose(&subst_i);
                 let env = &env.apply(&subst);
 
-                let (subst_t, ret_t) = t.try_infer_type(env, gen)?;
+                let (subst_t, ret_t) = t.try_infer(env, gen)?;
 
                 let subst = subst_t.compose(&subst);
                 let ret_type = ret_t.map(|(t, _)| (t.apply(&subst), false));
@@ -350,13 +366,13 @@ impl TryInfer for Stmt<'_> {
                 Ok((subst, ret_type))
             }
             Stmt::Assignment(x, f, e) => {
-                let (subst_i, inferred) = e.infer_type(env, gen)?;
+                let (subst_i, inferred) = e.infer(env, gen)?;
 
                 let env = &env.apply(&subst_i);
 
                 let remembered = env
-                    .get(&(x.inner.clone(), Space::Var))
-                    .ok_or(TypeError::Unbound(x.inner.clone()))?.inner
+                    .get(&(x.content.clone(), Space::Var))
+                    .ok_or(x.with(TypeError::Unbound(x.content.clone())))?.inner
                     .clone();
 
                 let mut current = remembered;
@@ -364,8 +380,9 @@ impl TryInfer for Stmt<'_> {
                     .iter()
                     .fold(Ok(Substitution::new()), |acc, field| {
                         let subst = acc?;
-                        let inner = Type::Polymorphic(gen.fresh());
-                        match field.inner {
+                        let inner = current.with(Type::Polymorphic(gen.fresh()));
+                        match field.content {
+                            // TODO: Check invalid operations
                             Field::Head => {
                                 let thing = Type::Array(Box::new(inner.clone()));
                                 let subst_u = thing.unify_with(&current)?;
@@ -375,17 +392,17 @@ impl TryInfer for Stmt<'_> {
                             Field::Tail => {
                                 let thing = Type::Array(Box::new(inner.clone()));
                                 let subst_u = thing.unify_with(&current)?;
-                                current = Type::Array(Box::new(inner)).apply(&subst_u);
+                                current = current.with(Type::Array(Box::new(inner))).apply(&subst_u);
                                 Ok(subst_u.compose(&subst))
                             }
                             Field::First => {
-                                let thing = Type::Tuple(Box::new(inner.clone()), Box::new(Type::Polymorphic(gen.fresh())));
+                                let thing = Type::Tuple(Box::new(inner.clone()), Box::new(current.with(Type::Polymorphic(gen.fresh()))));
                                 let subst_u = thing.unify_with(&current)?;
                                 current = inner.apply(&subst_u);
                                 Ok(subst_u.compose(&subst))
                             }
                             Field::Second => {
-                                let thing = Type::Tuple(Box::new(Type::Polymorphic(gen.fresh())), Box::new(inner.clone()));
+                                let thing = Type::Tuple(Box::new(current.with(Type::Polymorphic(gen.fresh()))), Box::new(inner.clone()));
                                 let subst_u = thing.unify_with(&current)?;
                                 current = inner.apply(&subst_u);
                                 Ok(subst_u.compose(&subst))
@@ -398,13 +415,13 @@ impl TryInfer for Stmt<'_> {
                 Ok((subst_u.compose(&subst_f.compose(&subst_i)), None))
             }
             Stmt::FunCall(fun_call) => {
-                let (subst, _) = fun_call.infer_type(env, gen)?;
+                let (subst, _) = fun_call.infer(env, gen)?;
                 Ok((subst, None))
             }
             Stmt::Return(e) => match e {
-                None => Ok((Substitution::new(), Some((Type::Void, true)))),
+                None => Ok((Substitution::new(), Some((self.with(Type::Void), true)))),
                 Some(exp) => {
-                    let (subst, inferred) = exp.infer_type(env, gen)?;
+                    let (subst, inferred) = exp.infer(env, gen)?;
                     Ok((subst, Some((inferred, true))))
                 }
             }
@@ -412,34 +429,34 @@ impl TryInfer for Stmt<'_> {
     }
 }
 
-impl Infer for Exp<'_> {
-    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
-        match self {
+impl<'a> Infer<'a> for PExp<'a> {
+    fn infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, PType<'a>)> {
+        match &self.content {
             Exp::Variable(id) => match env.get(&(id.clone(), Space::Var)) {
-                None => Err(TypeError::Unbound(id.clone())),
+                None => Err(self.with(TypeError::Unbound(id.clone()))),
                 Some(t) => Ok((Substitution::new(), t.inner.clone()))
             }
-            Exp::Number(_) => Ok((Substitution::new(), Type::Int)),
-            Exp::Character(_) => Ok((Substitution::new(), Type::Char)),
-            Exp::Boolean(_) => Ok((Substitution::new(), Type::Bool)),
-            Exp::FunCall(fun_call) => fun_call.infer_type(env, gen),
-            Exp::Nil => Ok((Substitution::new(), Type::Array(Box::new(Type::Polymorphic(gen.fresh()))))),
+            Exp::Number(_) => Ok((Substitution::new(), self.with(Type::Int))),
+            Exp::Character(_) => Ok((Substitution::new(), self.with(Type::Char))),
+            Exp::Boolean(_) => Ok((Substitution::new(), self.with(Type::Bool))),
+            Exp::FunCall(fun_call) => fun_call.infer(env, gen),
+            Exp::Nil => Ok((Substitution::new(), self.with(Type::Array(Box::new(self.with(Type::Polymorphic(gen.fresh()))))))),
             Exp::Tuple(l, r) => {
-                let (l_subst, l_inferred) = l.infer_type(env, gen)?;
-                let (r_subst, r_inferred) = r.infer_type(&env.apply(&l_subst), gen)?;
+                let (l_subst, l_inferred) = l.infer(env, gen)?;
+                let (r_subst, r_inferred) = r.infer(&env.apply(&l_subst), gen)?;
                 let subst = r_subst.compose(&l_subst);
-                let l_inferred = l_inferred.apply(&subst);
-                Ok((subst, Type::Tuple(Box::new(l_inferred), Box::new(r_inferred))))
+                let l_inferred = l.with(l_inferred).apply(&subst);
+                Ok((subst, self.with(Type::Tuple(Box::new(l_inferred), Box::new(r_inferred)))))
             }
         }
     }
 }
 
-impl Infer for FunCall<'_> {
-    fn infer_type(&self, env: &Environment, gen: &mut Generator) -> Result<(Substitution, Type)> {
+impl<'a> Infer<'a> for FunCall<'a> {
+    fn infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, PType<'a>)> {
         let function = env
-            .get(&(self.id.inner.clone(), Space::Fun))
-            .ok_or(TypeError::Unbound(self.id.inner.clone()))?;
+            .get(&(self.id.content.clone(), Space::Fun))
+            .ok_or(self.id.with(TypeError::Unbound(self.id.content.clone())))?;
 
         let mut arg_types = function
             .instantiate(gen)
@@ -449,11 +466,11 @@ impl Infer for FunCall<'_> {
             .pop()
             .unwrap();
 
-        let id = self.id.inner.clone();
+        let id = self.id.content.clone();
         let required = arg_types.len();
         let got = self.args.len();
         if required != got {
-            return Err(TypeError::ArgumentNumber { function: id, required, got });
+            return Err(self.id.with(TypeError::ArgumentNumber { function: id, required, got }));
         }
 
         let mut env = env.clone();
@@ -462,7 +479,7 @@ impl Infer for FunCall<'_> {
             .iter()
             .fold(Ok(Substitution::new()), |acc, exp| {
                 let subst = acc?;
-                let (subst_i, inferred) = exp.infer_type(&env, gen)?;
+                let (subst_i, inferred) = exp.infer(&env, gen)?;
                 env = env.apply(&subst_i);
                 types.push(inferred);
                 Ok(subst_i.compose(&subst))
@@ -487,7 +504,11 @@ impl Infer for FunCall<'_> {
         // Decorate function call with filled-in type arguments
         let full_type = types
             .into_iter()
-            .rfold(t.clone(), |acc, t| Type::Function(Box::new(t), Box::new(acc)));
+            .rfold(t.clone(), |acc, t| acc
+                .with(())
+                .extend(&t)
+                .with(Type::Function(Box::new(t), Box::new(acc)))
+            );
 
         *self.type_args.borrow_mut() = function.inner.find_substitution(&full_type);
 
@@ -504,22 +525,22 @@ pub mod error {
     use crate::typer::{Type, TypeClass, TypeVariable};
     use crate::position::Pos;
 
-    pub type Result<'a, T, E = Pos<'a, TypeError>> = std::result::Result<T, E>;
+    pub type Result<'a, T, E = Pos<'a, TypeError<'a>>> = std::result::Result<T, E>;
 
     #[derive(Eq, PartialEq)]
-    pub enum TypeError {
+    pub enum TypeError<'a> {
         Mismatch {
-            expected: Type,
-            found: Type,
+            expected: Type<'a>,
+            found: Type<'a>,
         },
         TypeClass {
-            found: Type,
+            found: Type<'a>,
             class: TypeClass,
         },
         Unbound(Id),
         FunConflict(Id),
         VarConflict(Id),
-        Recursive(TypeVariable, Type),
+        Recursive(TypeVariable, Type<'a>),
         Incomplete(Id),
         ArgumentNumber {
             function: Id,
@@ -530,7 +551,7 @@ pub mod error {
         // UndefinedClass(TypeClass),
     }
 
-    impl fmt::Display for TypeError {
+    impl fmt::Display for TypeError<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 TypeError::Mismatch { expected, found } =>
@@ -557,22 +578,11 @@ pub mod error {
         }
     }
 
-    impl Debug for TypeError {
+    impl Debug for TypeError<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "{}", self)
         }
     }
 
-    impl Error for TypeError {}
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::typer::Type;
-
-    #[test]
-    fn unfold() {
-        let t = Type::Function(Box::new(Type::Int), Box::new(Type::Function(Box::new(Type::Bool), Box::new(Type::Array(Box::new(Type::Char))))));
-        assert_eq!(vec![Type::Int, Type::Bool, Type::Array(Box::new(Type::Char))], t.unfold())
-    }
+    impl Error for TypeError<'_> {}
 }

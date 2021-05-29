@@ -12,7 +12,7 @@ fn simple_exp() {
     let env = Environment::new();
 
     let exp = Exp::parse(&mut "1 + 1".tokenize().unwrap().peekable()).unwrap();
-    let (_, inferred) = exp.infer_type(&env, &mut gen).unwrap();
+    let (_, inferred) = exp.infer(&env, &mut gen).unwrap();
 
     assert_eq!(Type::Int, inferred);
 }
@@ -23,7 +23,7 @@ fn list_exp() {
     let env = Environment::new();
 
     let exp = Exp::parse(&mut "'a' : []".tokenize().unwrap().peekable()).unwrap();
-    let (_, inferred) = exp.infer_type(&env, &mut gen).unwrap();
+    let (_, inferred) = exp.infer(&env, &mut gen).unwrap();
 
     assert_eq!(Type::Array(Box::new(Type::Char)), inferred);
 }
@@ -34,7 +34,7 @@ fn invalid_list() {
     let env = Environment::new();
 
     let exp = Exp::parse(&mut "1 : 'a' : []".tokenize().unwrap().peekable()).unwrap();
-    let result = exp.infer_type(&env, &mut gen).err().unwrap();
+    let result = exp.infer(&env, &mut gen).err().unwrap();
 
     assert_eq!(TypeError::Mismatch { expected: Type::Int, found: Type::Char }, result);
 }
