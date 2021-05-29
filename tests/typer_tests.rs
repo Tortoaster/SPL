@@ -5,6 +5,7 @@ use spl::lexer::Lexable;
 use spl::parser::{Exp, Id, Parsable, SPL};
 use spl::typer::{Environment, Generator, Infer, Space, Type, TypeClass};
 use spl::typer::error::TypeError;
+use spl::position::Pos;
 
 #[test]
 fn simple_exp() {
@@ -12,9 +13,9 @@ fn simple_exp() {
     let env = Environment::new();
 
     let exp = Exp::parse(&mut "1 + 1".tokenize().unwrap().peekable()).unwrap();
-    let (_, inferred) = exp.infer_type(&env, &mut gen).unwrap();
+    let (_, inferred) = exp.infer(&env, &mut gen).unwrap();
 
-    assert_eq!(Type::Int, inferred);
+    assert_eq!(Type::Int, inferred.content);
 }
 
 #[test]
@@ -23,9 +24,13 @@ fn list_exp() {
     let env = Environment::new();
 
     let exp = Exp::parse(&mut "'a' : []".tokenize().unwrap().peekable()).unwrap();
-    let (_, inferred) = exp.infer_type(&env, &mut gen).unwrap();
+    let (_, inferred) = exp.infer(&env, &mut gen).unwrap();
 
-    assert_eq!(Type::Array(Box::new(Type::Char)), inferred);
+    if let Type::Array(t) = inferred.content {
+        assert_eq!(Type::Char, t.content);
+    } else {
+        panic!();
+    }
 }
 
 #[test]
@@ -34,9 +39,9 @@ fn invalid_list() {
     let env = Environment::new();
 
     let exp = Exp::parse(&mut "1 : 'a' : []".tokenize().unwrap().peekable()).unwrap();
-    let result = exp.infer_type(&env, &mut gen).err().unwrap();
+    let result = exp.infer(&env, &mut gen).err().unwrap();
 
-    assert_eq!(TypeError::Mismatch { expected: Type::Int, found: Type::Char }, result);
+    assert_eq!(TypeError::Mismatch { expected: Type::Int, found: Type::Char }, result.content);
 }
 
 #[test]
@@ -50,7 +55,11 @@ fn assignment() {
 
     let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
-    assert_eq!(Type::Array(Box::new(Type::Int)).generalize(&env), *result);
+    if let Type::Array(t) = &result.inner.content {
+        assert_eq!(Type::Int, t.content);
+    } else {
+        panic!();
+    }
 }
 
 #[test]
@@ -82,7 +91,7 @@ fn no_return() {
     }
     ");
 
-    if let CompileError::TypeError(TypeError::Incomplete(Id(f))) = result.err().unwrap() {
+    if let CompileError::TypeError(Pos { content: TypeError::Incomplete(Id(f)), .. }) = result.err().unwrap() {
         assert_eq!("f", f);
     } else {
         panic!()
@@ -118,7 +127,7 @@ fn bad_return() {
     }
     ");
 
-    if let CompileError::TypeError(TypeError::Mismatch { expected, found }) = result.err().unwrap() {
+    if let CompileError::TypeError(Pos { content: TypeError::Mismatch { expected, found }, .. }) = result.err().unwrap() {
         assert_eq!(Type::Bool, expected);
         assert_eq!(Type::Int, found);
     } else {
@@ -137,14 +146,15 @@ fn fields() {
 
     let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
-    if let Type::Array(result) = &result.inner {
-        if let Type::Tuple(result, _) = &**result {
-            if let Type::Tuple(_, result) = &**result {
-                assert_eq!(Type::Bool, **result);
+    if let Type::Array(result) = &result.inner.content {
+        if let Type::Tuple(result, _) = &result.content {
+            if let Type::Tuple(_, result) = &result.content {
+                assert_eq!(Type::Bool, result.content);
                 return;
             }
         }
     }
+
     panic!("Does not match fields: {:?}", result);
 }
 
@@ -182,7 +192,7 @@ fn conflict_function() {
     let mut program = SPL::parse(&mut "test(x) :: Bool -> Void { x = x + 1; }".tokenize().unwrap().peekable()).unwrap();
     let result = program.infer_types(&mut env, &mut gen);
 
-    assert_eq!(TypeError::Mismatch { expected: Type::Int, found: Type::Bool }, result.err().unwrap());
+    assert_eq!(TypeError::Mismatch { expected: Type::Int, found: Type::Bool }, result.err().unwrap().content);
 }
 
 #[test]
@@ -236,7 +246,7 @@ fn strict_overloading() {
     let mut program = SPL::parse(&mut "main(x, y) { return x > 'a' && y < True; }".tokenize().unwrap().peekable()).unwrap();
     let result = program.infer_types(&mut env, &mut gen);
 
-    assert_eq!(TypeError::TypeClass { found: Type::Bool, class: TypeClass::Ord }, result.err().unwrap());
+    assert_eq!(TypeError::TypeClass { found: Type::Bool, class: TypeClass::Ord }, result.err().unwrap().content);
 }
 
 #[test]

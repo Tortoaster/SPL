@@ -3,12 +3,12 @@ use std::fmt;
 
 use crate::lexer::Field;
 use crate::position::Pos;
-use crate::typer::{PolyType, Space, Type, Substitution};
+use crate::typer::{Scheme, Space, Substitution, PType};
 
-type PDecl<'a> = Pos<'a, Decl<'a>>;
+pub type PDecl<'a> = Pos<'a, Decl<'a>>;
 type PVarDecl<'a> = Pos<'a, VarDecl<'a>>;
 pub type PStmt<'a> = Pos<'a, Stmt<'a>>;
-type PExp<'a> = Pos<'a, Exp<'a>>;
+pub type PExp<'a> = Pos<'a, Exp<'a>>;
 type PField<'a> = Pos<'a, Field>;
 type PId<'a> = Pos<'a, Id>;
 
@@ -26,7 +26,7 @@ pub enum Decl<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VarDecl<'a> {
     // TODO: PolyType instead?
-    pub var_type: RefCell<Pos<'a, Option<Type>>>,
+    pub var_type: RefCell<Pos<'a, Option<PType<'a>>>>,
     pub id: PId<'a>,
     pub exp: PExp<'a>,
 }
@@ -35,7 +35,7 @@ pub struct VarDecl<'a> {
 pub struct FunDecl<'a> {
     pub id: PId<'a>,
     pub args: Vec<PId<'a>>,
-    pub fun_type: RefCell<Pos<'a, Option<PolyType>>>,
+    pub fun_type: RefCell<Pos<'a, Option<Scheme<'a>>>>,
     pub var_decls: Vec<PVarDecl<'a>>,
     pub stmts: Vec<PStmt<'a>>,
 }
@@ -64,7 +64,7 @@ pub enum Exp<'a> {
 pub struct FunCall<'a> {
     pub id: PId<'a>,
     pub args: Vec<PExp<'a>>,
-    pub type_args: RefCell<Substitution>,
+    pub type_args: RefCell<Substitution<'a>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -79,8 +79,8 @@ impl fmt::Display for Id {
 impl Decl<'_> {
     pub fn id(&self) -> Id {
         match self {
-            Decl::VarDecl(decl) => decl.id.inner.clone(),
-            Decl::FunDecl(decl) => decl.id.inner.clone()
+            Decl::VarDecl(decl) => decl.id.content.clone(),
+            Decl::FunDecl(decl) => decl.id.content.clone()
         }
     }
 
@@ -95,7 +95,7 @@ impl Decl<'_> {
 mod printer {
     use std::fmt;
 
-    use crate::typer::{Environment, PolyType, Type};
+    use crate::typer::{Environment, Scheme, Type, PType};
 
     use super::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
     use super::PField;
@@ -140,7 +140,7 @@ mod printer {
     }
 
     /// Pretty printer for variable type annotations
-    impl PrettyPrintable for Option<Type> {
+    impl PrettyPrintable for Option<PType<'_>> {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
                 None => String::from("var"),
@@ -157,9 +157,9 @@ mod printer {
                                 self.args.iter().map(|id| id.fmt_pretty(indent)).collect::<Vec<String>>().join(", "),
                                 indent = indent * TAB_SIZE
             );
-            if let Some(fun_type) = &self.fun_type.borrow().inner {
+            if let Some(fun_type) = &self.fun_type.borrow().content {
                 f += format!(":: ").as_str();
-                match fun_type.inner {
+                match fun_type.inner.content {
                     Type::Function(_, _) => f += fun_type.fmt_pretty(indent).as_str(),
                     _ => f += format!("-> {}", fun_type.fmt_pretty(indent)).as_str()
                 }
@@ -171,7 +171,7 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for PolyType {
+    impl PrettyPrintable for Scheme<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!("{:indent$}{}", "", self, indent = indent * TAB_SIZE)
         }
@@ -238,7 +238,7 @@ mod printer {
 
     impl PrettyPrintable for Vec<PField<'_>> {
         fn fmt_pretty(&self, _: usize) -> String {
-            self.iter().map(|field| ".".to_owned() + format!("{}", field.inner).as_str()).collect::<Vec<String>>().join("")
+            self.iter().map(|field| ".".to_owned() + format!("{}", field.content).as_str()).collect::<Vec<String>>().join("")
         }
     }
 

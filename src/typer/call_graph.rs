@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::Graph;
 use petgraph::prelude::*;
 
-use crate::parser::{Decl, Exp, FunDecl, Id, SPL, Stmt, VarDecl};
+use crate::parser::{Decl, Exp, FunDecl, Id, SPL, Stmt, VarDecl, PDecl};
 use crate::typer::Space;
 
 type Node = usize;
@@ -34,7 +34,7 @@ impl Identifier {
     }
 }
 
-pub fn topsorted_sccs<'a, 'b>(ast: &'b SPL<'a>) -> Vec<Vec<&'b Decl<'a>>> {
+pub fn topsorted_sccs<'a, 'b>(ast: &'b SPL<'a>) -> Vec<Vec<&'b PDecl<'a>>> {
     let mut ids = Identifier::new();
 
     let nodes: Vec<Node> = ast.decls
@@ -113,9 +113,9 @@ pub fn topsorted_sccs<'a, 'b>(ast: &'b SPL<'a>) -> Vec<Vec<&'b Decl<'a>>> {
         )
         .collect::<Vec<Vec<(Id, Space)>>>();
 
-    let decls: HashMap<(Id, Space), &Decl> = ast.decls
+    let decls: HashMap<(Id, Space), &PDecl> = ast.decls
         .iter()
-        .map(|decl| ((decl.id(), decl.space()), &decl.inner))
+        .map(|decl| ((decl.id(), decl.space()), decl))
         .collect();
 
     sccs
@@ -126,7 +126,7 @@ pub fn topsorted_sccs<'a, 'b>(ast: &'b SPL<'a>) -> Vec<Vec<&'b Decl<'a>>> {
             .collect()
         )
         .rev()
-        .collect::<Vec<Vec<&Decl>>>()
+        .collect::<Vec<Vec<&PDecl>>>()
 }
 
 trait Calls {
@@ -179,7 +179,7 @@ impl Calls for FunDecl<'_> {
             .iter()
             .flat_map(|decl| {
                 let refs = decl.references(&defined);
-                defined.insert(decl.id.inner.clone());
+                defined.insert(decl.id.content.clone());
                 refs
             })
             .collect();
@@ -193,7 +193,7 @@ impl Calls for FunDecl<'_> {
     fn assignments(&self, _: &HashSet<Id>) -> BTreeSet<Id> {
         let defined = self.var_decls
             .iter()
-            .map(|decl| decl.id.inner.clone())
+            .map(|decl| decl.id.content.clone())
             .collect();
         self.stmts
             .iter()
@@ -245,7 +245,7 @@ impl Calls for Stmt<'_> {
                     .iter()
                     .flat_map(|arg| arg.fun_calls())
                     .collect();
-                fun_calls.insert(fun_call.id.inner.clone());
+                fun_calls.insert(fun_call.id.content.clone());
                 fun_calls
             }
             Stmt::Return(e) => e
@@ -304,7 +304,7 @@ impl Calls for Stmt<'_> {
             Stmt::Assignment(id, _, _) => if exclude.contains(id) {
                 BTreeSet::new()
             } else {
-                Some(id.inner.clone())
+                Some(id.content.clone())
                     .into_iter()
                     .collect()
             },
@@ -322,7 +322,7 @@ impl Calls for Exp<'_> {
                     .iter()
                     .flat_map(|arg| arg.fun_calls())
                     .collect();
-                fun_calls.insert(fun_call.id.inner.clone());
+                fun_calls.insert(fun_call.id.content.clone());
                 fun_calls
             }
             Exp::Tuple(l, r) => l

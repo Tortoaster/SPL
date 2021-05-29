@@ -153,7 +153,7 @@ impl<'a> Lexer<'a> {
     fn followed_by(&mut self, c: char) -> bool {
         match self.chars.peek() {
             None => false,
-            Some(d) => if c == d.inner {
+            Some(d) => if c == d.content {
                 self.chars.next();
                 true
             } else {
@@ -193,7 +193,7 @@ impl<'a> Lexer<'a> {
     fn expected(&mut self, expected: impl Display) {
         self.errors.push(if let Some(c) = self.chars.peek() {
             c.with(LexError::Unexpected {
-                found: c.inner,
+                found: c.content,
                 expected: expected.to_string(),
             })
         } else {
@@ -201,7 +201,7 @@ impl<'a> Lexer<'a> {
                 row: self.code.lines().count(),
                 col: self.code.lines().last().unwrap_or("").len() + 1,
                 code: self.code,
-                inner: LexError::EOF {
+                content: LexError::EOF {
                     expected: expected.to_string()
                 },
             }

@@ -42,7 +42,7 @@ pub mod error {
     pub enum CompileError<'a> {
         LexError(Vec<Pos<'a, LexError>>),
         ParseError(Pos<'a, ParseError>),
-        TypeError(TypeError),
+        TypeError(Pos<'a, TypeError<'a>>),
         GenError(GenError),
         InsufficientArguments,
     }
@@ -77,8 +77,8 @@ pub mod error {
         }
     }
 
-    impl From<TypeError> for CompileError<'_> {
-        fn from(e: TypeError) -> Self {
+    impl<'a> From<Pos<'a, TypeError<'a>>> for CompileError<'a> {
+        fn from(e: Pos<'a, TypeError<'a>>) -> Self {
             CompileError::TypeError(e)
         }
     }

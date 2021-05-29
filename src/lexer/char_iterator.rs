@@ -14,7 +14,7 @@ impl<'a> CharIterable<'a> for &'a str {
             row: 1,
             col: 1,
             code: self,
-            inner: self.chars(),
+            content: self.chars(),
         }
     }
 }
@@ -23,7 +23,7 @@ impl<'a> Iterator for CharIterator<'a> {
     type Item = Pos<'a, char>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.inner.next()?;
+        let next = self.content.next()?;
 
         match next {
             '\n' => {
@@ -37,7 +37,7 @@ impl<'a> Iterator for CharIterator<'a> {
             row: self.row,
             col: self.col,
             code: self.code,
-            inner: next,
+            content: next,
         })
     }
 }

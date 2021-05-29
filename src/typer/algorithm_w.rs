@@ -6,13 +6,14 @@ use std::ops::{Deref, DerefMut};
 use crate::lexer::Lexable;
 use crate::parser::Id;
 use crate::typer::error::{Result, TypeError};
+use crate::position::Pos;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct TypeVariable(usize, pub BTreeSet<TypeClass>);
 
-impl TypeVariable {
-    fn bind(&self, to: &Type) -> Result<Substitution> {
-        if let Type::Polymorphic(v) = to {
+impl<'a> TypeVariable {
+    fn bind(&self, to: &PType<'a>) -> Result<'a, Substitution<'a>> {
+        if let Type::Polymorphic(v) = &to.content {
             if *self == *v {
                 return Ok(Substitution::new());
             }
@@ -20,12 +21,17 @@ impl TypeVariable {
 
         for class in &self.1 {
             if !to.implements(class)? {
-                return Err(TypeError::TypeClass { found: to.clone(), class: class.clone() });
+                return Err(to
+                    .with(TypeError::TypeClass {
+                        found: to.content.clone(),
+                        class: class.clone()
+                    })
+                );
             }
         }
 
         if to.free_vars().contains(self) {
-            return Err(TypeError::Recursive(self.clone(), to.clone()));
+            return Err(to.with(TypeError::Recursive(self.clone(), to.content.clone())));
         }
 
         let mut s = Substitution::new();
@@ -61,55 +67,28 @@ impl Generator {
     }
 }
 
+pub type PType<'a> = Pos<'a, Type<'a>>;
+
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
-pub enum Type {
+pub enum Type<'a> {
     Void,
     Int,
     Bool,
     Char,
-    Tuple(Box<Type>, Box<Type>),
-    Array(Box<Type>),
-    Function(Box<Type>, Box<Type>),
+    Tuple(Box<PType<'a>>, Box<PType<'a>>),
+    Array(Box<PType<'a>>),
+    // TODO: Allow multiple arguments
+    Function(Box<PType<'a>>, Box<PType<'a>>),
     Polymorphic(TypeVariable),
 }
 
-impl Type {
-    /// Finds out what substitution is necessary for this type to become the other type.
-    /// This assumes the structure of the types is the same.
-    pub fn find_substitution(&self, other: &Self) -> Substitution {
-        match (&self, other) {
-            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => l1
-                .find_substitution(l2)
-                .compose(&r1.find_substitution(r2)),
-            (Type::Array(a1), Type::Array(a2)) => a1.find_substitution(a2),
-            (Type::Function(arg1, res1), Type::Function(arg2, res2)) => arg1
-                .find_substitution(arg2)
-                .compose(&res1.find_substitution(res2)),
-            // (Type::Polymorphic(_), Type::Polymorphic(_)) => Substitution::new(),
-            // TODO: What if t contains more type vars?
-            (Type::Polymorphic(var), t) => {
-                let mut subst = Substitution::new();
-                subst.insert(var.clone(), t.clone());
-                subst
-            }
-            _ => Substitution::new()
-        }
-    }
-
-    pub fn generalize(&self, env: &Environment) -> PolyType {
-        PolyType {
-            variables: self
-                .free_vars()
-                .difference(&env.free_vars())
-                .cloned()
-                .collect(),
-            inner: self.clone(),
-        }
-    }
-
-    pub fn unify_with(&self, other: &Self) -> Result<Substitution> {
-        match (self, other) {
-            (Type::Void, Type::Void) | (Type::Int, Type::Int) | (Type::Bool, Type::Bool) | (Type::Char, Type::Char) => Ok(Substitution::new()),
+impl<'a> Type<'a> {
+    pub fn unify_with(&self, other: &PType<'a>) -> Result<'a, Substitution<'a>> {
+        match (self, &other.content) {
+            (Type::Void, Type::Void) |
+            (Type::Int, Type::Int) |
+            (Type::Bool, Type::Bool) |
+            (Type::Char, Type::Char) => Ok(Substitution::new()),
             (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
                 let subst_l = l1.unify_with(l2)?;
                 let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
@@ -123,15 +102,15 @@ impl Type {
             }
             (Type::Polymorphic(v1), Type::Polymorphic(v2)) => {
                 let combined = v1.1.union(&v2.1).cloned().collect();
-                let new = Type::Polymorphic(TypeVariable(v2.0, combined));
+                let new = other.with(Type::Polymorphic(TypeVariable(v2.0, combined)));
                 Ok(v1.bind(&new)?.compose(&v2.bind(&new)?))
             }
-            (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(t),
-            (t1, t2) => Err(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() })
+            (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(&other.with(t.clone())),
+            (t1, t2) => Err(other.with(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() }))
         }
     }
 
-    fn implements(&self, class: &TypeClass) -> Result<bool> {
+    fn implements(&self, class: &TypeClass) -> Result<'a, bool> {
         if let Type::Polymorphic(var) = self {
             if var.1.contains(class) {
                 return Ok(true);
@@ -160,9 +139,49 @@ impl Type {
         Ok(result)
     }
 
-    /// Returns a type into a vector of the argument types and the return type
-    pub fn unfold(&self) -> Vec<Self> {
+    fn format(&self, poly_names: &HashMap<TypeVariable, char>) -> String {
         match self {
+            Type::Void => format!("Void"),
+            Type::Int => format!("Int"),
+            Type::Bool => format!("Bool"),
+            Type::Char => format!("Char"),
+            Type::Tuple(l, r) => format!("({}, {})", l.format(poly_names), r.format(poly_names)),
+            Type::Array(a) => format!("[{}]", a.format(poly_names)),
+            Type::Function(a, b) => match b.content {
+                Type::Function(_, _) => format!("{} {}", a.format(poly_names), b.format(poly_names)),
+                _ => format!("{} -> {}", a.format(poly_names), b.format(poly_names))
+            }
+            Type::Polymorphic(v) => format!("{}", poly_names.get(&v).unwrap_or(&'?'))
+        }
+    }
+}
+
+impl<'a> PType<'a> {
+    /// Finds out what substitution is necessary for this type to become the other type.
+    /// This assumes the structure of the types is the same.
+    pub fn find_substitution(&self, other: &Self) -> Substitution<'a> {
+        match (&self.content, &other.content) {
+            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => l1
+                .find_substitution(l2)
+                .compose(&r1.find_substitution(r2)),
+            (Type::Array(a1), Type::Array(a2)) => a1.find_substitution(a2),
+            (Type::Function(arg1, res1), Type::Function(arg2, res2)) => arg1
+                .find_substitution(arg2)
+                .compose(&res1.find_substitution(res2)),
+            // (Type::Polymorphic(_), Type::Polymorphic(_)) => Substitution::new(),
+            // TODO: What if t contains more type vars?
+            (Type::Polymorphic(var), _) => {
+                let mut subst = Substitution::new();
+                subst.insert(var.clone(), other.clone());
+                subst
+            }
+            _ => Substitution::new()
+        }
+    }
+
+    /// Turns a function type into a vector of the argument types and the return type
+    pub fn unfold(&self) -> Vec<Self> {
+        match &self.content {
             Type::Function(a, b) => {
                 let mut vec = vec![a.as_ref().clone()];
                 vec.append(&mut b.unfold());
@@ -172,24 +191,19 @@ impl Type {
         }
     }
 
-    fn format(&self, poly_names: &HashMap<TypeVariable, char>) -> String {
-        match self {
-            Type::Void => format!("Void"),
-            Type::Int => format!("Int"),
-            Type::Bool => format!("Bool"),
-            Type::Char => format!("Char"),
-            Type::Tuple(l, r) => format!("({}, {})", l.format(poly_names), r.format(poly_names)),
-            Type::Array(a) => format!("[{}]", a.format(poly_names)),
-            Type::Function(a, b) => match **b {
-                Type::Function(_, _) => format!("{} {}", a.format(poly_names), b.format(poly_names)),
-                _ => format!("{} -> {}", a.format(poly_names), b.format(poly_names))
-            }
-            Type::Polymorphic(v) => format!("{}", poly_names.get(&v).unwrap_or(&'?'))
+    pub fn generalize(&self, env: &Environment<'a>) -> Scheme<'a> {
+        Scheme {
+            vars: self
+                .free_vars()
+                .difference(&env.free_vars())
+                .cloned()
+                .collect(),
+            inner: self.clone(),
         }
     }
 }
 
-impl fmt::Display for Type {
+impl fmt::Display for Type<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.format(&HashMap::new()))
     }
@@ -235,38 +249,38 @@ impl fmt::Display for TypeClass {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
-pub struct PolyType {
-    pub variables: BTreeSet<TypeVariable>,
-    pub inner: Type,
+pub struct Scheme<'a> {
+    pub vars: BTreeSet<TypeVariable>,
+    pub inner: PType<'a>,
 }
 
-impl PolyType {
-    pub fn instantiate(&self, gen: &mut Generator) -> Type {
-        let subst = self.variables
+impl<'a> Scheme<'a> {
+    pub fn instantiate(&self, gen: &mut Generator) -> PType<'a> {
+        let subst = self.vars
             .iter()
-            .map(|var| (var.clone(), Type::Polymorphic(gen.fresh_with(var.1.clone()))))
+            .map(|var| (var.clone(), self.inner.with(Type::Polymorphic(gen.fresh_with(var.1.clone())))))
             .collect();
         self.inner.apply(&subst)
     }
 }
 
-impl From<Type> for PolyType {
-    fn from(inner: Type) -> Self {
-        PolyType {
-            variables: BTreeSet::new(),
-            inner,
+impl<'a> From<PType<'a>> for Scheme<'a> {
+    fn from(inner: PType<'a>) -> Self {
+        Scheme {
+            vars: BTreeSet::new(),
+            inner: inner,
         }
     }
 }
 
-impl fmt::Display for PolyType {
+impl fmt::Display for Scheme<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let poly_names: HashMap<TypeVariable, char> = self.variables
+        let poly_names: HashMap<TypeVariable, char> = self.vars
             .iter()
             .cloned()
             .zip('a'..'z')
             .collect();
-        let mut type_classes: Vec<String> = self.variables
+        let mut type_classes: Vec<String> = self.vars
             .iter()
             .cloned()
             .filter(|var| !var.1.is_empty())
@@ -294,9 +308,9 @@ pub enum Space {
 }
 
 #[derive(Clone, Debug)]
-pub struct Environment(HashMap<(Id, Space), PolyType>);
+pub struct Environment<'a>(HashMap<(Id, Space), Scheme<'a>>);
 
-impl Environment {
+impl Environment<'_> {
     pub fn new() -> Self {
         let mut env = Environment(HashMap::new());
         for (name, annotation) in vec![
@@ -331,24 +345,24 @@ impl Environment {
     }
 }
 
-impl Deref for Environment {
-    type Target = HashMap<(Id, Space), PolyType>;
+impl<'a> Deref for Environment<'a> {
+    type Target = HashMap<(Id, Space), Scheme<'a>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for Environment {
+impl DerefMut for Environment<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
-pub struct Substitution(BTreeMap<TypeVariable, Type>);
+pub struct Substitution<'a>(BTreeMap<TypeVariable, PType<'a>>);
 
-impl Substitution {
+impl<'a> Substitution<'a> {
     pub fn new() -> Self {
         Substitution(BTreeMap::new())
     }
@@ -364,40 +378,40 @@ impl Substitution {
             .collect()
     }
 
-    pub fn apply(&mut self, subst: &Substitution) {
+    pub fn apply(&mut self, subst: &Substitution<'a>) {
         self.0 = self.0.iter().map(|(var, t)| (var.clone(), t.apply(subst))).collect();
     }
 }
 
-impl Deref for Substitution {
-    type Target = BTreeMap<TypeVariable, Type>;
+impl<'a> Deref for Substitution<'a> {
+    type Target = BTreeMap<TypeVariable, PType<'a>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for Substitution {
+impl DerefMut for Substitution<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl FromIterator<(TypeVariable, Type)> for Substitution {
-    fn from_iter<T: IntoIterator<Item=(TypeVariable, Type)>>(iter: T) -> Self {
+impl<'a> FromIterator<(TypeVariable, PType<'a>)> for Substitution<'a> {
+    fn from_iter<T: IntoIterator<Item=(TypeVariable, PType<'a>)>>(iter: T) -> Self {
         Substitution(iter.into_iter().collect())
     }
 }
 
-pub trait Typed {
+pub trait Typed<'a> {
     fn free_vars(&self) -> HashSet<TypeVariable>;
 
-    fn apply(&self, subst: &Substitution) -> Self;
+    fn apply(&self, subst: &Substitution<'a>) -> Self;
 }
 
-impl Typed for Type {
+impl<'a> Typed<'a> for PType<'a> {
     fn free_vars(&self) -> HashSet<TypeVariable> {
-        match self {
+        match &self.content {
             Type::Void | Type::Int | Type::Bool | Type::Char => HashSet::new(),
             Type::Tuple(l, r) => l
                 .free_vars()
@@ -414,18 +428,18 @@ impl Typed for Type {
         }
     }
 
-    fn apply(&self, subst: &Substitution) -> Self {
-        match self {
+    fn apply(&self, subst: &Substitution<'a>) -> Self {
+        match &self.content {
             Type::Void | Type::Int | Type::Bool | Type::Char => self.clone(),
-            Type::Tuple(l, r) => Type::Tuple(Box::new(l.apply(subst)), Box::new(r.apply(subst))),
-            Type::Array(a) => Type::Array(Box::new(a.apply(subst))),
-            Type::Function(a, b) => Type::Function(Box::new(a.apply(subst)), Box::new(b.apply(subst))),
+            Type::Tuple(l, r) => self.with(Type::Tuple(Box::new(l.apply(subst)), Box::new(r.apply(subst)))),
+            Type::Array(a) => self.with(Type::Array(Box::new(a.apply(subst)))),
+            Type::Function(a, b) => self.with(Type::Function(Box::new(a.apply(subst)), Box::new(b.apply(subst)))),
             Type::Polymorphic(v) => subst.get(v).unwrap_or(self).clone(),
         }
     }
 }
 
-impl<T: Typed> Typed for Vec<T> {
+impl<'a, T: Typed<'a>> Typed<'a> for Vec<T> {
     fn free_vars(&self) -> HashSet<TypeVariable> {
         self
             .iter()
@@ -433,7 +447,7 @@ impl<T: Typed> Typed for Vec<T> {
             .collect()
     }
 
-    fn apply(&self, subst: &Substitution) -> Self {
+    fn apply(&self, subst: &Substitution<'a>) -> Self {
         self
             .iter()
             .map(|t| t.apply(&subst))
@@ -441,29 +455,29 @@ impl<T: Typed> Typed for Vec<T> {
     }
 }
 
-impl Typed for PolyType {
+impl<'a> Typed<'a> for Scheme<'a> {
     fn free_vars(&self) -> HashSet<TypeVariable> {
         self.inner
             .free_vars()
-            .difference(&self.variables.iter().cloned().collect())
+            .difference(&self.vars.iter().cloned().collect())
             .cloned()
             .collect()
     }
 
-    fn apply(&self, subst: &Substitution) -> Self {
-        PolyType {
-            variables: self.variables.clone(),
+    fn apply(&self, subst: &Substitution<'a>) -> Self {
+        Scheme {
+            vars: self.vars.clone(),
             inner: self.inner
                 .apply(&Substitution(subst
                     .iter()
-                    .filter(|&(t, _)| !self.variables.contains(t))
+                    .filter(|&(t, _)| !self.vars.contains(t))
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect())),
         }
     }
 }
 
-impl Typed for Environment {
+impl<'a> Typed<'a> for Environment<'a> {
     fn free_vars(&self) -> HashSet<TypeVariable> {
         self
             .values()
@@ -471,7 +485,7 @@ impl Typed for Environment {
             .collect()
     }
 
-    fn apply(&self, subst: &Substitution) -> Self {
+    fn apply(&self, subst: &Substitution<'a>) -> Self {
         Environment(self.iter().map(|(k, v)| (k.clone(), v.apply(subst))).collect())
     }
 }
