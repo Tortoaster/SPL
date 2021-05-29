@@ -54,10 +54,3 @@ main() {
     }
     print(value1); // 8
 }
-
-// Should fail
-// var l = [];
-// f() {
-//     l = 1 : l;
-//     l = True : l;
-// }

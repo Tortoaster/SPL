@@ -39,9 +39,9 @@ fn invalid_list() {
     let env = Environment::new();
 
     let exp = Exp::parse(&mut "1 : 'a' : []".tokenize().unwrap().peekable()).unwrap();
-    let result = exp.infer(&env, &mut gen).err().unwrap();
+    let result = exp.infer(&env, &mut gen);
 
-    assert_eq!(TypeError::Mismatch { expected: Type::Int, found: Type::Char }, result.content);
+    assert_eq!(TypeError::Mismatch { expected: Type::Char, found: Type::Int }, result.err().unwrap().content);
 }
 
 #[test]
@@ -128,8 +128,8 @@ fn bad_return() {
     ");
 
     if let CompileError::TypeError(Pos { content: TypeError::Mismatch { expected, found }, .. }) = result.err().unwrap() {
-        assert_eq!(Type::Bool, expected);
-        assert_eq!(Type::Int, found);
+        assert_eq!(Type::Int, expected);
+        assert_eq!(Type::Bool, found);
     } else {
         panic!()
     }

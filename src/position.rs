@@ -37,7 +37,7 @@ impl<'a, T: Display> fmt::Display for Pos<'a, T> {
         writeln!(f,
                  " at {}:{}:\n{}\n{: >indent$}",
                  self.row,
-                 self.col,
+                 self.col - 1,
                  self.code.lines().nth(self.row - 1).unwrap(),
                  "^",
                  indent = self.col - 1

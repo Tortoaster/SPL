@@ -380,29 +380,29 @@ impl<'a> TryInfer<'a> for PStmt<'a> {
                     .iter()
                     .fold(Ok(Substitution::new()), |acc, field| {
                         let subst = acc?;
-                        let inner = current.with(Type::Polymorphic(gen.fresh()));
+                        let inner = e.with(Type::Polymorphic(gen.fresh()));
                         match field.content {
                             // TODO: Check invalid operations
                             Field::Head => {
-                                let thing = Type::Array(Box::new(inner.clone()));
+                                let thing = current.with(Type::Array(Box::new(inner.clone())));
                                 let subst_u = thing.unify_with(&current)?;
                                 current = inner.apply(&subst_u);
                                 Ok(subst_u.compose(&subst))
                             }
                             Field::Tail => {
-                                let thing = Type::Array(Box::new(inner.clone()));
+                                let thing = current.with(Type::Array(Box::new(inner.clone())));
                                 let subst_u = thing.unify_with(&current)?;
                                 current = current.with(Type::Array(Box::new(inner))).apply(&subst_u);
                                 Ok(subst_u.compose(&subst))
                             }
                             Field::First => {
-                                let thing = Type::Tuple(Box::new(inner.clone()), Box::new(current.with(Type::Polymorphic(gen.fresh()))));
+                                let thing = current.with(Type::Tuple(Box::new(inner.clone()), Box::new(current.with(Type::Polymorphic(gen.fresh())))));
                                 let subst_u = thing.unify_with(&current)?;
                                 current = inner.apply(&subst_u);
                                 Ok(subst_u.compose(&subst))
                             }
                             Field::Second => {
-                                let thing = Type::Tuple(Box::new(current.with(Type::Polymorphic(gen.fresh()))), Box::new(inner.clone()));
+                                let thing = current.with(Type::Tuple(Box::new(current.with(Type::Polymorphic(gen.fresh()))), Box::new(inner.clone())));
                                 let subst_u = thing.unify_with(&current)?;
                                 current = inner.apply(&subst_u);
                                 Ok(subst_u.compose(&subst))
@@ -454,6 +454,7 @@ impl<'a> Infer<'a> for PExp<'a> {
 
 impl<'a> Infer<'a> for FunCall<'a> {
     fn infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, PType<'a>)> {
+        // Get required type
         let function = env
             .get(&(self.id.content.clone(), Space::Fun))
             .ok_or(self.id.with(TypeError::Unbound(self.id.content.clone())))?;
@@ -461,18 +462,19 @@ impl<'a> Infer<'a> for FunCall<'a> {
         let mut arg_types = function
             .instantiate(gen)
             .unfold();
-
         let ret_type = arg_types
             .pop()
             .unwrap();
 
-        let id = self.id.content.clone();
+        // Check number of arguments
         let required = arg_types.len();
         let got = self.args.len();
-        if required != got {
-            return Err(self.id.with(TypeError::ArgumentNumber { function: id, required, got }));
+        if got != required {
+            let function = self.id.content.clone();
+            return Err(self.id.with(TypeError::ArgumentNumber { function, required, got }));
         }
 
+        // Infer arguments
         let mut env = env.clone();
         let mut types = Vec::new();
         let subst_i = self.args
@@ -488,6 +490,14 @@ impl<'a> Infer<'a> for FunCall<'a> {
         types.apply(&subst_i);
         arg_types.apply(&subst_i);
 
+        // Check if arguments are the right type
+        arg_types
+            .iter()
+            .zip(&types)
+            .map(|(arg, inferred)| inferred.unify_with(arg))
+            .collect::<Result<Vec<Substitution>>>()?;
+
+        // Update function type
         let subst_u = types
             .iter()
             .zip(&arg_types)
@@ -510,6 +520,7 @@ impl<'a> Infer<'a> for FunCall<'a> {
                 .with(Type::Function(Box::new(t), Box::new(acc)))
             );
 
+        // Annotate function call with type
         *self.type_args.borrow_mut() = function.inner.find_substitution(&full_type);
 
         Ok((subst, t))

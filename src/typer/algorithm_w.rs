@@ -83,33 +83,6 @@ pub enum Type<'a> {
 }
 
 impl<'a> Type<'a> {
-    pub fn unify_with(&self, other: &PType<'a>) -> Result<'a, Substitution<'a>> {
-        match (self, &other.content) {
-            (Type::Void, Type::Void) |
-            (Type::Int, Type::Int) |
-            (Type::Bool, Type::Bool) |
-            (Type::Char, Type::Char) => Ok(Substitution::new()),
-            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
-                let subst_l = l1.unify_with(l2)?;
-                let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
-                Ok(subst_r.compose(&subst_l))
-            }
-            (Type::Array(t1), Type::Array(t2)) => t1.unify_with(t2),
-            (Type::Function(a1, b1), Type::Function(a2, b2)) => {
-                let subst_a = a1.unify_with(a2)?;
-                let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
-                Ok(subst_b.compose(&subst_a))
-            }
-            (Type::Polymorphic(v1), Type::Polymorphic(v2)) => {
-                let combined = v1.1.union(&v2.1).cloned().collect();
-                let new = other.with(Type::Polymorphic(TypeVariable(v2.0, combined)));
-                Ok(v1.bind(&new)?.compose(&v2.bind(&new)?))
-            }
-            (Type::Polymorphic(v), t) | (t, Type::Polymorphic(v)) => v.bind(&other.with(t.clone())),
-            (t1, t2) => Err(other.with(TypeError::Mismatch { expected: t1.clone(), found: t2.clone() }))
-        }
-    }
-
     fn implements(&self, class: &TypeClass) -> Result<'a, bool> {
         if let Type::Polymorphic(var) = self {
             if var.1.contains(class) {
@@ -157,6 +130,34 @@ impl<'a> Type<'a> {
 }
 
 impl<'a> PType<'a> {
+    pub fn unify_with(&self, other: &Self) -> Result<'a, Substitution<'a>> {
+        match (&self.content, &other.content) {
+            (Type::Void, Type::Void) |
+            (Type::Int, Type::Int) |
+            (Type::Bool, Type::Bool) |
+            (Type::Char, Type::Char) => Ok(Substitution::new()),
+            (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => {
+                let subst_l = l1.unify_with(l2)?;
+                let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
+                Ok(subst_r.compose(&subst_l))
+            }
+            (Type::Array(t1), Type::Array(t2)) => t1.unify_with(t2),
+            (Type::Function(a1, b1), Type::Function(a2, b2)) => {
+                let subst_a = a1.unify_with(a2)?;
+                let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
+                Ok(subst_b.compose(&subst_a))
+            }
+            (Type::Polymorphic(v1), Type::Polymorphic(v2)) => {
+                let combined = v1.1.union(&v2.1).cloned().collect();
+                let new = other.with(Type::Polymorphic(TypeVariable(v2.0, combined)));
+                Ok(v1.bind(&new)?.compose(&v2.bind(&new)?))
+            }
+            (Type::Polymorphic(v), t) => v.bind(&other.with(t.clone())),
+            (t, Type::Polymorphic(v)) => v.bind(&self.with(t.clone())),
+            (t1, t2) => Err(self.with(TypeError::Mismatch { expected: t2.clone(), found: t1.clone() }))
+        }
+    }
+
     /// Finds out what substitution is necessary for this type to become the other type.
     /// This assumes the structure of the types is the same.
     pub fn find_substitution(&self, other: &Self) -> Substitution<'a> {
@@ -268,7 +269,7 @@ impl<'a> From<PType<'a>> for Scheme<'a> {
     fn from(inner: PType<'a>) -> Self {
         Scheme {
             vars: BTreeSet::new(),
-            inner: inner,
+            inner,
         }
     }
 }
