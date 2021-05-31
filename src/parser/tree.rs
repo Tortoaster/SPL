@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::lexer::Field;
 use crate::position::Pos;
-use crate::typer::{PType, Scheme, Space, Substitution};
+use crate::typer::{PType, Space, Substitution};
 
 pub type PDecl<'a> = Pos<'a, Decl<'a>>;
 type PVarDecl<'a> = Pos<'a, VarDecl<'a>>;
@@ -25,7 +25,6 @@ pub enum Decl<'a> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VarDecl<'a> {
-    // TODO: PolyType instead?
     pub var_type: RefCell<Pos<'a, Option<PType<'a>>>>,
     pub id: PId<'a>,
     pub exp: PExp<'a>,
@@ -35,7 +34,7 @@ pub struct VarDecl<'a> {
 pub struct FunDecl<'a> {
     pub id: PId<'a>,
     pub args: Vec<PId<'a>>,
-    pub fun_type: RefCell<Pos<'a, Option<Scheme<'a>>>>,
+    pub fun_type: RefCell<Pos<'a, Option<PType<'a>>>>,
     pub var_decls: Vec<PVarDecl<'a>>,
     pub stmts: Vec<PStmt<'a>>,
 }
@@ -95,7 +94,7 @@ impl Decl<'_> {
 mod printer {
     use std::fmt;
 
-    use crate::typer::{Environment, PType, Scheme, Type};
+    use crate::typer::{Environment, PType, Type};
 
     use super::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
     use super::PField;
@@ -148,7 +147,7 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
                 None => String::from("var"),
-                Some(t) => t.generalize(&Environment::new()).fmt_pretty(indent),
+                Some(t) => t.fmt_pretty(indent),
             }
         }
     }
@@ -167,7 +166,7 @@ mod printer {
             );
             if let Some(fun_type) = &self.fun_type.borrow().content {
                 f += format!(":: ").as_str();
-                match fun_type.inner.content {
+                match fun_type.content {
                     Type::Function(_, _) => f += fun_type.fmt_pretty(indent).as_str(),
                     _ => f += format!("-> {}", fun_type.fmt_pretty(indent)).as_str()
                 }
@@ -189,9 +188,14 @@ mod printer {
         }
     }
 
-    impl PrettyPrintable for Scheme<'_> {
+    impl PrettyPrintable for PType<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
-            format!("{:indent$}{}", "", self, indent = indent * TAB_SIZE)
+            format!(
+                "{:indent$}{}",
+                "",
+                self.generalize(&Environment::new()),
+                indent = indent * TAB_SIZE
+            )
         }
     }
 

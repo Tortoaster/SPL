@@ -8,7 +8,7 @@ use crate::lexer::{Field, Operator, PeekLexer, Token};
 use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 use crate::parser::error::ParseError;
 use crate::position::{Join, Pos};
-use crate::typer::{Environment, Generator, PType, Substitution, Type, TypeClass, TypeVariable};
+use crate::typer::{Generator, PType, Substitution, Type, TypeClass, TypeVariable};
 
 trait Util<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;
@@ -171,8 +171,7 @@ impl<'a> Parsable<'a> for FunDecl<'a> {
         let fun_type = if let Some(Pos { content: Token::HasType, .. }) = tokens.peek() {
             positions.push(tokens.consume(Token::HasType)?);
             let function = Type::parse_function(tokens, &mut Generator::new(), &mut HashMap::new())?;
-            let scheme = function.generalize(&Environment::new());
-            function.with(Some(scheme))
+            function.with(()).with(Some(function))
         } else {
             close.with(None)
         };

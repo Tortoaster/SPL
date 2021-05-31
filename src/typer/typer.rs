@@ -79,7 +79,7 @@ impl<'a> SPL<'a> {
                                             .with(Type::Function(Box::new(arg), Box::new(res))),
                                     )
                             }
-                            Some(fun_type) => fun_type.instantiate(gen)
+                            Some(fun_type) => fun_type.clone()
                         }
                     }
                 };
@@ -114,7 +114,7 @@ impl<'a> SPL<'a> {
                     }
                     Decl::FunDecl(fun_decl) => {
                         let t = env.get(&(fun_decl.id.content.clone(), Space::Fun)).unwrap();
-                        fun_decl.fun_type.borrow_mut().content.replace(t.clone());
+                        fun_decl.fun_type.borrow_mut().content.replace(t.inner.clone());
                     }
                 }
             }
