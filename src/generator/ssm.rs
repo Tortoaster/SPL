@@ -78,7 +78,7 @@ pub enum Suffix {
     Else(usize),
     EndIf(usize),
     While(usize),
-    EndWhile(usize)
+    EndWhile(usize),
 }
 
 impl fmt::Display for Suffix {

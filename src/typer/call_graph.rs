@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::Graph;
 use petgraph::prelude::*;
 
-use crate::parser::{Decl, Exp, FunDecl, Id, SPL, Stmt, VarDecl, PDecl};
+use crate::parser::{Decl, Exp, FunDecl, Id, PDecl, SPL, Stmt, VarDecl};
 use crate::typer::Space;
 
 type Node = usize;
@@ -316,7 +316,11 @@ impl Calls for Stmt<'_> {
 impl Calls for Exp<'_> {
     fn fun_calls(&self) -> BTreeSet<Id> {
         match self {
-            Exp::Variable(_) | Exp::Number(_) | Exp::Character(_) | Exp::Boolean(_) | Exp::Nil => BTreeSet::new(),
+            Exp::Variable(_) |
+            Exp::Number(_) |
+            Exp::Character(_) |
+            Exp::Boolean(_) |
+            Exp::Nil => BTreeSet::new(),
             Exp::FunCall(fun_call) => {
                 let mut fun_calls: BTreeSet<Id> = fun_call.args
                     .iter()

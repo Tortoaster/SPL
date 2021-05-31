@@ -8,7 +8,7 @@ use crate::lexer::{Field, Operator, PeekLexer, Token};
 use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
 use crate::parser::error::ParseError;
 use crate::position::{Join, Pos};
-use crate::typer::{Environment, Generator, Substitution, Type, TypeClass, TypeVariable, PType};
+use crate::typer::{Environment, Generator, PType, Substitution, Type, TypeClass, TypeVariable};
 
 trait Util<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>>;
@@ -313,7 +313,8 @@ impl<'a> Type<'a> {
     /// Parses a function type, including type class constraints
     pub fn parse_function(tokens: &mut PeekLexer<'a>, gen: &mut Generator, poly_names: &mut HashMap<Id, TypeVariable>) -> Result<'a, Pos<'a, Self>> {
         // Read optional type class constraints
-        let type_classes = <Vec<Pos<(TypeClass, Id)>>>::try_parse(tokens).unwrap_or(tokens.peek_or_eof("function type")?.with(Vec::new()));
+        let type_classes = <Vec<Pos<(TypeClass, Id)>>>::try_parse(tokens)
+            .unwrap_or(tokens.peek_or_eof("function type")?.with(Vec::new()));
         for p in type_classes.content {
             let (class, var) = p.content;
             poly_names.entry(var).or_insert(gen.fresh()).impose(class);
@@ -477,7 +478,9 @@ impl<'a> Exp<'a> {
                         type_args: RefCell::new(Substitution::new()),
                     };
                     let close = tokens.consume(Token::CloseParen)?;
-                    let arg_pos = fun_call.args.join_with(()).unwrap_or(token.with(()));
+                    let arg_pos = fun_call.args
+                        .join_with(())
+                        .unwrap_or(token.with(()));
                     token
                         .extend(&open)
                         .extend(&arg_pos)

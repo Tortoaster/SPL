@@ -334,7 +334,7 @@ impl<'a> Iterator for Lexer<'a> {
             '0'..='9' => {
                 let number = self.read_number(*current);
                 current.with(Token::Number(number)).grow(number.to_string().len() - 1)
-            },
+            }
             ' ' | '\r' | '\n' | '\t' => return self.next(),
             _ => {
                 self.errors.push(current.with(LexError::Invalid { found: *current }));

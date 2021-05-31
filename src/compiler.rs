@@ -50,7 +50,11 @@ pub mod error {
     impl fmt::Display for CompileError<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                CompileError::LexError(e) => write!(f, "Lexer error:\n{}", e.iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n")),
+                CompileError::LexError(e) => write!(f, "Lexer error:\n{}", e
+                    .iter()
+                    .map(|e| format!("{}", e))
+                    .collect::<Vec<String>>()
+                    .join("\n")),
                 CompileError::ParseError(e) => write!(f, "Parse error:\n{}", e),
                 CompileError::TypeError(e) => write!(f, "Type error:\n{}", e),
                 CompileError::GenError(e) => write!(f, "Generator error:\n{}", e),

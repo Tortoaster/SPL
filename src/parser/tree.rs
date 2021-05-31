@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::lexer::Field;
 use crate::position::Pos;
-use crate::typer::{Scheme, Space, Substitution, PType};
+use crate::typer::{PType, Scheme, Space, Substitution};
 
 pub type PDecl<'a> = Pos<'a, Decl<'a>>;
 type PVarDecl<'a> = Pos<'a, VarDecl<'a>>;
@@ -95,7 +95,7 @@ impl Decl<'_> {
 mod printer {
     use std::fmt;
 
-    use crate::typer::{Environment, Scheme, Type, PType};
+    use crate::typer::{Environment, PType, Scheme, Type};
 
     use super::{Decl, Exp, FunCall, FunDecl, Id, SPL, Stmt, VarDecl};
     use super::PField;
@@ -114,7 +114,11 @@ mod printer {
 
     impl PrettyPrintable for SPL<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
-            self.decls.iter().map(|decl| decl.fmt_pretty(indent)).collect::<Vec<String>>().join("\n")
+            self.decls
+                .iter()
+                .map(|decl| decl.fmt_pretty(indent))
+                .collect::<Vec<String>>()
+                .join("\n")
         }
     }
 
@@ -151,11 +155,15 @@ mod printer {
 
     impl PrettyPrintable for FunDecl<'_> {
         fn fmt_pretty(&self, indent: usize) -> String {
-            let mut f = format!("{:indent$}{}({}) ",
-                                "",
-                                self.id.fmt_pretty(indent),
-                                self.args.iter().map(|id| id.fmt_pretty(indent)).collect::<Vec<String>>().join(", "),
-                                indent = indent * TAB_SIZE
+            let mut f = format!(
+                "{:indent$}{}({}) ",
+                "",
+                self.id.fmt_pretty(indent),
+                self.args
+                    .iter()
+                    .map(|id| id.fmt_pretty(indent))
+                    .collect::<Vec<String>>().join(", "),
+                indent = indent * TAB_SIZE
             );
             if let Some(fun_type) = &self.fun_type.borrow().content {
                 f += format!(":: ").as_str();
@@ -165,8 +173,18 @@ mod printer {
                 }
             }
             f += format!(" {{\n").as_str();
-            f += self.var_decls.iter().map(|var| var.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
-            f += self.stmts.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+            f += self.var_decls
+                .iter()
+                .map(|var| var.fmt_pretty(indent + 1))
+                .collect::<Vec<String>>()
+                .join("")
+                .as_str();
+            f += self.stmts
+                .iter()
+                .map(|stmt| stmt.fmt_pretty(indent + 1))
+                .collect::<Vec<String>>()
+                .join("")
+                .as_str();
             f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
         }
     }
@@ -181,42 +199,69 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String {
             match self {
                 Stmt::If(condition, then, otherwise) => {
-                    let mut f = format!("{:indent$}if ({}) {{\n",
-                                        "",
-                                        condition.fmt_pretty(indent),
-                                        indent = indent * TAB_SIZE
+                    let mut f = format!(
+                        "{:indent$}if ({}) {{\n",
+                        "",
+                        condition.fmt_pretty(indent),
+                        indent = indent * TAB_SIZE
                     );
-                    f += then.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+                    f += then
+                        .iter()
+                        .map(|stmt| stmt.fmt_pretty(indent + 1))
+                        .collect::<Vec<String>>()
+                        .join("")
+                        .as_str();
                     if !otherwise.is_empty() {
-                        f += format!("{:indent$}}} else {{\n", "", indent = indent * TAB_SIZE).as_str();
-                        f += otherwise.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+                        f += format!(
+                            "{:indent$}}} else {{\n",
+                            "",
+                            indent = indent * TAB_SIZE
+                        ).as_str();
+                        f += otherwise
+                            .iter()
+                            .map(|stmt| stmt.fmt_pretty(indent + 1))
+                            .collect::<Vec<String>>()
+                            .join("")
+                            .as_str();
                     }
                     f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
                 }
                 Stmt::While(condition, body) => {
-                    let mut f = format!("{:indent$}while ({}) {{\n",
-                                        "",
-                                        condition.fmt_pretty(indent),
-                                        indent = indent * TAB_SIZE
+                    let mut f = format!(
+                        "{:indent$}while ({}) {{\n",
+                        "",
+                        condition.fmt_pretty(indent),
+                        indent = indent * TAB_SIZE
                     );
-                    f += body.iter().map(|stmt| stmt.fmt_pretty(indent + 1)).collect::<Vec<String>>().join("").as_str();
+                    f += body
+                        .iter()
+                        .map(|stmt| stmt.fmt_pretty(indent + 1))
+                        .collect::<Vec<String>>()
+                        .join("")
+                        .as_str();
                     f + format!("{:indent$}}}\n", "", indent = indent * TAB_SIZE).as_str()
                 }
-                Stmt::Assignment(id, fields, value) => format!("{:indent$}{}{} = {};\n",
-                                                               "",
-                                                               id.fmt_pretty(indent),
-                                                               fields.fmt_pretty(indent),
-                                                               value.fmt_pretty(indent),
-                                                               indent = indent * TAB_SIZE
+                Stmt::Assignment(id, fields, value) => format!(
+                    "{:indent$}{}{} = {};\n",
+                    "",
+                    id.fmt_pretty(indent),
+                    fields.fmt_pretty(indent),
+                    value.fmt_pretty(indent),
+                    indent = indent * TAB_SIZE
                 ),
-                Stmt::FunCall(fun_call) => format!("{:indent$}{};\n",
-                                                   "",
-                                                   fun_call.fmt_pretty(indent),
-                                                   indent = indent * TAB_SIZE
+                Stmt::FunCall(fun_call) => format!(
+                    "{:indent$}{};\n",
+                    "",
+                    fun_call.fmt_pretty(indent),
+                    indent = indent * TAB_SIZE
                 ),
                 Stmt::Return(value) => match value {
                     None => format!("{:indent$}return;\n", "", indent = indent * TAB_SIZE),
-                    Some(ret) => format!("{:indent$}return {};\n", "", ret.fmt_pretty(indent), indent = indent * TAB_SIZE),
+                    Some(ret) => format!(
+                        "{:indent$}return {};\n",
+                        "",
+                        ret.fmt_pretty(indent), indent = indent * TAB_SIZE
+                    )
                 }
             }
         }
@@ -231,14 +276,19 @@ mod printer {
                 Exp::Boolean(b) => format!("{}", b),
                 Exp::FunCall(fun_call) => format!("{}", fun_call.fmt_pretty(indent)),
                 Exp::Nil => format!("[]"),
-                Exp::Tuple(l, r) => format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
+                Exp::Tuple(l, r) =>
+                    format!("({}, {})", l.fmt_pretty(indent), r.fmt_pretty(indent)),
             }
         }
     }
 
     impl PrettyPrintable for Vec<PField<'_>> {
         fn fmt_pretty(&self, _: usize) -> String {
-            self.iter().map(|field| ".".to_owned() + format!("{}", field.content).as_str()).collect::<Vec<String>>().join("")
+            self
+                .iter()
+                .map(|field| ".".to_owned() + format!("{}", field.content).as_str())
+                .collect::<Vec<String>>()
+                .join("")
         }
     }
 
@@ -246,7 +296,11 @@ mod printer {
         fn fmt_pretty(&self, indent: usize) -> String {
             format!("{}({})",
                     self.id.fmt_pretty(indent),
-                    self.args.iter().map(|exp| exp.fmt_pretty(indent)).collect::<Vec<String>>().join(", ")
+                    self.args
+                        .iter()
+                        .map(|exp| exp.fmt_pretty(indent))
+                        .collect::<Vec<String>>()
+                        .join(", ")
             )
         }
     }

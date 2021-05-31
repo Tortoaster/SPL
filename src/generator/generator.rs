@@ -66,7 +66,11 @@ impl<'a> Scope<'a> {
                 .iter()
                 .filter_map(|decl| match &decl.content {
                     Decl::VarDecl(_) => None,
-                    Decl::FunDecl(fun_decl) => Some((fun_decl.id.content.clone(), fun_decl.args.iter().map(|id| id.content.clone()).collect()))
+                    Decl::FunDecl(fun_decl) =>
+                        Some((fun_decl.id.content.clone(), fun_decl.args
+                            .iter()
+                            .map(|id| id.content.clone())
+                            .collect()))
                 })
                 .collect(),
             current_call: None,
@@ -116,7 +120,9 @@ impl<'a> Scope<'a> {
 
 impl SPL<'_> {
     pub fn generate_code(&self) -> Result<Program> {
-        Ok(Program { instructions: self.generate(&mut Scope::new(self), &mut Context::new())? })
+        Ok(Program {
+            instructions: self.generate(&mut Scope::new(self), &mut Context::new())?
+        })
     }
 }
 
@@ -157,7 +163,8 @@ impl<'a> Gen<'a> for SPL<'a> {
             .iter()
             .enumerate()
             .map(|(index, decl)| match &decl.content {
-                Decl::VarDecl(var_decl) => var_decl.generate_global(index as isize, scope, context),
+                Decl::VarDecl(var_decl) =>
+                    var_decl.generate_global(index as isize, scope, context),
                 _ => Ok(Vec::new())
             })
             .collect::<Result<Vec<Vec<Instruction>>>>()?
@@ -192,7 +199,8 @@ impl<'a> Gen<'a> for SPL<'a> {
             let mut function = self.decls
                 .iter()
                 .find_map(|decl| match &decl.content {
-                    Decl::FunDecl(fun_decl) => (fun_decl.id == fun_call.id).then(|| fun_decl),
+                    Decl::FunDecl(fun_decl) =>
+                        (fun_decl.id == fun_call.id).then(|| fun_decl),
                     _ => None
                 })
                 .ok_or(GenError::MissingMain)?
@@ -233,8 +241,12 @@ impl<'a> VarDecl<'a> {
         instructions.push(StoreLocal { offset });
 
         // Retrieving
-        scope.local_values.insert(self.id.content.clone(), vec![LoadLocal { offset }]);
-        scope.local_addresses.insert(self.id.content.clone(), vec![LoadLocalAddress { offset }]);
+        scope.local_values.insert(self.id.content.clone(), vec![
+            LoadLocal { offset }
+        ]);
+        scope.local_addresses.insert(self.id.content.clone(), vec![
+            LoadLocalAddress { offset }
+        ]);
 
         Ok(instructions)
     }
@@ -252,8 +264,8 @@ impl<'a> FunDecl<'a> {
 
         let mut instructions = Vec::new();
         instructions.push(Labeled(label, Box::new(Link { length: self.var_decls.len() })));
-        for (index, var) in self.var_decls.iter().enumerate() {
-            let mut vars = var.generate_local(index as isize, &mut scope, context)?;
+        for (i, var) in self.var_decls.iter().enumerate() {
+            let mut vars = var.generate_local(i as isize, &mut scope, context)?;
             instructions.append(&mut vars);
         }
         for stmt in &self.stmts {
@@ -338,7 +350,8 @@ impl<'a> Gen<'a> for Stmt<'a> {
                 instructions.append(&mut scope.push_address(id));
                 for f in fields {
                     match f.content {
-                        Field::Head | Field::First => instructions.push(LoadAddress { offset: 0 }),
+                        Field::Head |
+                        Field::First => instructions.push(LoadAddress { offset: 0 }),
                         Field::Tail => instructions.push(LoadAddress { offset: -1 }),
                         Field::Second => instructions.push(LoadAddress { offset: 1 })
                     }

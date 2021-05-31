@@ -40,7 +40,8 @@ fn main() {
                 .unwrap()
             ).to_owned() + EXTENSION;
 
-            fs::write(&out, format!("{}", program)).expect("Unable to write file");
+            fs::write(&out, format!("{}", program))
+                .expect("Unable to write file");
             println!("Output file written to {}", out);
         }
     }

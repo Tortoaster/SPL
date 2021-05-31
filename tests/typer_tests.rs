@@ -3,9 +3,9 @@ use std::fs;
 use spl::compiler::error::CompileError;
 use spl::lexer::Lexable;
 use spl::parser::{Exp, Id, Parsable, SPL};
+use spl::position::Pos;
 use spl::typer::{Environment, Generator, Infer, Space, Type, TypeClass};
 use spl::typer::error::TypeError;
-use spl::position::Pos;
 
 #[test]
 fn simple_exp() {

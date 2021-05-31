@@ -3,11 +3,11 @@ use std::collections::HashSet;
 use error::Result;
 
 use crate::lexer::Field;
-use crate::parser::{Decl, Exp, FunCall, FunDecl, PStmt, SPL, Stmt, VarDecl, PExp};
-use crate::typer::{Environment, Generator, Space, Substitution, Type, Typed, PType};
+use crate::parser::{Decl, Exp, FunCall, FunDecl, PExp, PStmt, SPL, Stmt, VarDecl};
+use crate::position::Join;
+use crate::typer::{Environment, Generator, PType, Space, Substitution, Type, Typed};
 use crate::typer::call_graph;
 use crate::typer::error::TypeError;
-use crate::position::Join;
 
 pub trait Infer<'a> {
     fn infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, PType<'a>)>;
@@ -60,7 +60,7 @@ impl<'a> SPL<'a> {
                             None => var_type.with(Type::Polymorphic(gen.fresh())),
                             Some(var_type) => var_type.generalize(env).instantiate(gen)
                         }
-                    },
+                    }
                     Decl::FunDecl(decl) => {
                         let fun_type = decl.fun_type.borrow();
                         match &fun_type.content {
@@ -76,7 +76,7 @@ impl<'a> SPL<'a> {
                                         res
                                             .with(())
                                             .extend(&arg)
-                                            .with(Type::Function(Box::new(arg), Box::new(res)))
+                                            .with(Type::Function(Box::new(arg), Box::new(res))),
                                     )
                             }
                             Some(fun_type) => fun_type.instantiate(gen)
@@ -522,7 +522,7 @@ impl<'a> Infer<'a> for FunCall<'a> {
             .rfold(t.clone(), |acc, t| acc
                 .with(())
                 .extend(&t)
-                .with(Type::Function(Box::new(t), Box::new(acc)))
+                .with(Type::Function(Box::new(t), Box::new(acc))),
             );
 
         // Annotate function call with type
@@ -538,8 +538,8 @@ pub mod error {
     use std::fmt::Debug;
 
     use crate::parser::Id;
-    use crate::typer::{Type, TypeClass, TypeVariable};
     use crate::position::Pos;
+    use crate::typer::{Type, TypeClass, TypeVariable};
 
     pub type Result<'a, T, E = Pos<'a, TypeError<'a>>> = std::result::Result<T, E>;
 

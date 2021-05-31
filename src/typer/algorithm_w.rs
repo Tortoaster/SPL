@@ -1,12 +1,12 @@
-use std::collections::{BTreeSet, HashMap, HashSet, BTreeMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 
 use crate::lexer::Lexable;
 use crate::parser::Id;
-use crate::typer::error::{Result, TypeError};
 use crate::position::Pos;
+use crate::typer::error::{Result, TypeError};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct TypeVariable(usize, pub BTreeSet<TypeClass>);
@@ -24,7 +24,7 @@ impl<'a> TypeVariable {
                 return Err(to
                     .with(TypeError::TypeClass {
                         found: to.content.clone(),
-                        class: class.clone()
+                        class: class.clone(),
                     })
                 );
             }
@@ -118,7 +118,8 @@ impl<'a> Type<'a> {
             Type::Int => format!("Int"),
             Type::Bool => format!("Bool"),
             Type::Char => format!("Char"),
-            Type::Tuple(l, r) => format!("({}, {})", l.format(poly_names), r.format(poly_names)),
+            Type::Tuple(l, r) =>
+                format!("({}, {})", l.format(poly_names), r.format(poly_names)),
             Type::Array(a) => format!("[{}]", a.format(poly_names)),
             Type::Function(a, b) => match b.content {
                 Type::Function(_, _) => format!("{} {}", a.format(poly_names), b.format(poly_names)),
@@ -259,7 +260,10 @@ impl<'a> Scheme<'a> {
     pub fn instantiate(&self, gen: &mut Generator) -> PType<'a> {
         let subst = self.vars
             .iter()
-            .map(|var| (var.clone(), self.inner.with(Type::Polymorphic(gen.fresh_with(var.1.clone())))))
+            .map(|var| {
+                let t = Type::Polymorphic(gen.fresh_with(var.1.clone()));
+                (var.clone(), self.inner.with(t))
+            })
             .collect();
         self.inner.apply(&subst)
     }
@@ -287,7 +291,12 @@ impl fmt::Display for Scheme<'_> {
             .filter(|var| !var.1.is_empty())
             .flat_map(|var| {
                 let poly_names = &poly_names;
-                var.1.clone().into_iter().map(move |class| format!("{} {}", class, poly_names.get(&var).unwrap()))
+                var.1
+                    .clone()
+                    .into_iter()
+                    .map(move |class|
+                        format!("{} {}", class, poly_names.get(&var).unwrap())
+                    )
             })
             .collect();
         let x = if type_classes.is_empty() {
@@ -338,7 +347,11 @@ impl Environment<'_> {
             ("or", "Bool Bool -> Bool"),
             ("cons", "a [a] -> [a]"),
         ] {
-            let fun_type = Type::parse_function(&mut annotation.tokenize().unwrap().peekable(), &mut Generator::new(), &mut HashMap::new()).unwrap();
+            let fun_type = Type::parse_function(&mut annotation
+                .tokenize()
+                .unwrap()
+                .peekable(), &mut Generator::new(), &mut HashMap::new(),
+            ).unwrap();
             let scheme = fun_type.generalize(&mut env);
             env.insert((Id(name.to_owned()), Space::Fun), scheme);
         }
@@ -380,7 +393,10 @@ impl<'a> Substitution<'a> {
     }
 
     pub fn apply(&mut self, subst: &Substitution<'a>) {
-        self.0 = self.0.iter().map(|(var, t)| (var.clone(), t.apply(subst))).collect();
+        self.0 = self.0
+            .iter()
+            .map(|(var, t)| (var.clone(), t.apply(subst)))
+            .collect();
     }
 }
 
@@ -432,9 +448,12 @@ impl<'a> Typed<'a> for PType<'a> {
     fn apply(&self, subst: &Substitution<'a>) -> Self {
         match &self.content {
             Type::Void | Type::Int | Type::Bool | Type::Char => self.clone(),
-            Type::Tuple(l, r) => self.with(Type::Tuple(Box::new(l.apply(subst)), Box::new(r.apply(subst)))),
-            Type::Array(a) => self.with(Type::Array(Box::new(a.apply(subst)))),
-            Type::Function(a, b) => self.with(Type::Function(Box::new(a.apply(subst)), Box::new(b.apply(subst)))),
+            Type::Tuple(l, r) => self
+                .with(Type::Tuple(Box::new(l.apply(subst)), Box::new(r.apply(subst)))),
+            Type::Array(a) => self
+                .with(Type::Array(Box::new(a.apply(subst)))),
+            Type::Function(a, b) => self
+                .with(Type::Function(Box::new(a.apply(subst)), Box::new(b.apply(subst)))),
             Type::Polymorphic(v) => subst.get(v).unwrap_or(self).clone(),
         }
     }
@@ -487,6 +506,10 @@ impl<'a> Typed<'a> for Environment<'a> {
     }
 
     fn apply(&self, subst: &Substitution<'a>) -> Self {
-        Environment(self.iter().map(|(k, v)| (k.clone(), v.apply(subst))).collect())
+        Environment(self
+            .iter()
+            .map(|(k, v)| (k.clone(), v.apply(subst)))
+            .collect()
+        )
     }
 }

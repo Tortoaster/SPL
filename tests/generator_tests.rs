@@ -1,7 +1,8 @@
-use std::process::Command;
-use spl::compiler;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
+
+use spl::compiler;
 
 const TEST_DIR: &str = "tests/res/";
 
