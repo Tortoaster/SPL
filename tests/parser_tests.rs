@@ -25,7 +25,8 @@ fn pretty_print() {
             if let Ok(file) = file {
                 let code = fs::read_to_string(file.path()).expect(format!("File {:?} is inaccessible", file.file_name()).as_str());
                 let lexer = code.as_str().tokenize().expect("Failed to tokenize");
-                if let Ok(ast) = SPL::new(lexer.peekable()) {
+                let result = SPL::new(lexer.peekable());
+                if let Ok(ast) = result {
                     let pretty_code = format!("{}", ast.content);
                     let pretty_lexer = pretty_code.as_str().tokenize().expect("Failed to tokenize");
                     let pretty_ast = SPL::new(pretty_lexer.peekable()).expect(format!("Error parsing prettified {:?}", file.file_name()).as_str());

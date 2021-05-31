@@ -94,8 +94,8 @@ pub trait Parsable<'a>: Sized + Clone + Debug {
 }
 
 impl<'a> SPL<'a> {
-    pub fn new(mut lexer: PeekLexer<'a>) -> Result<Pos<'a, Self>> {
-        Self::parse(&mut lexer)
+    pub fn new(mut lexer: PeekLexer<'a>) -> Result<Box<Pos<'a, Self>>> {
+        Ok(Box::new(Self::parse(&mut lexer)?))
     }
 }
 
