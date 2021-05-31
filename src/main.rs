@@ -18,7 +18,7 @@ fn main() {
 
     if args.len() < 2 {
         eprintln!("{}", CompileError::InsufficientArguments);
-        return;
+        std::process::exit(-2);
     }
 
     let path = Path::new(&args[1]);
@@ -30,7 +30,7 @@ fn main() {
     match result {
         Err(err) => {
             eprintln!("{}", err);
-            return;
+            std::process::exit(-1);
         }
         Ok(program) => {
             let out = (DIR.to_owned() + path
