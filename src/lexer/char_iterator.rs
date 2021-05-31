@@ -10,12 +10,7 @@ pub trait CharIterable<'a> {
 
 impl<'a> CharIterable<'a> for &'a str {
     fn iter_char(self) -> CharIterator<'a> {
-        Pos {
-            row: 1,
-            col: 1,
-            code: self,
-            content: self.chars(),
-        }
+        Pos::new(1, 1, self, self.chars())
     }
 }
 
@@ -33,11 +28,6 @@ impl<'a> Iterator for CharIterator<'a> {
             _ => self.col += 1
         }
 
-        Some(Pos {
-            row: self.row,
-            col: self.col,
-            code: self.code,
-            content: next,
-        })
+        Some(Pos::new(self.row, self.col, self.code, next))
     }
 }

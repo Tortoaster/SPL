@@ -175,12 +175,12 @@ impl<'a> Gen<'a> for SPL<'a> {
 
         // Generate code for main function
         let main_call = FunCall {
-            id: Pos {
-                row: 1,
-                col: 1,
-                code: " ",
-                content: Id(MAIN.to_owned()),
-            },
+            id: Pos::new(
+                1,
+                1,
+                " ",
+                Id(MAIN.to_owned()),
+            ),
             args: Vec::new(),
             type_args: RefCell::new(Substitution::new()),
         };

@@ -20,21 +20,22 @@ trait Util<'a> {
 
 impl<'a> Util<'a> for PeekLexer<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>> {
-        self.next().ok_or(Pos {
-            row: self.code.lines().count(),
-            col: self.code.lines().last().unwrap_or("").len() + 1,
-            code: self.code,
-            content: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
-        })
+        self.next().ok_or(Pos::new(
+            self.code.lines().count(),
+            self.code.lines().last().unwrap_or("").len() + 1,
+            self.code,
+            ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
+        ))
     }
 
     fn peek_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, &Pos<'a, Token>> {
-        self.peek().ok_or(Pos {
-            row: 1,
-            col: 1,
-            code: "",
-            content: ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
-        })
+        // TODO: Improve
+        self.peek().ok_or(Pos::new(
+            1,
+            1,
+            "",
+            ParseError::EOF { expected: format!("{:?}", expected.as_ref()) },
+        ))
     }
 
     fn consume<T: AsRef<Token>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>> {
@@ -107,12 +108,13 @@ impl<'a> Parsable<'a> for SPL<'a> {
             decls.push(decl);
         }
 
-        let pos = decls.join_with(()).unwrap_or(Pos {
-            row: 0,
-            col: 0,
-            code: tokens.code,
-            content: (),
-        });
+        // TODO: Improve
+        let pos = decls.join_with(()).unwrap_or(Pos::new(
+            0,
+            0,
+            tokens.code,
+            (),
+        ));
 
         Ok(pos.with(SPL { decls }))
     }

@@ -197,14 +197,9 @@ impl<'a> Lexer<'a> {
                 expected: expected.to_string(),
             })
         } else {
-            Pos {
-                row: self.code.lines().count(),
-                col: self.code.lines().last().unwrap_or("").len() + 1,
-                code: self.code,
-                content: LexError::EOF {
-                    expected: expected.to_string()
-                },
-            }
+            let row = self.code.lines().count();
+            let col = self.code.lines().last().unwrap_or("").len() + 1;
+            Pos::new(row, col, self.code, LexError::EOF { expected: expected.to_string() })
         });
     }
 }
@@ -217,64 +212,64 @@ impl<'a> Iterator for Lexer<'a> {
 
         let token = match *current {
             '=' => if self.followed_by('=') {
-                Token::Operator(Operator::Equals)
+                current.with(Token::Operator(Operator::Equals)).grow(1)
             } else if self.followed_by('>') {
-                Token::DoubleArrow
+                current.with(Token::DoubleArrow).grow(1)
             } else {
-                Token::Assign
+                current.with(Token::Assign)
             }
             '<' => if self.followed_by('=') {
-                Token::Operator(Operator::SmallerEqual)
+                current.with(Token::Operator(Operator::SmallerEqual)).grow(1)
             } else {
-                Token::Operator(Operator::Smaller)
+                current.with(Token::Operator(Operator::Smaller))
             }
             '>' => if self.followed_by('=') {
-                Token::Operator(Operator::GreaterEqual)
+                current.with(Token::Operator(Operator::GreaterEqual)).grow(1)
             } else {
-                Token::Operator(Operator::Greater)
+                current.with(Token::Operator(Operator::Greater))
             }
             '!' => if self.followed_by('=') {
-                Token::Operator(Operator::NotEqual)
+                current.with(Token::Operator(Operator::NotEqual)).grow(1)
             } else {
-                Token::Operator(Operator::Not)
+                current.with(Token::Operator(Operator::Not))
             }
             '&' => if self.followed_by('&') {
-                Token::Operator(Operator::And)
+                current.with(Token::Operator(Operator::And)).grow(1)
             } else {
                 self.expected('&');
-                Token::Operator(Operator::And)
+                current.with(Token::Operator(Operator::And))
             }
             '|' => if self.followed_by('|') {
-                Token::Operator(Operator::Or)
+                current.with(Token::Operator(Operator::Or)).grow(1)
             } else {
                 self.expected('|');
-                Token::Operator(Operator::Or)
+                current.with(Token::Operator(Operator::Or))
             }
             ':' => if self.followed_by(':') {
-                Token::HasType
+                current.with(Token::HasType).grow(1)
             } else {
-                Token::Operator(Operator::Cons)
+                current.with(Token::Operator(Operator::Cons))
             }
             '[' => if self.followed_by(']') {
-                Token::Nil
+                current.with(Token::Nil).grow(1)
             } else {
-                Token::OpenArr
+                current.with(Token::OpenArr)
             }
             '-' => if self.followed_by('>') {
-                Token::To
+                current.with(Token::To).grow(1)
             } else {
-                Token::Operator(Operator::Minus)
+                current.with(Token::Operator(Operator::Minus))
             }
-            '+' => Token::Operator(Operator::Plus),
-            '*' => Token::Operator(Operator::Times),
-            '%' => Token::Operator(Operator::Modulo),
-            ']' => Token::CloseArr,
-            ';' => Token::Semicolon,
-            '(' => Token::OpenParen,
-            ')' => Token::CloseParen,
-            '{' => Token::OpenBracket,
-            '}' => Token::CloseBracket,
-            ',' => Token::Comma,
+            '+' => current.with(Token::Operator(Operator::Plus)),
+            '*' => current.with(Token::Operator(Operator::Times)),
+            '%' => current.with(Token::Operator(Operator::Modulo)),
+            ']' => current.with(Token::CloseArr),
+            ';' => current.with(Token::Semicolon),
+            '(' => current.with(Token::OpenParen),
+            ')' => current.with(Token::CloseParen),
+            '{' => current.with(Token::OpenBracket),
+            '}' => current.with(Token::CloseBracket),
+            ',' => current.with(Token::Comma),
             '/' => if self.followed_by('/') {
                 while let Some(c) = self.chars.next() {
                     if *c == '\n' {
@@ -298,45 +293,48 @@ impl<'a> Iterator for Lexer<'a> {
                     return self.next();
                 }
             } else {
-                Token::Operator(Operator::Divide)
+                current.with(Token::Operator(Operator::Divide))
             },
             '\'' => match self.chars.next() {
                 Some(c) => if self.followed_by('\'') {
-                    Token::Character(*c)
+                    current.with(Token::Character(*c)).grow(2)
                 } else {
                     self.expected('\'');
-                    Token::Character(*c)
+                    current.with(Token::Character(*c)).grow(1)
                 }
                 None => {
                     self.expected("character");
-                    Token::Character('c')
+                    current.with(Token::Character('c'))
                 }
             }
             'a'..='z' | 'A'..='Z' => match self.read_word(*current).as_str() {
-                "Int" => Token::Int,
-                "Bool" => Token::Bool,
-                "Char" => Token::Char,
-                "Void" => Token::Void,
-                "if" => Token::If,
-                "else" => Token::Else,
-                "while" => Token::While,
-                "return" => Token::Return,
-                "True" => Token::True,
-                "False" => Token::False,
-                "var" => Token::Var,
-                id => Token::Identifier(id.to_owned())
+                "Int" => current.with(Token::Int).grow(2),
+                "Bool" => current.with(Token::Bool).grow(3),
+                "Char" => current.with(Token::Char).grow(3),
+                "Void" => current.with(Token::Void).grow(3),
+                "if" => current.with(Token::If).grow(1),
+                "else" => current.with(Token::Else).grow(3),
+                "while" => current.with(Token::While).grow(4),
+                "return" => current.with(Token::Return).grow(5),
+                "True" => current.with(Token::True).grow(3),
+                "False" => current.with(Token::False).grow(4),
+                "var" => current.with(Token::Var).grow(2),
+                id => current.with(Token::Identifier(id.to_owned())).grow(id.len() - 1)
             }
             '.' => match self.read_word(*current).as_str() {
-                ".hd" => Token::Field(Field::Head),
-                ".tl" => Token::Field(Field::Tail),
-                ".fst" => Token::Field(Field::First),
-                ".snd" => Token::Field(Field::Second),
+                ".hd" => current.with(Token::Field(Field::Head)).grow(2),
+                ".tl" => current.with(Token::Field(Field::Tail)).grow(2),
+                ".fst" => current.with(Token::Field(Field::First)).grow(3),
+                ".snd" => current.with(Token::Field(Field::Second)).grow(3),
                 f => {
                     self.errors.push(current.with(LexError::Field { found: f.to_owned() }));
                     return self.next();
                 }
             }
-            '0'..='9' => Token::Number(self.read_number(*current)),
+            '0'..='9' => {
+                let number = self.read_number(*current);
+                current.with(Token::Number(number)).grow(number.to_string().len() - 1)
+            },
             ' ' | '\r' | '\n' | '\t' => return self.next(),
             _ => {
                 self.errors.push(current.with(LexError::Invalid { found: *current }));
@@ -344,7 +342,7 @@ impl<'a> Iterator for Lexer<'a> {
             }
         };
 
-        Some(current.with(token))
+        Some(token)
     }
 }
 

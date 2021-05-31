@@ -9,6 +9,8 @@ use std::ops::{Deref, DerefMut};
 pub struct Pos<'a, T> {
     pub row: usize,
     pub col: usize,
+    pub end_row: usize,
+    pub end_col: usize,
     pub code: &'a str,
     pub content: T,
 }
@@ -33,25 +35,47 @@ impl<'a, T: Hash> Hash for Pos<'a, T> {
 
 impl<'a, T: Display> fmt::Display for Pos<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.content)?;
-        writeln!(f,
-                 " at {}:{}:\n{}\n{: >indent$}",
-                 self.row,
-                 self.col - 1,
-                 self.code.lines().nth(self.row - 1).unwrap(),
-                 "^",
-                 indent = self.col - 1
-        )
+        writeln!(f, "{} at {}:{}:", self.content, self.row, self.col - 1)?;
+        let length = self.end_row - self.row + 1;
+        let lines: Vec<&str> = self.code.lines().take(self.end_row).skip(self.row - 1).collect();
+        if length == 1 {
+            let width = self.end_col - self.col + 1;
+            writeln!(f, "{}\n{:>padding$}", lines[0], std::iter::repeat('^').take(width).collect::<String>(), padding = self.end_col - 1)?;
+        } else {
+            let line = lines[0];
+            let width = line.len() - self.col + 2;
+            writeln!(f, "{}\n{:>padding$}", line, std::iter::repeat('^').take(width).collect::<String>(), padding = line.len())?;
+            for line in lines.iter().skip(1).take(length - 2) {
+                writeln!(f, "{}\n{:>padding$}", line, std::iter::repeat('^').take(line.len()).collect::<String>(), padding = 0)?;
+            }
+            let line = lines[length - 1];
+            let width = self.end_col - 1;
+            writeln!(f, "{}\n{:>padding$}", line, std::iter::repeat('^').take(width).collect::<String>(), padding = 0)?;
+        }
+        Ok(())
     }
 }
 
 impl<'a, T> Pos<'a, T> {
-    pub fn with<'b, U>(&'b self, inner: U) -> Pos<'a, U> {
+    pub fn new(row: usize, col: usize, code: &'a str, content: T) -> Self {
+        Pos {
+            row,
+            col,
+            end_row: row,
+            end_col: col,
+            code,
+            content,
+        }
+    }
+
+    pub fn with<U>(&self, content: U) -> Pos<'a, U> {
         Pos {
             row: self.row,
             col: self.col,
+            end_row: self.end_row,
+            end_col: self.end_col,
             code: self.code,
-            content: inner,
+            content,
         }
     }
 
@@ -63,6 +87,18 @@ impl<'a, T> Pos<'a, T> {
             self.col = other.col;
         };
 
+        if other.end_row > self.end_row {
+            self.end_row = other.end_row;
+            self.end_col = other.end_col;
+        } else if other.end_row == self.end_row && other.end_col > self.end_col {
+            self.end_col = other.end_col;
+        };
+
+        self
+    }
+
+    pub fn grow(mut self, length: usize) -> Self {
+        self.end_col += length;
         self
     }
 
@@ -76,27 +112,15 @@ impl<'a, T> Pos<'a, T> {
 }
 
 pub trait Join<'a> {
-    fn join_with<'b, U>(&'b self, inner: U) -> Option<Pos<'a, U>>;
+    fn join_with<'b, U>(&'b self, content: U) -> Option<Pos<'a, U>>;
 }
 
 impl<'a, T> Join<'a> for Vec<Pos<'a, T>> {
-    fn join_with<'b, U>(&'b self, inner: U) -> Option<Pos<'a, U>> {
-        self
-            .iter()
-            .min_by(|p1, p2| if p1.row < p2.row {
-                Ordering::Less
-            } else if p1.row == p2.row {
-                if p1.col < p2.col {
-                    Ordering::Less
-                } else if p1.col == p2.col {
-                    Ordering::Equal
-                } else {
-                    Ordering::Greater
-                }
-            } else {
-                Ordering::Greater
-            })
-            .map(|pos| pos.with(inner))
+    fn join_with<'b, U>(&'b self, content: U) -> Option<Pos<'a, U>> {
+        let mut iter = self.iter();
+        let first = iter.next()?;
+        let pos = iter.fold(first.with(()), |acc, pos| acc.extend(pos));
+        Some(pos.with(content))
     }
 }
 

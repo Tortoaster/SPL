@@ -7,6 +7,7 @@ use crate::parser::{Decl, Exp, FunCall, FunDecl, PStmt, SPL, Stmt, VarDecl, PExp
 use crate::typer::{Environment, Generator, Space, Substitution, Type, Typed, PType};
 use crate::typer::call_graph;
 use crate::typer::error::TypeError;
+use crate::position::Join;
 
 pub trait Infer<'a> {
     fn infer(&self, env: &Environment<'a>, gen: &mut Generator) -> Result<'a, (Substitution<'a>, PType<'a>)>;
@@ -273,7 +274,12 @@ impl<'a> Infer<'a> for FunDecl<'a> {
             None => Type::Void,
             Some((inferred, complete)) => {
                 if !complete && inferred.content != Type::Void {
-                    return Err(self.id.with(TypeError::Incomplete(self.id.content.clone())));
+                    return Err(self.stmts
+                        .join_with(TypeError::Incomplete(self.id.content.clone()))
+                        .unwrap_or(self.id
+                            .with(TypeError::Incomplete(self.id.content.clone()))
+                        )
+                    );
                 }
                 inferred.content
             }
@@ -382,7 +388,6 @@ impl<'a> TryInfer<'a> for PStmt<'a> {
                         let subst = acc?;
                         let inner = e.with(Type::Polymorphic(gen.fresh()));
                         match field.content {
-                            // TODO: Check invalid operations
                             Field::Head => {
                                 let thing = current.with(Type::Array(Box::new(inner.clone())));
                                 let subst_u = thing.unify_with(&current)?;
