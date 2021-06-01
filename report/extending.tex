@@ -1,0 +1,109 @@
+\chapter{Extension}\label{chapter:extension}
+
+\section{Introduction to Type Classes}
+For the extension, we plan to add operator overloading through type classes to SPL. Type classes form contracts: types implementing a type class are guaranteed to have implementations of the methods within that type class. An example type class could look like the following:
+
+\begin{lstlisting}
+// For turning things into strings
+class Show {
+    show(x) This -> [Char];
+}
+\end{lstlisting}
+
+Where \lstinline{This} represents the type implementing the type class. Note that we will not implement support for \lstinline|class| declarations for this extension, they are merely here to display the methods they contain.
+
+What we will support for this extension are \lstinline|instance| blocks, which allow the user to implement existing type classes for new types. Implementing \lstinline|Show| for lists, for example, could be done as follows:
+
+\begin{lstlisting}
+instance Show a => Show for [a] {
+    show(list) This -> [Char] {
+        var reversed = rev(list);
+        var string = ']' : [];
+        var current = '' : [];
+        while(!isEmpty(reversed)) {
+            current = rev(show(reversed.hd));
+            while(!isEmpty(current)) {
+                string = current.hd : string;
+                current = current.tl;
+            }
+            if(!isEmpty(reversed.tl)) {
+                 string = ',' : ' ' : string;
+            }
+            reversed = reversed.tl;
+        }
+        return '[' : string;
+    }
+}
+\end{lstlisting}
+
+Here, \lstinline|rev()| reverses the given list. This is just for demonstration purposes. In reality, this instance is included in the core implementation.
+
+To allow the printing of any type that implements \lstinline|Show|, we can add a builtin instance of \lstinline|Print for Show a => a|, which first calls \lstinline|show()| on the type, and then instructs the system to print the resulting string. With these two instances in place, the expression \lstinline|print(1 : 2 : 3 : [])| would yield the output \lstinline[language={}]|[1, 2, 3]|.
+
+\section{Operator Overloading}
+As mentioned in the previous chapter, we will use type classes to solve the overloading of operators. We achieve this by making a type class for every operator. For addition, for example, we would have the following:
+
+\begin{lstlisting}
+// Type class for + operator
+class Add a {
+    add(this, other) This a -> This;
+}
+\end{lstlisting}
+
+By default, only the type \lstinline|Int| implements \lstinline|Add Int|, which allows integers to be added to integers. However, type classes enable us to make the \lstinline|+| operator much more powerful, such as appending anything that implements \lstinline|Show| to a string:
+
+\begin{lstlisting}
+// Allows using + to append any type that implements Show to a string.
+// For example: "Test, " + 123 + "!" evaluates to "Test, 123!"
+instance Show a => Add a for [Char] {
+    add(this, other) [Char] a -> This {
+        append(this, show(other))
+    }
+}
+\end{lstlisting}
+
+Where \lstinline{append} puts its second argument string at the end of the first argument.
+
+\section{Goal}
+Concretely, the extension consists of the builtin type classes shown in table \ref{table:classes}, and the ability to implement them on existing types:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{5em}|p{5em}|p{5em}|p{20em}|}
+\hline
+Type class & Functions & Operators & Default implementations \\ \hline
+\lstinline|Eq| & \lstinline|eq()| \newline \lstinline|ne()| & \lstinline|==| \newline \lstinline|!=| & \lstinline|Eq for Int| \newline \lstinline|Eq for Bool| \newline \lstinline|Eq for Char| \newline \lstinline|Eq a => Eq for [a]| \newline \lstinline|Eq a, Eq b => Eq for (a, b)| \\ \hline
+\lstinline|Ord| & \lstinline|lt()| \newline \lstinline|le()| \newline \lstinline|ge()| \newline \lstinline|gt()| & \lstinline|<| \newline \lstinline|<=| \newline \lstinline|>=| \newline \lstinline|>| & \lstinline|Ord for Int| \newline \lstinline|Ord for Char| \\ \hline
+\lstinline|Show| & \lstinline|show()| & \lstinline|| & \lstinline|Show for Int| \newline \lstinline|Show for Bool| \newline \lstinline|Show for Char| \newline \lstinline|Show a => Show for [a]| \newline \lstinline|Show a, Show b => Show for (a, b)| \\ \hline
+\lstinline|Print| & \lstinline|print()| & \lstinline|| & \lstinline|Show a => Print for a| \\ \hline
+\lstinline|Add a| & \lstinline|add()| & \lstinline|+| & \lstinline|Add Int for Int| \newline \lstinline|Show a => Add a for [Char]| \\ \hline
+\lstinline|Sub a| & \lstinline|sub()| & \lstinline|-| (infix) & \lstinline|Sub Int for Int| \\ \hline
+\lstinline|Mul a| & \lstinline|mul()| & \lstinline|*| & \lstinline|Mul Int for Int| \\ \hline
+\lstinline|Div a| & \lstinline|div()| & \lstinline|/| & \lstinline|Div Int for Int| \\ \hline
+\lstinline|Mod a| & \lstinline|mod()| & \lstinline|%| & \lstinline|Mod Int for Int| \\ \hline
+\lstinline|Not| & \lstinline|not()| & \lstinline|!| & \lstinline|Not for Bool| \\ \hline
+\lstinline|Neg| & \lstinline|neg()| & \lstinline|-| (prefix) & \lstinline|Neg for Int| \\ \hline
+\lstinline|Cons a| & \lstinline|cons()| & \lstinline|:| & \lstinline|Cons a for [a]| \\ \hline
+\lstinline|Fst a| & \lstinline|fst()| & \lstinline|.fst| & \lstinline|Fst a for (a, b)| \\ \hline
+\lstinline|Snd b| & \lstinline|snd()| & \lstinline|.snd| & \lstinline|Snd b for (a, b)| \\ \hline
+\lstinline|Hd a| & \lstinline|hd()| & \lstinline|.hd| & \lstinline|Hd a for [a]| \\ \hline
+\lstinline|Tl a| & \lstinline|tl()| & \lstinline|.tl| & \lstinline|Tl [a] for [a]| \\ \hline
+\end{tabular}
+\caption{All builtin type classes, along with the included functions, optional associated operators, and default implementations.}
+\label{table:classes}
+\end{table}
+
+\section{Adaptations}
+To add support for type class implementations, we have to make adaptations to every compiler stage so far. We will go through the necessary changes for each of them one by one in the following sections.
+
+\subsection{Lexer}
+This stage is not too difficult. We simply need to add a new type of token for each of the type class names in table \ref{table:classes}. If we were to allow custom type classes, we could use an identifier instead, but then we would have to prohibit the use of type class names in places where they should not be (such as function names). This happens automatically if we turn them into keywords. Moreover, we need tokens for \lstinline|instance|, \lstinline|for|, and \lstinline|This| for the structure if the instance blocks.
+
+\section{Parser}
+\dots
+
+\section{Type Checker}
+\dots
+
+\section{Generator}
+\dots

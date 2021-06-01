@@ -1,0 +1,208 @@
+\chapter{Lexing \& Parsing}
+
+\section{Lexing}
+The first step to successfully compiling a program written in SPL is to tokenize the input. This makes parsing easier in the next stage. Our implementation of the lexer turns an iterator over the characters of the input file, into an iterator over its corresponding tokens. These tokens represent a short series of characters that often occur together. For example, the characters `$<$' and `$=$' next to each other, will be turned into the `SmallerEqual' token, so that the parser knows the entire operator immediately upon reading this token, without having to check if there is another character behind it that changes the meaning.
+
+In short, all string literals (texts enclosed in single quotes) in the grammar in appendix \ref{appendix:grammar} are turned into their own type of token. The following special cases apply:
+
+\begin{itemize}
+    \item \lstinline[language=rust]|int|, which the grammar describes as a series of digits, are stored within one token that keeps track of the integer value. Note that these digits must not have whitespace between them.
+    \item The same goes for \lstinline[language=rust]|id|: they are stored as one token that keeps track of their name, as long as they do not contain whitespace.
+    \item The same goes for \lstinline[language=rust]|char| as well, there must be exactly one character between both apostrophes, with no extra whitespace.
+    \item All characters within comments, which either start with ``//'' and end with a newline character, or start with ``/*'' and end with ``*/'' (which can be nested), are ignored by the lexer.
+\end{itemize}
+
+\section{AST}
+The structure of the Abstract Syntax Tree is heavily based on the grammar. It is almost a literal translation where the literals are left out, except for the fact that, due to the limitations of a context-free grammar, the comma-separated lists \lstinline[language=rust]|FArgs| and \lstinline[language=rust]|ActArgs| have to be a separate structure in the grammar, but the implementation embeds these lists directly in the parent structure.
+
+\section{Parsing}
+For the most part, the parser is based on a top-down strategy, which can be extracted from the grammar directly. It starts as \lstinline[language=rust]|SPL|, for which it tries to parse many \lstinline[language=rust]|Decl|s. Each \lstinline[language=rust]|Decl| is either a \lstinline[language=rust]|VarDecl| or a \lstinline[language=rust]|FunDecl|, both of which also consist of other parsable structures, etcetera. Concretely, each structure of the AST implements the \lstinline[language=rust]|Parsable| trait, and therefore has a \lstinline[language=rust]|parse| function which takes the token iterator and returns an instance of that structure. For example, the \lstinline[language=rust]|Parsable| implementation for a \lstinline[language=rust]|VarDecl| looks like this:
+
+\begin{lstlisting}[language=rust]
+impl Parsable for VarDecl {
+    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+        let var_type = Type::parse(tokens)?;
+        let id = Id::parse(tokens)?;
+        munch(tokens, &Token::Assign)?;
+        let exp = Exp::parse(tokens)?;
+        munch(tokens, &Token::Semicolon)?;
+
+        Ok(VarDecl(var_type, id, exp))
+    }
+}
+\end{lstlisting}
+
+This implementation parses \lstinline[language=rust]|Type|, an identifier, an `=' sign, an expression, and finally a semicolon, just like the grammar suggests. If all of those succeed, then a \lstinline[language=rust]|VarDecl| instance is returned. If any of the calls fail, the question mark operator will return their error instead.
+
+\subsection{Performance}
+An equivalent parser in a purely functional language like Haskell would probably use alternatives to specify, for example, that a \lstinline[language=rust]|Decl| can either be a \lstinline[language=rust]|VarDecl| or a \lstinline[language=rust]|FunDecl|. With this approach, parsing a \lstinline[language=rust]|Decl| would first try to parse a \lstinline[language=rust]|VarDecl|, and if that fails, it would try to parse a \lstinline[language=rust]|FunDecl| instead (or the other way around). While this results in very concise code, it is not the most performant approach.
+
+Remember that the lexer allows us to iterate over the tokens of the code. Iterators generally only have a \lstinline[language=rust]|next()| function that consumes and returns one element of the iterator; looking at the next tokens without consuming, or going backwards, is not allowed. Rust has a special type of iterator, \lstinline[language=rust]|Peekable|, that can be constructed from any iterator and allows one to use the \lstinline[language=rust]|peek()| function, which returns a reference to the next element without consuming it from the iterator, with minimal overhead. If we look at the grammar, we can see that one token lookahead is sufficient to find out what structure is about to come in many cases. For example:
+
+\begin{itemize}
+    \item \lstinline[language=rust]|VarDecl| always starts with a var token or a type token, while a \lstinline[language=rust]|FunDecl| always starts with an identifier
+    \item Separating an if statement from a while statement, a return statement or a function call is also possible by looking at the first token
+    \item Most of the expression types start with a unique token as well
+\end{itemize}
+
+This parser uses this functionality whenever possible, which means we \textit{almost} only need to go through the iterator once. This way, at most 2 tokens need to be in memory at once! The \lstinline[language=rust]|Parsable| implementation for \lstinline[language=rust]|Decl| shows this in action:
+
+\begin{lstlisting}[language=rust]
+impl Parsable for Decl {
+    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+        let decl = match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
+            Token::Identifier(_) => Decl::FunDecl(FunDecl::parse(tokens)?),
+            _ => Decl::VarDecl(VarDecl::parse(tokens)?)
+        };
+
+        Ok(decl)
+    }
+}
+\end{lstlisting}
+
+As said before, \textit{almost}, because unfortunately, one token lookahead is not always enough in SPL. For instance:
+
+\begin{itemize}
+    \item The assignment statement starts with an identifier, and so does the function call statement
+    \item The expression consisting of an identifier followed by a field also shares its first token with a function call
+    \item Both expressions between parentheses and tuples start with an opening parenthesis
+\end{itemize}
+
+For this reason, it is simply not possible to always accurately predict the coming structure from just one token. For these cases, every structure that implements \lstinline[language=rust]|Parsable| receives the \lstinline[language=rust]|try_parse()| function for free:
+
+\begin{lstlisting}[language=rust]
+trait Parsable: Sized {
+    fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self>;
+    
+    fn try_parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
+        let mut copy = (*tokens).clone();
+        let parsed = Self::parse(&mut copy)?;
+        *tokens = copy;
+        Ok(parsed)
+    }
+}
+\end{lstlisting}
+
+This function copies the token iterator before parsing the associated structure. If an error is returned, the actual token iterator has not been advanced, which means an alternative can be parsed with it instead. If the parsing succeeds, the copied iterator will become the actual iterator. This allows us to create alternatives in a similar manner as Haskell (though admittedly not quite as elegant). Thanks to this function, each \lstinline[language=rust]|Parsable| also automatically gets the \lstinline[language=rust]|parse_many_sep()| and \lstinline[language=rust]|parse_many()| functions, that parse as many of the requested structure as possible (with or without separator tokens).
+
+However, this functionality is not necessary for expressions, for reasons that will be explained in the next section.
+
+\subsection{Expressions}
+While the largest part of the parser works with a top-down approach, this approach has a few drawbacks, and one of them is that the precedence and associativity of infix operators have to be embedded in the grammar. A sharp eye may have noticed that the grammar provided in appendix \ref{appendix:grammar} is ambiguous. For instance, the expression \lstinline[language=rust]|1 + 2 * 3| can be parsed in two ways: first \lstinline[language=rust]|1 + 2| as an expression, and then \lstinline[language=rust]|(1 + 2) * 3|, or first \lstinline[language=rust]|2 * 3| and then \lstinline[language=rust]|1 + (2 * 3)|. We could change the grammar as follows:
+
+\begin{lstlisting}[language=spl]
+Exp    = Factor '+' Exp
+       | Factor
+Factor = int '*' Factor
+       | int
+\end{lstlisting}
+
+But this only solves the precedence of \lstinline[language=rust]|*| over \lstinline[language=rust]|+|, we would have to something similar for each operator, and adapt it in case of different associativity. This results in a very long chain of rules, and personally we were not too fond of that, not to mention that it is very slow as well.
+
+To solve this issue, this parser uses a different technique, called Pratt parsing \cite{kladov_2020}. This enables us to specify the precedence and associativity of operators separately as a number, and the parser will make sure it parses expressions accordingly, and much more quickly, turning them into unambigious prefix notations that can be compiled more easily. The precedences and associativity of operators we chose can be found in table \ref{table:precedence} in appendix \ref{appendix:grammar}. These are based on the operators in C \cite{precedence}, with the exception that the operators \lstinline|&&| and \lstinline{||}, are right-associative instead of left-associative, as this makes short-circuiting easier (this is the same as in Haskell). The cons operator \lstinline|:| does not exist in C, but we chose to give it the lowest precedence and right-associativity, as lists can get quite long, and this reduces the number of parentheses required. For example, the list:
+
+\begin{lstlisting}[language=spl]
+1 : 2 : 3 : 3 + 1 : 5 : []
+\end{lstlisting}
+
+Would look as follows if the cons operator were left-associative and had higher precedence than addition:
+
+\begin{lstlisting}[language=spl]
+1 : (2 : (3 : ((3 + 1) : (5 : []))))
+\end{lstlisting}
+
+The way basic Pratt parsing works is as follows:
+
+\begin{enumerate}
+    \item Start by parsing an operand, such as an integer, character or boolean, this will be our initial expression.
+    \item Repeat until no more operator is found, as that would be the end of the expression:
+    \begin{enumerate}
+        \item Check if the precedence of the operator is lower than some threshold, and if it is, break out of the loop.
+        \item Otherwise, we need to find the right operand, which can potentially be many operators, so we solve this by recursively calling this function, which will return the right operand. The aforementioned threshold is the precedence of the current operator: as soon as a newly encountered operator has lower precedence than the current operator, we know that the operand encountered so far binds more strongly to the current operator than the new one, hence we can break the loop.
+        \item Add the right-hand operand to the expression, keeping track of the operator as prefix.
+    \end{enumerate}
+    \item Finally, return the expression.
+\end{enumerate}
+
+This is sufficient for simple expressions consisting of just operands and binary operators. Adding support for unary operators and parentheses and tuples is quite simple: in the first step of the algorithm, if the encountered token is not an operand but an operator, it must be a unary operator, which only needs a right-hand operand that we can get with a recursive call with the threshold corresponding to the unary operator. If an opening parenthesis is encountered, we can recursively read a new expression with no minimum threshold, after which we either find a comma in case of a tuple (which requires another expression and a closing parenthesis), or a closing parenthesis.
+
+\section{Error Handling}
+
+\subsection{Lexer}
+The lexer can detect four different types of errors:
+
+\begin{itemize}
+    \item Unexpected character errors. These are thrown when the lexer can know for certain a different character should have been encountered. For example, the character \lstinline|&| can only become a valid token if there is another \lstinline|&| behind it. If there is not, this error is thrown.
+    \item Unexpected end-of-file errors. These are identical to the previous errors, except they are thrown when the file ends unexpectedly (and therefore no token can be found).
+    \item Invalid character errors. These are thrown when the lexer encounters a character that can never form a valid character (outside of a literal \lstinline|char|), such as \lstinline|'$'|.
+    \item Invalid field error. The lexer throws this error when it encounters anything other than \lstinline|hd|, \lstinline|tl|, \lstinline|fst|, or \lstinline|snd| after a dot character.
+\end{itemize}
+
+These errors are accumulated: when encountering unexpected characters, the lexer will first return the expected token, and invalid characters and fields are simply ignored.
+The lexer also tracks the locations of the tokens in the file.
+When compiling a function such as the following:
+
+\begin{lstlisting}
+fun(foo) {
+    if('a == foo.fst & foo.test == 3) {
+        $
+        return 1;
+    }
+    return 0;
+}
+\end{lstlisting}
+
+The lexer will prevent the compiler from moving on to the parsing stage, and give the following output:
+
+\begin{lstlisting}[language={}]
+Lexer error:
+Unexpected character ' ', expected: ''' at 59:10:
+    if('a == foo.fst & foo.test == 3) {
+         ^
+
+Unexpected character ' ', expected: '&' at 59:23:
+    if('a == foo.fst & foo.test == 3) {
+                      ^
+
+Unexpected field ".test", expected: ".hd", ".tl", ".fst", ".snd" at 59:27:
+    if('a == foo.fst & foo.test == 3) {
+                          ^^^^^
+
+Invalid character '$' at 60:9:
+        $
+        ^
+\end{lstlisting}
+
+\subsection{Parser}
+The parser mainly detects the following types of errors:
+
+\begin{itemize}
+    \item Bad token errors. This error is thrown when the structure being parsed encounters a token that violates its required structure. This error forms the vast majority of parse errors.
+    \item Fixity errors. The parser throws this error when an operator is used in a context where it is not allowed, such as when using \lstinline|*| as a prefix operator, or \lstinline|!| as an infix operator.
+    \item Polymorphic variable errors. These are thrown when variables are annotated with a polymorphic type - such as \lstinline|a|, \lstinline|varr|, or any other identifier - rather than the \lstinline|var| keyword.
+\end{itemize}
+
+Parse errors are severely limited in this compiler. When trying to parse a certain structure through the \lstinline|try_parse()| function, any error that is encountered is eventually caught, and will not be shown to the user. The \lstinline|try_parse()| function is used by \lstinline|parse_many()| and \lstinline|parse_many_sep()|, as they keep trying to parse a certain structure until it fails to do so.
+
+Moreover, parse errors do \textbf{not} accumulate, as we did not have enough time to implement this afterwards. They do keep track of their positions in the original file, by merging the positions of the tokens that each structure consists of. For example, the following program:
+
+\begin{lstlisting}
+test(x) {
+    if(x = 3) {
+        x = x + 1;
+    }
+    return x;
+}
+\end{lstlisting}
+
+would yield the following error:
+
+\begin{lstlisting}
+Bad token If, expected: CloseBracket at 2:5:
+    if(x = 3) {
+    ^^
+\end{lstlisting}
+
+rather than some descriptive error, saying that the \lstinline|=| was unexpected, and that it expects the \lstinline|==| token instead. The compiler \textit{does} create this error, but because it is thrown while parsing many statements, it assumes that what it was looking at must not have been a statement at all, and therefore it is done parsing statements. After that, the \lstinline|Parsable| implementation of the function declaration states that the body should be closed with a closing bracket, but the \lstinline|if| token is not a closing bracket, and therefore it throws that error instead.
+
+Given enough time, we would improve this by\dots\todo{Finish}

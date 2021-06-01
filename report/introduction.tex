@@ -1,0 +1,94 @@
+\chapter{Introduction}
+
+\section{Language Choice}
+I chose to write my compiler in the Rust programming language.\footnote{\url{https://www.rust-lang.org/}} Rust is a multi-paradigm programming language that aims to be as performant as C(++) while also being memory safe. It does so by using a borrow checked that validates references. One of the reasons I chose for Rust is because I find the language itself fascinating and wanted to learn more about it, but it also has quite a few functional aspects that I believed would work well for writing parsers, although the language does not (yet) have monads like Haskell does, for example. The extra speed is a welcome bonus as well.
+
+\section{SPL}
+Simple Programming Language is a language specification featuring:
+
+\begin{itemize}
+    \item variables,
+    \item (overloaded) functions,
+    \item conditionals and loops,
+    \item boolean and arithmetic expressions, tuples, and lists,
+    \item a static type system that supports basic types, types composed of tuples and lists, and polymorphic types, and
+    \item type inference
+\end{itemize}
+
+The grammar for this language can be found in appendix \ref{appendix:grammar}. For some example code fragments in SPL, please refer to the next section.
+
+\section{Examples}
+Figure \ref{fig:fac} contains a simple SPL program with a recursive function that calculates the factorial of its input. Notice that the syntax is similar to C, with the exception of the function signature. Rather than specifying the type of all function parameters, the type of the entire function is appended to the signature instead.
+
+\begin{figure}[!ht]
+\centering
+\begin{lstlisting}[language=spl]
+// returns n!
+fac(n) :: Int -> Int {
+    if (n < 2) {
+        return 1;
+    } else {
+        return n * fac(n - 1);
+    }
+}
+\end{lstlisting}
+\caption{Factorial function in SPL.}
+\label{fig:fac}
+\end{figure}
+
+For multiple parameters, the types are simply appended, as shown in figure \ref{fig:range}.
+
+\begin{figure}[!ht]
+\centering
+\begin{lstlisting}[language=spl]
+// returns [from, from + 1, ..., to - 1]
+range(from, to) :: Int Int -> [Int] {
+    if (from < to) {
+        return from : range(from + 1, to);
+    } else {
+        return [];
+    }
+}
+\end{lstlisting}
+\caption{Range function in SPL.}
+\label{fig:range}
+\end{figure}
+
+For a function without parameters or return type, this looks like the main function in figure \ref{fig:main}.
+
+\begin{figure}[!ht]
+\centering
+\begin{lstlisting}
+main() :: -> Void {
+    print('H':'e':'l':'l':'o':',':' ':'w':'o':'r':'l':'d':'!':[]);
+}
+\end{lstlisting}
+\caption{Main function in SPL.}
+\label{fig:main}
+\end{figure}
+
+Functions can also be polymorphic, allowing them to be called with any type:
+
+\begin{lstlisting}
+id(x) :: a -> a {
+    return x;
+}
+\end{lstlisting}
+
+The compiler described in this report features polymorphic type inference, which allows the user to omit the type annotations: \lstinline|id(x) { return x; }|.
+
+% You may notice that SPL does not support strings by default. However, I will attempt to add this feature with syntactic sugar, so that it looks as in figure \ref{fig:string}.
+
+% \begin{figure}[!ht]
+% \centering
+% \begin{lstlisting}[language=spl]
+% main() :: -> Void {
+%     print("Hello, world!");
+% }
+% \end{lstlisting}
+% \caption{Syntactic sugar for strings.}
+% \label{fig:string}
+% \end{figure}
+
+% \subsection{Code}
+% The latest version of my compiler can be found on GitLab\footnote{\url{https://gitlab.science.ru.nl/compilerconstruction/2021/group-4}}, provided you have access to it.

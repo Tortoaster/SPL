@@ -1,0 +1,66 @@
+\chapter{Code Generation}
+% \begin{itemize}
+% 	\item Compilation scheme?
+% 	\item How is data represented? Lists tuples
+% 	\item Semantics style, call-by-reference, call-by-value?
+% 	\item How did you solve overloaded functions?
+% 	\item Polymorphism?
+% 	\item Printing?
+% 	\item Problems?
+% 	\item\ldots
+% \end{itemize}
+
+\section{Representation}
+
+\subsection{Basic Values}
+For our compiler, we chose to store values of type \lstinline|Int|, \lstinline|Bool|, or \lstinline|Char| as one word on the stack. When needed elsewhere, their value is simply copied. This means that values of these types are passed by value to other functions.
+% Tuples and lists, on the other hand, are stored as the heap address of the first item within them. When these are needed elsewhere, only the address is copied. This means that basic values are passed by value, while compound values are passed by reference.
+
+\subsection{Lists}
+Contrary to basic values, lists are stored on the heap, and the address of the first item is stored on the stack. This implies that lists are passed by reference to other functions.
+
+The empty list \lstinline|[]| is represented as address 0, and given any list \lstinline|list|, prepending a value to the list is done by storing its address, followed by the value, on the heap, and then changing the address of the list to the address of the latter heap location.
+
+\subsection{Tuples}
+Despite the fact that the size of tuples can be known at compile time, as long as they do not directly or indirectly contain lists, tuples are also stored on the heap. This makes handling their locations in memory easier, and allows us to simplify the code generation because all values are exactly one word in size. This also means that tuples are passed by reference, just like lists, and so calling functions with tuples as arguments might change their contents.
+
+Storing tuples is done by first storing the right and then the left inner value on the heap, and pushing the latter heap address to the stack.
+
+\section{Global Approach}
+The code generation of the compiler works roughly as follows:
+\begin{enumerate}
+    \item The very first code we generate and execute is to reserve space for global variables. This is done by counting the number of top-level variable declarations in the decorated abstract syntax tree, and linking that number of words, as every value takes up one word of space. When we pushed enough empty values on the stack, we copy the stack pointer to scratch register R7, which will be our dedicated Globals Pointer (GP) from now on. Much like the Mark Pointer can be used to easily find local variables and arguments in the local scope using a constant offset, the GP allows us to find the memory location of global variables using their index as offset.
+    \item Next, we generate code for initializing these variables. We loop through all top-level variable declarations in the tree, and generate the code for their expressions, which leaves their value on the stack. We then move this value to the spot reserved for this declaration in the previous step. Since the variable declarations are topologically sorted and cannot contain cycles, this step cannot fail, provided that the program passed the type checker.
+    \item The next step is to generate code for core functions. These are functions that cannot be expressed in SPL with basic types alone, such as all operators, fields, and \lstinline|print| variants for basic types. These implementations are quite straightforward, as most operators are single instructions for the SSM.
+    \item Now we branch to the \lstinline|main :: -> Void| function. We generate this function as follows:
+    \begin{enumerate}
+        \item We start by reserving space for local variables. Since SPL functions declare all their local variables at the beginning of a function, this is as simple as linking the number of variables.
+        \item Then we generate code for initializing these variables, and move the result to the reserved spot, similar to global variables.
+        \item Next, we generate code for each of the statements in the function. This is straightforward.
+        \item Every time we encounter a function call that is not yet generated, we remember the function call for the next step.
+        \item Finally, we unlink the local variables and return to the caller. The arguments of the function are pushed by the caller before the function is called, and it is the callers job to remove them afterwards as well.
+    \end{enumerate}
+    When the main function returns, we halt the program.
+    \item As described in the previous step, we keep track of function calls that exist but have not been generated yet. The next step is to generate each of these, and recursively their function calls as well, until no more are left. Generating the appropriate function for a function call is done by looking at all function declarations until the one with the same name as the call is found, and generating a variant of that function using the concrete types of the type arguments.
+    
+    To illustrate, remember that, for the identity function \lstinline|id(x) { return x; }|, the call \lstinline|id(1)| is annotated with \lstinline|:: Int|. When this function call is generated, we create the \textit{non-polymorphic} variant \lstinline|id-tInt(x) Int -> Int { return x; }|. This technique of generating a new variant for each combination of type arguments is called \textit{monomorphization}. For purely polymorphic functions such as \lstinline|id|, this results in duplicate code, as all polymorphic functions treat basic values and addresses the same, and all values have the same size. In that sense, it is a waste to monomorphize these.
+    
+    In case of \textit{overloaded} functions such as \lstinline|print|, however, it is necessary to know the concrete type, so that the proper variant is called in the generated code. For example, the following function would not work properly if it was not monomorphized:
+\begin{lstlisting}
+fn pront(x) Show a => a -> Void {
+    print(x);
+}
+\end{lstlisting}
+    This is because \lstinline|pront(3)| should print ``3'', while \lstinline|pront(True)| should print ``True''. Hence, the \lstinline|print()| call is different in each variant. A working generic approach that is not aware of the concrete type of \lstinline|x| would instead print something along the lines of ``3'' and ``-1'', respectively.
+    
+    It is relatively simple to check whether or not a function is overloaded, and should therefore be monomorphized, by recursively checking if any of the function calls within it are overloaded. This would reduce the amount of duplicate generated code. For now, though, we did not make this distinction.
+\end{enumerate}
+
+\section{Polymorphism}
+Since the \lstinline|main| function itself is not polymorphic, and every function is called with concrete arguments, none of the function calls will have polymorphic type arguments, and so generating variants of polymorphic functions is straightforward. Unfortunately, there is one exception: the empty list \lstinline|[]| has type \lstinline|[a]|, which introduces a new type variable. If no items are added to the list, this type variable will remain abstract and will complicate generating code for overloaded functions. Our current approach is to raise an exception if a polymorphic function variant is generated with a polymorphic argument, but this is quite limiting, as the empty list cannot be printed this way, among others. How we plan to solve this issue is described in the next section.
+
+\section{Overloading}
+Currently, our compiler only supports overloading for functions on basic types, because monomorphization automatically takes care of this problem. For example, the expression \lstinline|1 == 1| is translated to a function call to \lstinline|eq-tInt()| during the code generation, whereas the expression \lstinline|'a' == 'b'| calls \lstinline|eq-tChar()| instead.\footnote{It should be noted that none of these variants call any other overloaded functions, so the implementations of \texttt{eq-tInt} and \texttt{eq-tChar} are exactly the same, and the same goes for all operators and fields. However, this does not result in duplicate code: the same code simply gets multiple labels.}
+Since these constant variants are generated for all basic types during the core functionality generation stage, they are already properly overloaded. This is different for lists and tuples, because we cannot pre-generate all variants for any type of list or tuple: there are simply too many variants. We could create core variants for \lstinline|[Int]|, \lstinline|[Bool]|, and \lstinline|[Char]|, but then it would not work for \lstinline|[[Int]]|, for instance.
+
+The solution is to have generic implementations that work for any type of list, and generate necessary variants from that implementation when they are needed. To support this, we will attempt to implement \textit{type classes}. How this works exactly is described in detail in the next chapter.

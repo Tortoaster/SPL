@@ -1,0 +1,92 @@
+\chapter{Grammar}\label{appendix:grammar}
+The grammar of SPL looks as follows:\todo{update}
+
+\begin{lstlisting}[language=spl]
+SPL       = Decl*
+Decl      = VarDecl
+          | FunDecl
+VarDecl   = ('var' | Type) id  '=' Exp ';'
+FunDecl   = id '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt* '}'
+RetType   = Type
+          | 'Void'
+FunType   = Type* '->' RetType
+Type      = BasicType
+          | '(' Type ',' Type ')'
+          | '[' Type ']'
+          | id
+BasicType = 'Int'
+          | 'Bool'
+          | 'Char'
+FArgs     = id  [ ',' FArgs ]
+Stmt      = 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]
+          | 'while' '(' Exp ')' '{' Stmt* '}'
+          | id Field '=' Exp ';'
+          | FunCall ';'
+          | 'return' [ Exp ] ';'
+Exp       = id Field
+          | Exp Op2 Exp
+          | Op1 Exp
+          | int
+          | char
+          | 'False' | 'True'
+          | '(' Exp ')'
+          | FunCall
+          | '[]'
+          | '(' Exp ',' Exp ')'
+Field     = [ Field ( '.' 'hd' | '.' 'tl' | '.' 'fst' | '.' 'snd' ) ]
+FunCall   = id '(' [ ActArgs ] ')'
+ActArgs   = Exp [ ',' ActArgs ]
+Op2       = '+'  | '-' | '*' | '/'  | '%' | '==' | '<' | '>' | '<='
+          | '>=' | '!=' | '&&' | '||' | ':'
+Op1       = '!'  | '-'
+int       = digit+
+id        = alpha ( '_' | alphaNum)*
+char      = '\'' ascii '\''
+ascii     = // any ASCII character
+digit     = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
+alpha     = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j'
+          | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't'
+          | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | 'A' | 'B' | 'C' | 'D'
+          | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' | 'N'
+          | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X'
+          | 'Y' | 'Z'
+alphaNum  = alpha | digit
+\end{lstlisting}
+
+Note that code may also contain comments, which either start with ``//'' and end with a newline character, or start with ``/*'' and end with the first encountered ``*/''. These can occur anywhere in the file.
+
+\begin{table}[!ht]
+\centering
+\begin{tabular}{|l|l|l|l|}
+\hline
+\textbf{Operator} & \textbf{Precedence} & \textbf{Associativity} & \textbf{Prefix/infix} \\ \hline
+$-$ & 17 & Right & Prefix \\ \hline
+$!$ & 7 & Right & Prefix \\ \hline
+$*$ & 15 & Left & Infix \\ \hline
+$/$ & 15 & Left & Infix \\ \hline
+$\%$ & 15 & Left & Infix \\ \hline
+$+$ & 13 & Left & Infix \\ \hline
+$-$ & 13 & Left & Infix \\ \hline
+$<$ & 11 & Left & Infix \\ \hline
+$>$ & 11 & Left & Infix \\ \hline
+$<=$ & 11 & Left & Infix \\ \hline
+$>=$ & 11 & Left & Infix \\ \hline
+$==$ & 9 & Left & Infix \\ \hline
+$!=$ & 9 & Left & Infix \\ \hline
+$\&\&$ & 5 & Right & Infix \\ \hline
+$||$ & 3 & Right & Infix \\ \hline
+$:$ & 1 & Right & Infix \\ \hline
+\end{tabular}
+\caption{The precedence and associativity of each operator.}
+\label{table:precedence}
+\end{table}
+
+% \subsection{Changes}
+% \begin{itemize}
+%     \item SPL now contains many declarations (can be 0)
+%     \item FunDecl now contains many statements (can be 0)
+%     \item FunType now contains many types (rewritten)
+%     \item Fargs structure now same as ActArgs (the implementation abstracts both away)
+%     \item Removed minus before int (it's already an operator)
+%     \item Added char, digit, alpha, and alphaNum (note that these may not be separated with spaces)
+% \end{itemize}
