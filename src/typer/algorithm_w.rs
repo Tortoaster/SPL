@@ -174,7 +174,9 @@ impl<'a> PType<'a> {
             // TODO: What if t contains more type vars?
             (Type::Polymorphic(var), _) => {
                 let mut subst = Substitution::new();
-                subst.insert(var.clone(), other.clone());
+                if !var.1.is_empty() {
+                    subst.insert(var.clone(), other.clone());
+                }
                 subst
             }
             _ => Substitution::new()

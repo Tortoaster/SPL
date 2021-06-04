@@ -493,12 +493,12 @@ mod core {
             bin_op(vec![Label::new("or")], Or),
             un_op(Label::new("neg"), Neg),
             un_op(Label::new("not"), Not),
-            hd_basic(),
-            tl_basic(),
-            cons_basic(),
-            is_empty_basic(),
-            fst_basic(),
-            snd_basic(),
+            hd(),
+            tl(),
+            cons(),
+            is_empty(),
+            fst(),
+            snd(),
             print_int(),
             print_bool(),
             print_char()
@@ -536,146 +536,88 @@ mod core {
         ], labels)
     }
 
-    fn hd_basic() -> (Vec<Instruction>, Vec<Label>) {
-        let labels = vec![
-            Label::new("hd-tInt"),
-            Label::new("hd-tBool"),
-            Label::new("hd-tChar")
-        ];
+    fn hd() -> (Vec<Instruction>, Vec<Label>) {
+        let label = Label::new("hd");
         let mut instructions = vec![
-            labels
-                .iter()
-                .cloned()
-                .fold(LoadStack { offset: -1 }, |instruction, label|
-                    Labeled(label, Box::new(instruction)),
-                ),
+            Labeled(label.clone(), Box::new(LoadStack { offset: -1 })),
             LoadStack { offset: 0 },
-            BranchTrue { label: Label::new("hd-tInt--continue") },
+            BranchTrue { label: Label::new("hd--continue") },
         ];
         instructions.append(&mut Instruction::print_string("Error: head of empty list"));
         instructions.append(&mut vec![
             Halt,
-            Labeled(Label::new("hd-tInt--continue"), Box::new(LoadHeap { offset: 0 })),
+            Labeled(Label::new("hd--continue"), Box::new(LoadHeap { offset: 0 })),
             StoreRegister { reg: RR },
             Return
         ]);
 
-        (instructions, labels)
+        (instructions, vec![label])
     }
 
-    fn tl_basic() -> (Vec<Instruction>, Vec<Label>) {
-        let labels = vec![
-            Label::new("tl-tInt"),
-            Label::new("tl-tBool"),
-            Label::new("tl-tChar")
-        ];
+    fn tl() -> (Vec<Instruction>, Vec<Label>) {
+        let label = Label::new("tl");
         let mut instructions = vec![
-            labels
-                .iter()
-                .cloned()
-                .fold(LoadStack { offset: -1 }, |instruction, label|
-                    Labeled(label, Box::new(instruction)),
-                ),
+            Labeled(label.clone(), Box::new(LoadStack { offset: -1 })),
             LoadStack { offset: 0 },
-            BranchTrue { label: Label::new("tl-tInt--continue") },
+            BranchTrue { label: Label::new("tl--continue") },
         ];
         instructions.append(&mut Instruction::print_string("Error: tail of empty list"));
         instructions.append(&mut vec![
             Halt,
-            Labeled(Label::new("tl-tInt--continue"), Box::new(LoadHeap { offset: -1 })),
+            Labeled(Label::new("tl--continue"), Box::new(LoadHeap { offset: -1 })),
             StoreRegister { reg: RR },
             Return
         ]);
 
-        (instructions, labels)
+        (instructions, vec![label])
     }
 
-    fn cons_basic() -> (Vec<Instruction>, Vec<Label>) {
-        let labels = vec![
-            Label::new("cons-tInt"),
-            Label::new("cons-tBool"),
-            Label::new("cons-tChar")
-        ];
-        let instructions = vec![
-            labels
-                .iter()
-                .cloned()
-                .fold(LoadStack { offset: -1 }, |instruction, label|
-                    Labeled(label, Box::new(instruction)),
-                ),
+    fn cons() -> (Vec<Instruction>, Vec<Label>) {
+        let label = Label::new("cons");
+        (vec![
+            Labeled(label.clone(), Box::new(LoadStack { offset: -1 })),
             LoadStack { offset: -3 },
             StoreMultiHeap { length: 2 },
             StoreRegister { reg: RR },
             Return
-        ];
-        (instructions, labels)
+        ], vec![label])
     }
 
-    fn is_empty_basic() -> (Vec<Instruction>, Vec<Label>) {
-        let labels = vec![
-            Label::new("isEmpty-tInt"),
-            Label::new("isEmpty-tBool"),
-            Label::new("isEmpty-tChar")
-        ];
+    fn is_empty() -> (Vec<Instruction>, Vec<Label>) {
+        let label = Label::new("isEmpty");
         (vec![
-            labels
-                .iter()
-                .cloned()
-                .fold(LoadStack { offset: -1 }, |instruction, label|
-                    Labeled(label, Box::new(instruction)),
-                ),
+            Labeled(label.clone(), Box::new(LoadStack { offset: -1 })),
             LoadConstant(0),
             Eq,
             StoreRegister { reg: RR },
             Return
-        ], labels)
+        ], vec![label])
     }
 
-    fn fst_basic() -> (Vec<Instruction>, Vec<Label>) {
-        let types = vec!["Int", "Bool", "Char"];
-        let labels: Vec<Label> = types
-            .iter()
-            .flat_map(|a| types.iter().map(move |b| format!("fst-t{}-a-t{}", a, b)))
-            .map(|s| Label::new(s))
-            .collect();
-
+    fn fst() -> (Vec<Instruction>, Vec<Label>) {
+        let label = Label::new("fst");
         (vec![
-            labels
-                .iter()
-                .cloned()
-                .fold(LoadStack { offset: -1 }, |instruction, label|
-                    Labeled(label, Box::new(instruction)),
-                ),
+            Labeled(label.clone(), Box::new(LoadStack { offset: -1 })),
             LoadHeap { offset: 0 },
             StoreRegister { reg: RR },
             Return
-        ], labels)
+        ], vec![label])
     }
 
-    fn snd_basic() -> (Vec<Instruction>, Vec<Label>) {
-        let types = vec!["Int", "Bool", "Char"];
-        let labels: Vec<Label> = types
-            .iter()
-            .flat_map(|a| types.iter().map(move |b| format!("snd-t{}-a-t{}", a, b)))
-            .map(|s| Label::new(s))
-            .collect();
-
+    fn snd() -> (Vec<Instruction>, Vec<Label>) {
+        let label = Label::new("snd");
         (vec![
-            labels
-                .iter()
-                .cloned()
-                .fold(LoadStack { offset: -1 }, |instruction, label|
-                    Labeled(label, Box::new(instruction)),
-                ),
+            Labeled(label.clone(), Box::new(LoadStack { offset: -1 })),
             LoadHeap { offset: -1 },
             StoreRegister { reg: RR },
             Return
-        ], labels)
+        ], vec![label])
     }
 
     fn print_int() -> (Vec<Instruction>, Vec<Label>) {
+        let label = Label::new("print-tInt");
         (vec![
-            Labeled(Label::new("print-tInt"), Box::new(LoadStack { offset: -1 })),
+            Labeled(label.clone(), Box::new(LoadStack { offset: -1 })),
             Trap { call: PrintInt },
             Return
         ], vec![Label::new("print-tInt")])

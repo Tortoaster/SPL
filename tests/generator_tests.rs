@@ -44,7 +44,7 @@ fn run_try() {
         .unwrap()
         .to_owned();
 
-    assert_eq!(numbers, "012345678");
+    assert_eq!(numbers, "0123456789");
 }
 
 #[test]

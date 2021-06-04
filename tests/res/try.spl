@@ -1,5 +1,6 @@
 var tuple = (0, 1);
 var list = 3 : 7 : 11 : [];
+var both = (tuple, list);
 
 var value1 = 4 + value2;
 var value2 = 4;
@@ -29,7 +30,7 @@ monomorphic(x, y) {
     return x == y;
 }
 
-// Should print 012345678
+// Should print 0123456780
 main() {
     var i = 0;
     print(tuple.fst); // 0
@@ -53,4 +54,5 @@ main() {
         print(7); // 7
     }
     print(value1); // 8
+    print(both.snd.hd + both.fst.snd * 6); // 9
 }
