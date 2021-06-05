@@ -22,7 +22,7 @@ impl<'a> Util<'a> for PeekLexer<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>> {
         self.next().ok_or(Pos::new(
             self.code.lines().count() - 1,
-            self.code.lines().last().unwrap_or("").len() - 1,
+            self.code.lines().last().unwrap_or("").len(),
             self.code,
             (ParseError::EOF { expected: format!("{}", expected.as_ref()) }, true),
         ))
