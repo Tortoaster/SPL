@@ -75,9 +75,10 @@ pub mod error {
         }
     }
 
-    impl<'a> From<Pos<'a, ParseError>> for CompileError<'a> {
-        fn from(e: Pos<'a, ParseError>) -> Self {
-            CompileError::ParseError(e)
+    impl<'a> From<Pos<'a, (ParseError, bool)>> for CompileError<'a> {
+        fn from(e: Pos<'a, (ParseError, bool)>) -> Self {
+            let (pos, (e, _)) = e.eject();
+            CompileError::ParseError(pos.with(e))
         }
     }
 

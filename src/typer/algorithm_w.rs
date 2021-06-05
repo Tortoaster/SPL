@@ -91,7 +91,6 @@ impl<'a> Type<'a> {
         }
 
         let result = match class {
-            TypeClass::Any => true,
             TypeClass::Show => match self {
                 Type::Int | Type::Char | Type::Bool => true,
                 Type::Tuple(l, r) => l.implements(class)? && r.implements(class)?,
@@ -215,7 +214,6 @@ impl fmt::Display for Type<'_> {
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
 pub enum TypeClass {
-    Any,
     Show,
     Eq,
     Ord,
@@ -244,7 +242,6 @@ pub enum TypeClass {
 impl fmt::Display for TypeClass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TypeClass::Any => write!(f, "Any"),
             TypeClass::Show => write!(f, "Show"),
             TypeClass::Eq => write!(f, "Eq"),
             TypeClass::Ord => write!(f, "Ord")
