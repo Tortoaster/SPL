@@ -48,6 +48,42 @@ pub enum Token {
     Identifier(String),
 }
 
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Token::Var => write!(f, "var"),
+            Token::Assign => write!(f, "="),
+            Token::Semicolon => write!(f, ";"),
+            Token::OpenParen => write!(f, "("),
+            Token::CloseParen => write!(f, ")"),
+            Token::HasType => write!(f, "::"),
+            Token::OpenBracket => write!(f, "{{"),
+            Token::CloseBracket => write!(f, "}}"),
+            Token::Void => write!(f, "Void"),
+            Token::DoubleArrow => write!(f, "=>"),
+            Token::To => write!(f, "->"),
+            Token::Comma => write!(f, ","),
+            Token::OpenArr => write!(f, "["),
+            Token::CloseArr => write!(f, "]"),
+            Token::Int => write!(f, "Int"),
+            Token::Bool => write!(f, "Bool"),
+            Token::Char => write!(f, "Char"),
+            Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
+            Token::While => write!(f, "while"),
+            Token::Return => write!(f, "return"),
+            Token::False => write!(f, "False"),
+            Token::True => write!(f, "True"),
+            Token::Nil => write!(f, "[]"),
+            Token::Field(field) => write!(f, ".{}", field),
+            Token::Operator(op) => write!(f, "{}", op),
+            Token::Number(n) => write!(f, "{}", n),
+            Token::Character(c) => write!(f, "{}", c),
+            Token::Identifier(id) => write!(f, "{}", id)
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operator {
     Not,
@@ -66,6 +102,28 @@ pub enum Operator {
     And,
     Or,
     Cons,
+}
+
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Operator::Not => write!(f, "!"),
+            Operator::Plus => write!(f, "+"),
+            Operator::Minus => write!(f, "-"),
+            Operator::Times => write!(f, "*"),
+            Operator::Divide => write!(f, "/"),
+            Operator::Modulo => write!(f, "%"),
+            Operator::Equals => write!(f, "=="),
+            Operator::Smaller => write!(f, "<"),
+            Operator::Greater => write!(f, ">"),
+            Operator::SmallerEqual => write!(f, "<="),
+            Operator::GreaterEqual => write!(f, ">="),
+            Operator::NotEqual => write!(f, "!="),
+            Operator::And => write!(f, "&&"),
+            Operator::Or => write!(f, "||"),
+            Operator::Cons => write!(f, ":")
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

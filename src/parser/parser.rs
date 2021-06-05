@@ -24,7 +24,7 @@ impl<'a> Util<'a> for PeekLexer<'a> {
             self.code.lines().count(),
             self.code.lines().last().unwrap_or("").len() + 1,
             self.code,
-            (ParseError::EOF { expected: format!("{:?}", expected.as_ref()) }, true),
+            (ParseError::EOF { expected: format!("{}", expected.as_ref()) }, true),
         ))
     }
 
@@ -34,12 +34,12 @@ impl<'a> Util<'a> for PeekLexer<'a> {
             1,
             1,
             "",
-            (ParseError::EOF { expected: format!("{:?}", expected.as_ref()) }, true),
+            (ParseError::EOF { expected: format!("{}", expected.as_ref()) }, true),
         ))
     }
 
     fn consume<T: AsRef<Token>>(&mut self, expected: T, throw: bool) -> Result<'a, Pos<'a, Token>> {
-        let token = self.next_or_eof(format!("{:?}", expected.as_ref()))?;
+        let token = self.next_or_eof(format!("{}", expected.as_ref()))?;
 
         if token.content == *expected.as_ref() {
             Ok(token)
@@ -47,7 +47,7 @@ impl<'a> Util<'a> for PeekLexer<'a> {
             let (pos, inner) = token.eject();
             Err(pos.with((ParseError::BadToken {
                 found: inner,
-                expected: format!("{:?}", expected.as_ref()),
+                expected: format!("{}", expected.as_ref()),
             }, throw)))
         }
     }
@@ -276,7 +276,7 @@ impl<'a> Parsable<'a> for Vec<Pos<'a, (TypeClass, Id)>> {
 impl<'a> Parsable<'a> for (TypeClass, Id) {
     fn parse(tokens: &mut PeekLexer<'a>) -> Result<'a, Pos<'a, Self>> {
         let id = Id::parse(tokens)?;
-        let class = match id.content.0.as_str() {
+        let class = match id.0.as_str() {
             "Show" => TypeClass::Show,
             "Eq" => TypeClass::Eq,
             "Ord" => TypeClass::Ord,
@@ -744,11 +744,11 @@ pub mod error {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
                 ParseError::BadToken { found, expected } =>
-                    write!(f, "Bad token {:?}, expected: {}", found, expected),
+                    write!(f, "Bad token {}, expected: {}", found, expected),
                 ParseError::EOF { expected } =>
                     write!(f, "Unexpected end of file, expected {}", expected),
                 ParseError::Fixity { found, prefix } =>
-                    write!(f, "{:?} is not a{}fix operator", found, if *prefix { " pre" } else { "n in" }),
+                    write!(f, "{} is not a{}fix operator", found, if *prefix { " pre" } else { "n in" }),
                 ParseError::InvalidAnnotation =>
                     write!(f, "Variables cannot have a function or void type"),
                 ParseError::PolyVar =>

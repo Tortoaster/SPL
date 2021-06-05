@@ -581,7 +581,7 @@ pub mod error {
                 TypeError::VarConflict(id) =>
                     write!(f, "Variable {} is defined more than once", id),
                 TypeError::Recursive(v, t) =>
-                    write!(f, "Occur check fails: {:?} vs {:?}", v, t),
+                    write!(f, "Occur check fails: {:?} occurs in {:?}", v, t),
                 TypeError::Incomplete(id) =>
                     write!(f, "Function {} does not return a correct value in all paths", id),
                 TypeError::ArgumentNumber { function, got, required } =>
