@@ -43,11 +43,14 @@ impl<'a, T: Display> fmt::Display for Pos<'a, T> {
             .skip(self.row - 1)
             .collect();
 
+        if self.row > 1 {
+            writeln!(f, "| {}", self.code.lines().nth(self.row - 2).unwrap())?;
+        }
         if length == 1 {
             let width = self.end_col - self.col + 1;
             writeln!(
                 f,
-                "{}\n{:>padding$}",
+                "| {}\n| {:>padding$}",
                 lines[0],
                 std::iter::repeat('^').take(width).collect::<String>(),
                 padding = self.end_col - 1
@@ -57,7 +60,7 @@ impl<'a, T: Display> fmt::Display for Pos<'a, T> {
             let width = line.len() - self.col + 2;
             writeln!(
                 f,
-                "{}\n{:>padding$}",
+                "| {}\n| {:>padding$}",
                 line,
                 std::iter::repeat('^').take(width).collect::<String>(),
                 padding = line.len()
@@ -65,7 +68,7 @@ impl<'a, T: Display> fmt::Display for Pos<'a, T> {
             for line in lines.iter().skip(1).take(length - 2) {
                 writeln!(
                     f,
-                    "{}\n{:>padding$}",
+                    "| {}\n| {:>padding$}",
                     line,
                     std::iter::repeat('^').take(line.len()).collect::<String>(),
                     padding = 0
@@ -75,11 +78,14 @@ impl<'a, T: Display> fmt::Display for Pos<'a, T> {
             let width = self.end_col - 1;
             writeln!(
                 f,
-                "{}\n{:>padding$}",
+                "| {}\n| {:>padding$}",
                 line,
                 std::iter::repeat('^').take(width).collect::<String>(),
                 padding = 0
             )?;
+        }
+        if self.end_col < self.code.lines().count() {
+            writeln!(f, "| {}", self.code.lines().nth(self.end_row).unwrap())?;
         }
 
         Ok(())
