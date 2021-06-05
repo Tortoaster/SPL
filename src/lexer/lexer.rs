@@ -255,8 +255,8 @@ impl<'a> Lexer<'a> {
                 expected: expected.to_string(),
             })
         } else {
-            let row = self.code.lines().count();
-            let col = self.code.lines().last().unwrap_or("").len() + 1;
+            let row = self.code.lines().count() - 1;
+            let col = self.code.lines().last().unwrap_or("").len() - 1;
             Pos::new(row, col, self.code, LexError::EOF { expected: expected.to_string() })
         });
     }

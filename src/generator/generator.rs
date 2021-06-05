@@ -183,8 +183,8 @@ impl<'a> Gen<'a> for SPL<'a> {
         // Generate code for main function
         let main_call = FunCall {
             id: Pos::new(
-                1,
-                1,
+                0,
+                0,
                 " ",
                 Id(MAIN.to_owned()),
             ),

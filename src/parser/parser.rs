@@ -21,8 +21,8 @@ trait Util<'a> {
 impl<'a> Util<'a> for PeekLexer<'a> {
     fn next_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, Pos<'a, Token>> {
         self.next().ok_or(Pos::new(
-            self.code.lines().count(),
-            self.code.lines().last().unwrap_or("").len() + 1,
+            self.code.lines().count() - 1,
+            self.code.lines().last().unwrap_or("").len() - 1,
             self.code,
             (ParseError::EOF { expected: format!("{}", expected.as_ref()) }, true),
         ))
@@ -31,8 +31,8 @@ impl<'a> Util<'a> for PeekLexer<'a> {
     fn peek_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, &Pos<'a, Token>> {
         // TODO: Improve
         self.peek().ok_or(Pos::new(
-            1,
-            1,
+            0,
+            0,
             "",
             (ParseError::EOF { expected: format!("{}", expected.as_ref()) }, true),
         ))
@@ -166,7 +166,6 @@ impl<'a> Parsable<'a> for Decl<'a> {
                 pos.with(Decl::VarDecl(inner))
             }
         };
-
         Ok(decl)
     }
 }

@@ -35,16 +35,16 @@ impl<'a, T: Hash> Hash for Pos<'a, T> {
 
 impl<'a, T: Display> fmt::Display for Pos<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{} at {}:{}:", self.content, self.row, self.col - 1)?;
+        writeln!(f, "{} at {}:{}:", self.content, self.row + 1, self.col)?;
         let length = self.end_row - self.row + 1;
         let lines: Vec<&str> = self.code
             .lines()
-            .take(self.end_row)
-            .skip(self.row - 1)
+            .take(self.end_row + 1)
+            .skip(self.row)
             .collect();
 
-        if self.row > 1 {
-            writeln!(f, "| {}", self.code.lines().nth(self.row - 2).unwrap())?;
+        if self.row > 0 {
+            writeln!(f, "| {}", self.code.lines().nth(self.row - 1).unwrap())?;
         }
         if length == 1 {
             let width = self.end_col - self.col + 1;
@@ -53,11 +53,11 @@ impl<'a, T: Display> fmt::Display for Pos<'a, T> {
                 "| {}\n| {:>padding$}",
                 lines[0],
                 std::iter::repeat('^').take(width).collect::<String>(),
-                padding = self.end_col - 1
+                padding = self.end_col
             )?;
         } else {
             let line = lines[0];
-            let width = line.len() - self.col + 2;
+            let width = line.len() - self.col + 1;
             writeln!(
                 f,
                 "| {}\n| {:>padding$}",
@@ -75,7 +75,7 @@ impl<'a, T: Display> fmt::Display for Pos<'a, T> {
                 )?;
             }
             let line = lines[length - 1];
-            let width = self.end_col - 1;
+            let width = self.end_col;
             writeln!(
                 f,
                 "| {}\n| {:>padding$}",
@@ -84,8 +84,8 @@ impl<'a, T: Display> fmt::Display for Pos<'a, T> {
                 padding = 0
             )?;
         }
-        if self.end_col < self.code.lines().count() {
-            writeln!(f, "| {}", self.code.lines().nth(self.end_row).unwrap())?;
+        if self.end_row + 1 < self.code.lines().count() {
+            writeln!(f, "| {}", self.code.lines().nth(self.end_row + 1).unwrap())?;
         }
 
         Ok(())
