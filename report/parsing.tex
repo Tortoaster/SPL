@@ -1,4 +1,4 @@
-\chapter{Lexing \& Parsing}
+\chapter{Lexing \& Parsing}\label{chapter:parsing}
 
 \section{Lexing}
 The first step to successfully compiling a program written in SPL is to tokenize the input. This makes parsing easier in the next stage. Our implementation of the lexer turns an iterator over the characters of the input file, into an iterator over its corresponding tokens. These tokens represent a short series of characters that often occur together. For example, the characters `$<$' and `$=$' next to each other, will be turned into the `SmallerEqual' token, so that the parser knows the entire operator immediately upon reading this token, without having to check if there is another character behind it that changes the meaning.
@@ -50,7 +50,8 @@ This parser uses this functionality whenever possible, which means we \textit{al
 \begin{lstlisting}[language=rust]
 impl Parsable for Decl {
     fn parse(tokens: &mut Peekable<Lexer>) -> Result<Self> {
-        let decl = match tokens.peek().ok_or(String::from("Unexpected EOF"))? {
+        let token = tokens.peek_or_eof("declaration")?;
+        let decl = match token {
             Token::Identifier(_) => Decl::FunDecl(FunDecl::parse(tokens)?),
             _ => Decl::VarDecl(VarDecl::parse(tokens)?)
         };
@@ -99,7 +100,7 @@ Factor = int '*' Factor
 
 But this only solves the precedence of \lstinline[language=rust]|*| over \lstinline[language=rust]|+|, we would have to something similar for each operator, and adapt it in case of different associativity. This results in a very long chain of rules, and personally we were not too fond of that, not to mention that it is very slow as well.
 
-To solve this issue, this parser uses a different technique, called Pratt parsing \cite{kladov_2020}. This enables us to specify the precedence and associativity of operators separately as a number, and the parser will make sure it parses expressions accordingly, and much more quickly, turning them into unambigious prefix notations that can be compiled more easily. The precedences and associativity of operators we chose can be found in table \ref{table:precedence} in appendix \ref{appendix:grammar}. These are based on the operators in C \cite{precedence}, with the exception that the operators \lstinline|&&| and \lstinline{||}, are right-associative instead of left-associative, as this makes short-circuiting easier (this is the same as in Haskell). The cons operator \lstinline|:| does not exist in C, but we chose to give it the lowest precedence and right-associativity, as lists can get quite long, and this reduces the number of parentheses required. For example, the list:
+To solve this issue, this parser uses a different technique, called Pratt parsing \cite{kladov_2020}. This enables us to specify the precedence and associativity of operators separately as a number, and the parser will make sure it parses expressions accordingly, and much more quickly, turning them into unambiguous prefix notations that can be compiled more easily. The precedence and associativity of operators we chose can be found in table \ref{table:precedence} in appendix \ref{appendix:grammar}. These are based on the operators in C \cite{precedence}, with the exception that the operators @&&@ and \lstinline{||}, are right-associative instead of left-associative, as this makes short-circuiting easier (this is the same as in Haskell). The cons operator @:@ does not exist in C, but we chose to give it the lowest precedence and right-associativity, as lists can get quite long, and this reduces the number of parentheses required. For example, the list:
 
 \begin{lstlisting}[language=spl]
 1 : 2 : 3 : 3 + 1 : 5 : []
@@ -132,10 +133,10 @@ This is sufficient for simple expressions consisting of just operands and binary
 The lexer can detect four different types of errors:
 
 \begin{itemize}
-    \item Unexpected character errors. These are thrown when the lexer can know for certain a different character should have been encountered. For example, the character \lstinline|&| can only become a valid token if there is another \lstinline|&| behind it. If there is not, this error is thrown.
+    \item Unexpected character errors. These are thrown when the lexer can know for certain a different character should have been encountered. For example, the character @&@ can only become a valid token if there is another @&@ behind it. If there is not, this error is thrown.
     \item Unexpected end-of-file errors. These are identical to the previous errors, except they are thrown when the file ends unexpectedly (and therefore no token can be found).
-    \item Invalid character errors. These are thrown when the lexer encounters a character that can never form a valid character (outside of a literal \lstinline|char|), such as \lstinline|'$'|.
-    \item Invalid field error. The lexer throws this error when it encounters anything other than \lstinline|hd|, \lstinline|tl|, \lstinline|fst|, or \lstinline|snd| after a dot character.
+    \item Invalid character errors. These are thrown when the lexer encounters a character that can never form a valid character (outside of a literal @char@), such as @'$'@.
+    \item Invalid field error. The lexer throws this error when it encounters anything other than @hd@, @tl@, @fst@, or @snd@ after a dot character.
 \end{itemize}
 
 These errors are accumulated: when encountering unexpected characters, the lexer will first return the expected token, and invalid characters and fields are simply ignored.
@@ -156,21 +157,29 @@ The lexer will prevent the compiler from moving on to the parsing stage, and giv
 
 \begin{lstlisting}[language={}]
 Lexer error:
-Unexpected character ' ', expected: ''' at 59:10:
-    if('a == foo.fst & foo.test == 3) {
-         ^
+Unexpected character ' ', expected: ' at 2:10:
+| fun(foo) {
+|     if('a == foo.fst & foo.test == 3) {
+|          ^
+|         $
 
-Unexpected character ' ', expected: '&' at 59:23:
-    if('a == foo.fst & foo.test == 3) {
-                      ^
+Unexpected character ' ', expected: & at 2:23:
+| fun(foo) {
+|     if('a == foo.fst & foo.test == 3) {
+|                       ^
+|         $
 
-Unexpected field ".test", expected: ".hd", ".tl", ".fst", ".snd" at 59:27:
-    if('a == foo.fst & foo.test == 3) {
-                          ^^^^^
+Unexpected field '.test', expected: .hd, .tl, .fst, .snd at 2:27:
+| fun(foo) {
+|     if('a == foo.fst & foo.test == 3) {
+|                           ^
+|         $
 
-Invalid character '$' at 60:9:
-        $
-        ^
+Invalid character '$' at 3:9:
+|     if('a == foo.fst & foo.test == 3) {
+|         $
+|         ^
+|         return 1;
 \end{lstlisting}
 
 \subsection{Parser}
@@ -178,13 +187,13 @@ The parser mainly detects the following types of errors:
 
 \begin{itemize}
     \item Bad token errors. This error is thrown when the structure being parsed encounters a token that violates its required structure. This error forms the vast majority of parse errors.
-    \item Fixity errors. The parser throws this error when an operator is used in a context where it is not allowed, such as when using \lstinline|*| as a prefix operator, or \lstinline|!| as an infix operator.
-    \item Polymorphic variable errors. These are thrown when variables are annotated with a polymorphic type - such as \lstinline|a|, \lstinline|varr|, or any other identifier - rather than the \lstinline|var| keyword.
+    \item Fixity errors. The parser throws this error when an operator is used in a context where it is not allowed, such as when using @*@ as a prefix operator, or @!@ as an infix operator.
+    \item Polymorphic variable errors. These are thrown when variables are annotated with a polymorphic type - such as @a@, @varr@, or any other identifier - rather than the @var@ keyword.
 \end{itemize}
 
-Parse errors are severely limited in this compiler. When trying to parse a certain structure through the \lstinline|try_parse()| function, any error that is encountered is eventually caught, and will not be shown to the user. The \lstinline|try_parse()| function is used by \lstinline|parse_many()| and \lstinline|parse_many_sep()|, as they keep trying to parse a certain structure until it fails to do so.
+Giving useful parse errors with a top-down compiler is a challenge, because some errors that are thrown should be caught without being shown to the user. For example, the \lstinline[language=rust]|parse_many()| function will use \lstinline[language=rust]|try_parse()| repeatedly until it throws an error; it will \textit{always} find an error. Of course, most of these errors should be caught, but if we choose to catch all of them, the error messages become much less useful. If we parse many statements in a function declaration, for instance, and one of the statements contains an error, the parser assumes that it must be because the list of statements has come to an end. After that, it will try to parse a closing brace, as that is what the function declaration expects, but this fails because the faulty statement is still in the way. As a result, most error messages will say something along the lines of \lstinline[language={}]|Bad token if, expected: } at 2:5|. We can improve this by indicating whether a \lstinline[language=rust]|Parsable| fails because something is wrong with it, in which case we should inform the user, or because it is not the right structure being parsed, in which case the error should be caught. We cannot always make this distinction easily, but having each invalid \lstinline[language=rust]|Parsable| indicate that something is wrong as soon as a \textit{prefix} of the inner structures is unique among all other \lstinline[language=rust]|Parsable|s, is enough to improve the error messages greatly.
 
-Moreover, parse errors do \textbf{not} accumulate, as we did not have enough time to implement this afterwards. They do keep track of their positions in the original file, by merging the positions of the tokens that each structure consists of. For example, the following program:
+Unfortunately, parse errors do not accumulate, as we did not have enough time to implement this afterwards. They do keep track of their positions in the original file, by merging the positions of the tokens that each structure consists of. For example, the following program:
 
 \begin{lstlisting}
 test(x) {
@@ -195,14 +204,36 @@ test(x) {
 }
 \end{lstlisting}
 
-would yield the following error:
+will yield the following error:
 
-\begin{lstlisting}
-Bad token If, expected: CloseBracket at 2:5:
-    if(x = 3) {
-    ^^
+\begin{lstlisting}[language={}]
+Parse error:
+Bad token =, expected: ) at 2:10:
+| test(x) {
+|     if(x = 3) {
+|          ^
+|         x = x + 1;
 \end{lstlisting}
 
-rather than some descriptive error, saying that the \lstinline|=| was unexpected, and that it expects the \lstinline|==| token instead. The compiler \textit{does} create this error, but because it is thrown while parsing many statements, it assumes that what it was looking at must not have been a statement at all, and therefore it is done parsing statements. After that, the \lstinline|Parsable| implementation of the function declaration states that the body should be closed with a closing bracket, but the \lstinline|if| token is not a closing bracket, and therefore it throws that error instead.
+This error is not amazingly helpful, but it does indicate that something is wrong with the condition of the if-statement, which is better than suggesting that the user should close the scope of the function immediately.
 
-Given enough time, we would improve this by\dots\todo{Finish}
+For missing semicolons, as in the following program:
+
+\begin{lstlisting}
+test(x) {
+    if(x = 3) {
+        x = x + 1;
+    }
+    return x;
+}
+\end{lstlisting}
+
+the compiler generates the following error message:
+
+\begin{lstlisting}[language={}]
+Parse error:
+Bad token }, expected: ; at 3:1:
+|     x = 7 * 13
+| }
+| ^
+\end{lstlisting}

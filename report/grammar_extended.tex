@@ -1,0 +1,34 @@
+\chapter{Extended Grammar}\label{appendix:grammar_extended}
+
+For the extension, the grammar in appendix \ref{appendix:grammar} gets the following extensions and adaptations:
+
+\begin{lstlisting}
+Decl      = VarDecl
+          | FunDecl
+          | InstDecl
+InstDecl  = 'instance' Instance '{' FunDecl* '}'
+Instance  = [Annote '=>'] Class 'for' Type
+Class     = 'Eq'
+          | 'Ord'
+          | 'Show'
+          | 'Print'
+          | 'Add' Type
+          | 'Sub' Type
+          | 'Mul' Type
+          | 'Div' Type
+          | 'Mod' Type
+          | 'Neg'
+          | 'And' Type
+          | 'Or' Type
+          | 'not'
+          | 'Cons' Type
+          | 'Fst' Type
+          | 'Snd' Type
+          | 'Hd' Type
+          | 'Tl' Type
+Type      = BasicType
+          | 'This'
+          | '(' Type ',' Type ')'
+          | '[' Type ']'
+          | id
+\end{lstlisting}

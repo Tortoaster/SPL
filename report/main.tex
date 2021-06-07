@@ -25,6 +25,8 @@
 \definecolor{GoldDocumentation}{RGB}{180,165,45}
 \definecolor{RedError}{RGB}{180,50,70}
 
+\lstMakeShortInline@
+
 \lstdefinelanguage{rust}{
     keywords={
         true,false,
@@ -55,15 +57,14 @@
         not,neg,add,sub,mul,div,mod,eq,ne,lt,gt,le,ge,and,or,cons,print,show,isEmpty,class,instance,for,show
     },
     ndkeywords={
-        Int,Bool,Char,Void,Eq,Ord,Show,Add,Sub,Mul,Div,Mod,Not,Neg,Cons,This,Any,Print,Fst,Snd,Hd,Tl,
+        Int,Bool,Char,Void,Eq,Ord,Show,Add,Sub,Mul,Div,Mod,Neg,And,Or,Not,Cons,This,Any,Print,Fst,Snd,Hd,Tl,
     },
     comment=[l]{//},
     morecomment=[s][\color{GrayComment}\slshape]{/*}{*/},
     string=[b]',
 }
 
-\lstset{
-    language=spl,
+\lstdefinestyle{style}{
     columns=fullflexible,
     keepspaces=true,
     frame=single,
@@ -81,6 +82,11 @@
     ndkeywordstyle=\color{RedTypename},
     stringstyle=\color{GreenString},
     commentstyle=\color{GrayComment}\slshape,
+}
+
+\lstset{
+    language=spl,
+    style=style,
 }
 
 \author{Rick~van~der~Wal \\ \small s1005618}
@@ -103,6 +109,7 @@
 \appendix
 
 \include{grammar}
+\include{grammar_extended}
 
 \printbibliography
 

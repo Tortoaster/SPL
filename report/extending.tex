@@ -10,16 +10,16 @@ class Show {
 }
 \end{lstlisting}
 
-Where \lstinline{This} represents the type implementing the type class. Note that we will not implement support for \lstinline|class| declarations for this extension, they are merely here to display the methods they contain.
+Where \lstinline{This} represents the type implementing the type class. Note that we will not implement support for @class@ declarations for this extension, they are merely here to display the methods they contain.
 
-What we will support for this extension are \lstinline|instance| blocks, which allow the user to implement existing type classes for new types. Implementing \lstinline|Show| for lists, for example, could be done as follows:
+What we will support for this extension are @instance@ blocks, which allow the user to implement existing type classes for new types. Implementing @Show@ for lists, for example, could be done as follows:
 
 \begin{lstlisting}
 instance Show a => Show for [a] {
     show(list) This -> [Char] {
         var reversed = rev(list);
         var string = ']' : [];
-        var current = '' : [];
+        var current = [];
         while(!isEmpty(reversed)) {
             current = rev(show(reversed.hd));
             while(!isEmpty(current)) {
@@ -36,9 +36,9 @@ instance Show a => Show for [a] {
 }
 \end{lstlisting}
 
-Here, \lstinline|rev()| reverses the given list. This is just for demonstration purposes. In reality, this instance is included in the core implementation.
+Here, @rev()@ reverses the given list. This is just for demonstration purposes. In reality, this instance is included in the core implementation.
 
-To allow the printing of any type that implements \lstinline|Show|, we can add a builtin instance of \lstinline|Print for Show a => a|, which first calls \lstinline|show()| on the type, and then instructs the system to print the resulting string. With these two instances in place, the expression \lstinline|print(1 : 2 : 3 : [])| would yield the output \lstinline[language={}]|[1, 2, 3]|.
+To allow the printing of any type that implements @Show@, we can add a builtin instance of @Print for Show a => a@, which first calls @show()@ on the type, and then instructs the system to print the resulting string. With these instances in place, the expression @print(1 : 2 : 3 : [])@ would yield the output \lstinline[language={}]|[1, 2, 3]|.
 
 \section{Operator Overloading}
 As mentioned in the previous chapter, we will use type classes to solve the overloading of operators. We achieve this by making a type class for every operator. For addition, for example, we would have the following:
@@ -50,19 +50,19 @@ class Add a {
 }
 \end{lstlisting}
 
-By default, only the type \lstinline|Int| implements \lstinline|Add Int|, which allows integers to be added to integers. However, type classes enable us to make the \lstinline|+| operator much more powerful, such as appending anything that implements \lstinline|Show| to a string:
+This type class has an extra type parameter @a@, which specifies the type of the value that can be added to the implementing type, i.e. the right hand side of the @+@ operator. By default, the type @Int@ implements @Add Int@, which allows integers to be added to integers. However, type classes enable us to make the @+@ operator much more powerful, such as appending anything that implements @Show@ to a string:
 
 \begin{lstlisting}
 // Allows using + to append any type that implements Show to a string.
 // For example: "Test, " + 123 + "!" evaluates to "Test, 123!"
 instance Show a => Add a for [Char] {
-    add(this, other) [Char] a -> This {
+    add(this, other) This a -> This {
         append(this, show(other))
     }
 }
 \end{lstlisting}
 
-Where \lstinline{append} puts its second argument string at the end of the first argument.
+Here, \lstinline{append} puts its second argument string at the end of the first argument.
 
 \section{Goal}
 Concretely, the extension consists of the builtin type classes shown in table \ref{table:classes}, and the ability to implement them on existing types:
@@ -72,38 +72,142 @@ Concretely, the extension consists of the builtin type classes shown in table \r
 \begin{tabular}{|p{5em}|p{5em}|p{5em}|p{20em}|}
 \hline
 Type class & Functions & Operators & Default implementations \\ \hline
-\lstinline|Eq| & \lstinline|eq()| \newline \lstinline|ne()| & \lstinline|==| \newline \lstinline|!=| & \lstinline|Eq for Int| \newline \lstinline|Eq for Bool| \newline \lstinline|Eq for Char| \newline \lstinline|Eq a => Eq for [a]| \newline \lstinline|Eq a, Eq b => Eq for (a, b)| \\ \hline
-\lstinline|Ord| & \lstinline|lt()| \newline \lstinline|le()| \newline \lstinline|ge()| \newline \lstinline|gt()| & \lstinline|<| \newline \lstinline|<=| \newline \lstinline|>=| \newline \lstinline|>| & \lstinline|Ord for Int| \newline \lstinline|Ord for Char| \\ \hline
-\lstinline|Show| & \lstinline|show()| & \lstinline|| & \lstinline|Show for Int| \newline \lstinline|Show for Bool| \newline \lstinline|Show for Char| \newline \lstinline|Show a => Show for [a]| \newline \lstinline|Show a, Show b => Show for (a, b)| \\ \hline
-\lstinline|Print| & \lstinline|print()| & \lstinline|| & \lstinline|Show a => Print for a| \\ \hline
-\lstinline|Add a| & \lstinline|add()| & \lstinline|+| & \lstinline|Add Int for Int| \newline \lstinline|Show a => Add a for [Char]| \\ \hline
-\lstinline|Sub a| & \lstinline|sub()| & \lstinline|-| (infix) & \lstinline|Sub Int for Int| \\ \hline
-\lstinline|Mul a| & \lstinline|mul()| & \lstinline|*| & \lstinline|Mul Int for Int| \\ \hline
-\lstinline|Div a| & \lstinline|div()| & \lstinline|/| & \lstinline|Div Int for Int| \\ \hline
-\lstinline|Mod a| & \lstinline|mod()| & \lstinline|%| & \lstinline|Mod Int for Int| \\ \hline
-\lstinline|Not| & \lstinline|not()| & \lstinline|!| & \lstinline|Not for Bool| \\ \hline
-\lstinline|Neg| & \lstinline|neg()| & \lstinline|-| (prefix) & \lstinline|Neg for Int| \\ \hline
-\lstinline|Cons a| & \lstinline|cons()| & \lstinline|:| & \lstinline|Cons a for [a]| \\ \hline
-\lstinline|Fst a| & \lstinline|fst()| & \lstinline|.fst| & \lstinline|Fst a for (a, b)| \\ \hline
-\lstinline|Snd b| & \lstinline|snd()| & \lstinline|.snd| & \lstinline|Snd b for (a, b)| \\ \hline
-\lstinline|Hd a| & \lstinline|hd()| & \lstinline|.hd| & \lstinline|Hd a for [a]| \\ \hline
-\lstinline|Tl a| & \lstinline|tl()| & \lstinline|.tl| & \lstinline|Tl [a] for [a]| \\ \hline
+@Eq@ & @eq()@ \newline @ne()@ & @==@ \newline @!=@ & @Eq for Int@ \newline @Eq for Bool@ \newline @Eq for Char@ \newline @Eq a => Eq for [a]@ \newline @Eq a, Eq b => Eq for (a, b)@ \\ \hline
+@Ord@ & @lt()@ \newline @le()@ \newline @ge()@ \newline @gt()@ & @<@ \newline @<=@ \newline @>=@ \newline @>@ & @Ord for Int@ \newline @Ord for Char@ \\ \hline
+@Show@ & @show()@ & & @Show for Int@ \newline @Show for Bool@ \newline @Show for Char@ \newline @Show for [Char]@ \newline @Show a => Show for [a]@ \newline @Show a, Show b => Show for (a, b)@ \\ \hline
+@Print@ & @print()@ & & @Show a => Print for a@ \\ \hline
+@Add a@ & @add()@ & @+@ & @Add Int for Int@ \newline @Show a => Add a for [Char]@ \\ \hline
+@Sub a@ & @sub()@ & @-@ (infix) & @Sub Int for Int@ \\ \hline
+@Mul a@ & @mul()@ & @*@ & @Mul Int for Int@ \\ \hline
+@Div a@ & @div()@ & @/@ & @Div Int for Int@ \\ \hline
+@Mod a@ & @mod()@ & @%@ & @Mod Int for Int@ \\ \hline
+@Neg@ & @neg()@ & @-@ (prefix) & @Neg for Int@ \\ \hline
+@And a@ & @and()@ & @&&@ & @And Bool for Bool@ \\ \hline
+@Or a@ & @or()@ & @||@ & @Or Bool for Bool@ \\ \hline
+@Not@ & @not()@ & @!@ & @Not for Bool@ \\ \hline
+@Cons a@ & @cons()@ & @:@ & @Cons a for [a]@ \\ \hline
+@Fst a@ & @fst()@ & @.fst@ & @Fst a for (a, b)@ \\ \hline
+@Snd b@ & @snd()@ & @.snd@ & @Snd b for (a, b)@ \\ \hline
+@Hd a@ & @hd()@ & @.hd@ & @Hd a for [a]@ \\ \hline
+@Tl a@ & @tl()@ & @.tl@ & @Tl [a] for [a]@ \\ \hline
 \end{tabular}
 \caption{All builtin type classes, along with the included functions, optional associated operators, and default implementations.}
 \label{table:classes}
 \end{table}
 
-\section{Adaptations}
-To add support for type class implementations, we have to make adaptations to every compiler stage so far. We will go through the necessary changes for each of them one by one in the following sections.
+\section{Challenges}
+
+\subsection{Overloaded return types}\label{challenge:overloaded_return}
+The last column of the table specifies which type class implementations exist by default. Most of these implementations describe the default behavior that you would expect each of these operators to have, such as allowing to subtract an @Int@ from an @Int@, or using the @!@ operator to invert a @Bool@. Others are slightly more confusing, such as the fields in the bottom four rows. All of them feature an extra type argument, just as the @Add a@ type class from earlier, but here, the argument describes the \textit{output} type, rather than the input. For example, calling @(8, 'a').fst@ results in a value of type @Int@ as per the definition of @Fst a for (a, b)@, in which the @fst()@ function has type @This -> a@. In theory, one could write the following, confusing, implementation:
+
+\begin{lstlisting}
+instance Fst Bool for (a, b) {
+    fst(t) This -> Bool {
+        return True;
+    }
+}
+\end{lstlisting}
+
+Firstly, notice how the return type of @fst()@ changed from @This -> a@ to @This -> Bool@, because @Bool@ is inserted in its place in the @instance@. Calling it @a@ would be confusing if type variables are also used. We could, instead, add keywords to refer to the type class arguments (@P1@, @P2@, \dots), just as we did with the @This@ keyword (which could be replaced with @(a, b)@ in this context), but just inserting the actual type seems most clear.
+
+Secondly, this new instance causes overloaded return types. Calling @(8, 'a').fst@ could now return @8@, according to the original definition, or @True@ according to our new one. This is simultaneously impressive and confusing. Notice that it is not necessarily wrong to have this implementation: the statement @Int value = (8, 'a').fst;@ makes it perfectly clear that we need the original definition. There are plenty languages that determine the required instance with type information, such as Rust (\lstinline[language=rust]|.collect()|, \lstinline[language=rust]|.parse()|) and Haskell (\lstinline[language=haskell]|read|). However, we will need significant changes to the type checker to facilitate this.
+
+Finally, calling @(False, 'a').fst@ can now return both @False@ and @True@. This is not allowed, because the compiler cannot possibly determine which implementation it should use. Therefore, this should throw an error at compile time.
+
+\subsection{Instance resolution}\label{challenge:instance_resolution}
+Another challenge that we need to overcome is the fact the instance resolution may be ambiguous. For example, the type class @Show@ has implementations @Show a => Show for [a]@ and @Show for [Char]@. Printing a value of type @[Char]@ can be done by using the implementation of @Show for [Char]@ directly, but it could also be done with @Show a => Show for [a]@ which in turn uses the implementation @Show for Char@ for the inner values. Depending on new rules written by the user, there can be even more ways. We can resolve this by using the most specific instance for the given type, which is @Show for [Char]@ in this case.
+
+This approach has the nice property that we can \textit{specialize} type class instances. Most lists are shown as a square opening bracket, followed by each of the elements in order, separated by commas, and finally closed with a closing square bracket. However, strings (values of type @[Char]@) can now be printed without brackets or commas: @print('T' : 'e' : 's' : 't' : [])@ yields ``Test'' rather than ``[T, e, s, t]''.
+
+However, it should be noted that the most specific instance does not always exist. Implementing @Ord@ for both @(a, Int)@ and @(Int, a)@, for instance, generates an ambiguity for the type @(Int, Int)@, and implementing both @Neg a => Show for a@ and @Not a => Show for a@ is also problematic for values that implement both @Neg@ and @Not@. In any of these cases, the required instance cannot be resolved, and therefore it should also result in a compile-time error.
+
+\section{Implementation}
+To add support for type class instances, we have to make adaptations to every compiler stage so far. We will go through the necessary changes for each of them one by one in the following sections.
 
 \subsection{Lexer}
-This stage is not too difficult. We simply need to add a new type of token for each of the type class names in table \ref{table:classes}. If we were to allow custom type classes, we could use an identifier instead, but then we would have to prohibit the use of type class names in places where they should not be (such as function names). This happens automatically if we turn them into keywords. Moreover, we need tokens for \lstinline|instance|, \lstinline|for|, and \lstinline|This| for the structure if the instance blocks.
+This stage is not too difficult. We simply need to add a new type of token for each of the type class names in table \ref{table:classes}. If we were to allow custom type classes, we could use an identifier instead, but then we would have to prohibit the use of type class names in places where they should not be (such as function names). This happens automatically if we turn them into keywords. Moreover, we need tokens for @instance@, @for@, and @This@ for the structure if the instance blocks.
 
-\section{Parser}
-\dots
+\subsection{Parser}
+The extended grammar for the parsing instances can be found in appendix \ref{appendix:grammar_extended}. The @Decl@ and @Type@ structures have been extended to allow for instance declarations and @This@ types, the @Class@ structure has been extended with the new, possibly parameterized, type classes, and the @InstDecl@ and @Instance@ structures have been added. Adapting the parser to support these is straightforward, and the new structure of the abstract syntax tree can be derived from the grammar directly, just as in chapter \ref{chapter:parsing}.
 
-\section{Type Checker}
-\dots
+\subsection{Type Checker}
+Extending the type checking phase is not as straightforward. We need several adaptations to guarantee type safety, and each of these is described in the following sections.
 
-\section{Generator}
-\dots
+\subsubsection{Instance blocks}
+First things first, we need to be able to determine if instances have been implemented correctly. This is done in two steps.
+
+First, we check if exactly all member functions have been implemented. If any are missing, then the type does not truly implement the class, and calling the missing member function would generate problems, so we should throw an error. If there are functions present that are not members of the class, there is technically no problem. However, those functions are not callable, and are therefore likely mistakes, so we also throw an error in this situation.
+
+The second step is to check if each of the function implementations is correctly typed. We do this by inferring each of their types, and unifying that with the required type of the associated member function, although there are a couple of things we need to keep in mind. Firstly, if the type class is parameterized with a type, such as @Add a@ is, then we need to make sure that each occurrence of that type in the class definition receives the same fresh type variables in the type instantiations of the function implementations, because each of them might influence what that type can be. It should also be unified with the filled-in type specified at the start of the @instance@ block. Moreover, when unifying, the special type @This@ can only unify with the type that implements the class, also specified at the start of the @instance@ block, and the other way around. Unification with @This@ fails in any other case, and hence @This@ cannot be used outside of instance blocks. When this step passes, the instance is guaranteed to be valid.
+
+% \subsubsection{Duplicate definitions}
+% We must make sure that instances are unique, because otherwise it becomes impossible to resolve which variant is needed when called. This is relatively simple to implement, we just need to determine if there are instances where the same type classes (with the same type parameters, if applicable) are implemented on equivalent types, and throw an error if that is the case.
+
+\subsubsection{Instance resolution}\label{solution:instance_resolution}
+Recall that, when unifying a type variable with another type, we check if the type implements all type classes of the variable. So far, this was a constant function:
+
+\begin{lstlisting}[language=spl]
+Eq     ->   Int, Bool, Char, (Eq, Eq), [Eq]
+Ord    ->   Int, Char
+Show   ->   Int, Bool, Char, (Show, Show), [Show]
+\end{lstlisting}
+
+However, this changes with the introduction of type class instances. Each new @instance@ can have a big influence on which types implement what, and with arbitrary rules it can be difficult to determine whether or not a type implements a class. In this section, we explain a method that, given any type and class member, determines which instance of the class member should be used for that type. This is a stricter question than just checking whether or not a type implements a class, but we need this algorithm when generating code later on as well, and using the same here can create more useful error messages than merely stating that the type does not implement the class.
+
+As explained in section \ref{challenge:instance_resolution}, we need to determine the most specific instance that allows the desired function to be called with our type. Which instance to use, and what it means to be most specific, is defined as follows:
+
+\begin{enumerate}
+    \item A concrete type, such as @Int@ or @[Bool]@, is always the most specific, as it is an exact match with the targeted type. If such an instance exists for our type, we simply use that one. Otherwise, continue with the next rule.
+    \item If our type is a list, we check all instances of lists that can unify with our type, determine which of them is most specific by recursively applying these rules to the inner types of the lists, and pick that one. Otherwise, we continue with the next rule.
+    \item If our type is a tuple, we check all instances of tuples that can unify with our type. If there is only one, we simply pick that one, but if there are multiple, it is difficult to determine which is the most specific, as we do not know whether the left or right part of the tuple should have priority, and do not have a method of quantifying exactly how specific any instance is. Our current approach is that we take all instances where the left part matches the left part of our type exactly, and then determine the most specific variant by recursively applying these rules to the right part. If there are no instances where the left part matches exactly, we mirror this for the right part instead. However, if neither exist, or if there are both instances that match the left part exactly and instances that match the right part exactly, we throw an error saying that the best instance could not be resolved, stating which instances caused the ambiguity.
+    \item Any type variable which has a strict superset of type classes imposed on it, is more specific than the alternative, e.g. @Eq a, Not a => Show for a@ is more specific than @Not a => Show for a@. If we find instances implemented for type variables that our type can unify with, we pick the most specific one. If there is no version that is more specific than all other versions, we throw an instance resolution error.
+\end{enumerate}
+
+If no instance was found after this, the type does not implement the requested type class, and so unifying should yield an error.
+
+\subsubsection{Ordering}
+The method above assumes that we know about all instances that the user defined. However, it is not necessarily true that all instances are typed before they are used. Choosing to do so is extremely limiting, as function implementations in instances would not be able to use any helper functions outside of the instance. Instead, we first scan the abstract syntax tree for all instances, and save references of their types somewhere we can access from the algorithm above.
+
+After that, we would have to determine in which order to type all declarations now that instances have been added. This sounds like a difficult problem, because it seems we need to determine which nodes in the call graph depend on which instances to know in which order to type all of them, but we first need their type information in order to know the exact instance a function call is targeting. However, the types of all class methods are already known from their type class definition, we only have to replace @This@ and any optional type parameters with the types of the filled-in arguments. Therefore, it suffices to simply infer all instances after everything else has been typed. Afterwards, because then they can use helper functions from the outside.
+
+\subsubsection{Overloaded return types}\label{solution:overloaded_return}
+Now we address the challenge described in section \ref{challenge:overloaded_return}. As stated above, any function call to a class method has a known type, we simply need to replace @This@ and any type parameters in the definition with the types that were filled-in as arguments. However, this is insufficient for the example from earlier:
+
+\begin{lstlisting}
+instance Fst Bool for (a, b) {
+    fst(t) This -> Bool {
+        return True;
+    }
+}
+\end{lstlisting}
+
+Given the class definition of @Fst@:
+
+\begin{lstlisting}
+class Fst a {
+    fst(t) :: This -> a;
+}
+\end{lstlisting}
+
+using just the types filled in as arguments does not clarify the type of @a@, which is the type the function call will adopt. To allow overloaded return types to work, we need this information to also flow in the opposite direction, by specifying that the type @a@ should be the inferred type of the function call. Then, when resolving the most specific instance as described in section \ref{solution:instance_resolution}, all instances where this type parameter does not match are simply ignored. This is essentially all that is necessary to get overloaded return types to work properly, but if the type of the function call cannot be determined from its context, the type checker will continue with a type variable, which might be confusing. For this reason, it is worth considering mandatory type annotations for calls to functions with overloaded return types.
+
+\subsection{Generator}
+The majority of the heavy lifting is now handled by the type checker. All that is left for us to do is adapt the code generation slightly to make use of it.
+
+As explained in chapter \ref{chapter:generating}, we keep track of all monomorphic function calls that still have to be generated. At first, there was always exactly one function that the call could be referring to, but with type classes, there can now be multiple. This is where the instance resolution algorithm described in \ref{solution:instance_resolution} comes into play. It can be applied in the same way as in the typing phase, except it does not require any error handling, since any incorrect usages have already been filtered. When the most specific instance has been found, we use it to generate the required function, and then we are done!
+
+Let us walk through a short example of how an overloaded call @print(1 : 2 : 3 [])@ now gets generated. First, it gets monomorphized as a function call to @print-L-tInt-l()@. This then gets generated as a call to @show-L-tInt-l()@, followed by a machine instruction to print the result as a string, thanks to the core instance @Show a => Print for a@. When @show-L-tInt-l()@ is generated, it uses the instance that we saw at the beginning of this chapter to print the required brackets and commas, and the inner call @show(reversed.hd)@ gets monomorphized as a function call to @show-tInt()@, which is also a core instance. As a result, the program prints ``[1, 2, 3]''. For @print('a' : 'b' : 'c' : [])@, the instance of @Show for [Char]@ gets a higher priority, resulting in ``abc''.
+
+On a side note, @print([])@ will search for a @Show for [a]@ and fail to find one by default. This can be worked around by creating an instance @Show for [a]@ that always prints an empty list, but this will also print the empty list for non-empty lists of types that do not implement @Show@. Since all types implement @Show@, this is not really a problem, but it is not the cleanest solution either. An alternative is to simply annotate the empty list with a concrete type:
+
+\begin{lstlisting}
+[Int] list = [];
+print(list);
+\end{lstlisting}
+
+% \section{Optimization}
+% Unfortunately, I was unable to finish this extension in time, so I will instead implement a small adaptation that improves the compiler so far, as it depended on this extension to get some functions to work properly. This change is still useful if the extension is implemented as described above, it can be seen as an optimization.
+
+% So far, we do not differentiate between polymorphic functions, which work regardless of the actual types of their arguments, and overloaded functions, which work for multiple types but need to know which. If type class instances were completed in time, polymorphic functions would get monomorphized just like overloaded functions and work properly, although this does generate duplicate code for every unique call to a polymorphic function. However, because generating variants for tuples and lists does not work, all polymorphic functions, such as @id()@ or any of the fields @.fst@, @.snd@, @.hd@, and @.tl@, now only work for basic types, and tuples and lists of basic types, since those are included in the core functionality. This is severely limiting, but it can be improved quite quickly.
+
+% To allow polymorphic functions to work for any type, we need to be able to determine if a function is overloaded or not. A simple way to do this is by looking at the type arguments of the function. If any of them have a type class imposed on them, the function is overloaded, since all overloaded functions in the base language impose either the @Eq@, @Ord@, or @Show@ classes on type variables, as explained in chapter \ref{chapter:typing}. Now, when we encounter a function call 

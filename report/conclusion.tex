@@ -1,11 +1,16 @@
 \chapter{Conclusion}
-What does work, what does not etc.
+This chapter concludes the making of my compiler. While I am a little disappointed about the fact that I could not finish the type class instances in time, I am satisfied with what \textit{does} work. Out of everything that the compiler should support, the only parts that are lacking are the error handling, overloading, and the extension. Errors only accumulate in the lexer stage; other stages can only give one error at a time, overloading only works for basic types and not for tuples or lists, as I wanted to solve that with the type classes, and the extension was not implemented. In contrast, all errors are localized, the compiler features polymorphic type inference, overloaded builtin functions make polymorphic functions overloaded as well, lists and tuples are stored efficiently, and how the extension can be implemented is described in detail. All in all, I am content with how it turned out and with what I learned.
 
 \section{Reflection}
-\begin{itemize}
-	\item What do you think of the project?
-	\item How did it work out?
-	\item How did you divide the work?
-	\item Pitfalls?
-	\item \ldots
-\end{itemize}
+This was, in my opinion, by far the most interesting course of the master. It was fun to learn about how a compiler dissects a program through different stages, to implement this as cleanly as possible, and to think about interesting additions that would improve it. If possible, I would like to do more research on compilers during my master thesis, as there are still many aspects that I would like to know more about, so I am thankful for this introduction course.
+
+\subsection{Pitfalls}
+One pitfall that I fell in is postponing error handling. Errors are not exactly the most interesting part to implement in my opinion, but there are far more incorrect programs than there are correct ones, so giving useful error messages is probably one of the most important tasks of a compiler. However, for the first three deadlines, I did not manage to implement good error handling in time, so most of the localization was embedded afterwards. This took a lot of time and made the code harder to read in some cases. Making the errors accumulate everywhere would probably have cluttered the code even more, as I did not have time to do it properly, so I decided against that. Next time I work on a compiler, I will give proper error handling much higher priority. It is the least I could do after Rust's error messages helped me out so much during this project.
+
+Another pitfall would be to work behind schedule. I did not fall for this one, but seeing how much time it takes to implement some parts of the compiler, I figure it would be a nightmare to catch up after slacking off for a few weeks. This may be less of a problem if you work in pairs, but I know a few pairs in which one of the people put in most of the work, and needed a similar amount of time as I did on my own, so it is still advisable to get things done as soon as possible.
+
+The opposite is also a pitfall: putting \textit{too much} time into the project. This course takes substantially longer than any other course I have followed so far (in fact, it took longer than any \textit{two} other courses combined for me, excluding my bachelor thesis). Most of the time, I did not really mind this, because it was fun to work on. However, it started to take up my time off and time that I needed to spend on other courses, and at one point I had to say that enough is enough. It is disappointing that my compiler does not have fancy type class instances now, but to fail any of my other courses just to implement them would be a much greater disappointment.
+
+% \item How did it work out?
+
+% Polymorphism v.s. overloading, tuple shit

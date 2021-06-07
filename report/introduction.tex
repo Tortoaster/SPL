@@ -1,17 +1,17 @@
 \chapter{Introduction}
 
 \section{Language Choice}
-I chose to write my compiler in the Rust programming language.\footnote{\url{https://www.rust-lang.org/}} Rust is a multi-paradigm programming language that aims to be as performant as C(++) while also being memory safe. It does so by using a borrow checked that validates references. One of the reasons I chose for Rust is because I find the language itself fascinating and wanted to learn more about it, but it also has quite a few functional aspects that I believed would work well for writing parsers, although the language does not (yet) have monads like Haskell does, for example. The extra speed is a welcome bonus as well.
+I chose to write my compiler in the Rust programming language \cite{rust}. Rust is a multi-paradigm programming language that aims to be as performant as C(++) while also being memory safe. It does so by using a borrow checked that validates references. One of the reasons I chose for Rust is because I find the language itself fascinating and wanted to learn more about it, but it also has quite a few functional aspects that I believed would work well for writing parsers, although the language does not (yet) have monads like Haskell does, for example. The extra speed is a welcome bonus as well.
 
 \section{SPL}
 Simple Programming Language is a language specification featuring:
 
 \begin{itemize}
     \item variables,
-    \item (overloaded) functions,
+    \item functions, some overloaded,
     \item conditionals and loops,
     \item boolean and arithmetic expressions, tuples, and lists,
-    \item a static type system that supports basic types, types composed of tuples and lists, and polymorphic types, and
+    \item a static type system that supports basic types, types composed of tuples and lists, and polymorphic types
     \item type inference
 \end{itemize}
 
@@ -75,7 +75,7 @@ id(x) :: a -> a {
 }
 \end{lstlisting}
 
-The compiler described in this report features polymorphic type inference, which allows the user to omit the type annotations: \lstinline|id(x) { return x; }|.
+The compiler described in this report features polymorphic type inference, which allows the user to omit the type annotations: @id(x) { return x; }@.
 
 % You may notice that SPL does not support strings by default. However, I will attempt to add this feature with syntactic sugar, so that it looks as in figure \ref{fig:string}.
 
