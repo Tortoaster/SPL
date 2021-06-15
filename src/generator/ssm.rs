@@ -10,6 +10,7 @@ pub mod prelude {
     pub use super::Label;
     pub use super::Register;
     pub use super::Register::*;
+    pub use super::Suffix;
 }
 
 #[allow(dead_code)]

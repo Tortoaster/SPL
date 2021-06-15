@@ -29,11 +29,13 @@ impl<'a> Util<'a> for PeekLexer<'a> {
     }
 
     fn peek_or_eof<T: AsRef<str>>(&mut self, expected: T) -> Result<'a, &Pos<'a, Token>> {
-        // TODO: Improve
+        let row = self.code.lines().count() - 1;
+        let col = self.code.lines().last().unwrap_or("").len();
+        let code = self.code;
         self.peek().ok_or(Pos::new(
-            0,
-            0,
-            "",
+            row,
+            col,
+            code,
             (ParseError::EOF { expected: format!("{}", expected.as_ref()) }, true),
         ))
     }
@@ -110,7 +112,6 @@ pub trait Parsable<'a>: Sized + Clone + Debug {
                         None => break,
                         Some(s) => if *separator.as_ref() != s.content { break; }
                     }
-                    // TODO: Include?
                     let _ = tokens.consume(&separator, false)?;
                 }
                 Err(e) => if e.1 {
@@ -139,7 +140,6 @@ impl<'a> Parsable<'a> for SPL<'a> {
             decls.push(decl);
         }
 
-        // TODO: Improve
         let pos = decls.join_with(()).unwrap_or(Pos::new(
             0,
             0,

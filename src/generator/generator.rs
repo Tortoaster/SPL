@@ -10,7 +10,6 @@ use crate::generator::error::GenError;
 use crate::generator::prelude::*;
 // Reserve scratch register to keep track of global variables
 use crate::generator::Register::R7 as GP;
-use crate::generator::Suffix;
 use crate::lexer::Field;
 use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, PStmt, SPL, Stmt, VarDecl};
 use crate::position::Pos;

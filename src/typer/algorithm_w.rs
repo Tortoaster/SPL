@@ -77,7 +77,6 @@ pub enum Type<'a> {
     Char,
     Tuple(Box<PType<'a>>, Box<PType<'a>>),
     Array(Box<PType<'a>>),
-    // TODO: Allow multiple arguments
     Function(Box<PType<'a>>, Box<PType<'a>>),
     Polymorphic(TypeVariable),
 }
@@ -169,8 +168,6 @@ impl<'a> PType<'a> {
             (Type::Function(arg1, res1), Type::Function(arg2, res2)) => arg1
                 .find_substitution(arg2)
                 .compose(&res1.find_substitution(res2)),
-            // (Type::Polymorphic(_), Type::Polymorphic(_)) => Substitution::new(),
-            // TODO: What if t contains more type vars?
             (Type::Polymorphic(var), _) => {
                 let mut subst = Substitution::new();
                 if !var.1.is_empty() {
