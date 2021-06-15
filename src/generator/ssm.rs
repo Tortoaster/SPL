@@ -103,7 +103,8 @@ impl fmt::Display for Suffix {
 /// let example: Vec<Instruction> = vec![
 ///     Branch { label: Label::new("m") },
 ///
-///     Labeled(Label::new("f"), Box::new(Link { length: 1 })),
+///     Labelled(Label::new("f")),
+///     Link { length: 1 },
 ///     LoadConstant(4),
 ///     StoreLocal { offset: 1 },
 ///     LoadLocal { offset: -3 },
@@ -115,7 +116,8 @@ impl fmt::Display for Suffix {
 ///     Unlink,
 ///     Return,
 ///
-///     Labeled(Label::new("m"), Box::new(LoadConstant(30))),
+///     Labelled(Label::new("m")),
+///     LoadConstant(30),
 ///     LoadConstant(8),
 ///     BranchSubroutine { label: Label::new("f") },
 ///     AdjustStack { offset: -2 },
@@ -275,7 +277,7 @@ pub enum Instruction {
     // Labels
 
     /// Adds a label to an instruction.
-    Labeled(Label, Box<Instruction>),
+    Labelled(Label),
 }
 
 impl Instruction {
@@ -360,8 +362,7 @@ impl fmt::Display for Instruction {
             Instruction::StoreHeap => write!(f, "sth"),
             Instruction::StoreMultiHeap { length } => write!(f, "stmh {}", length),
 
-            // TODO: Split
-            Instruction::Labeled(label, instruction) => write!(f, "{}:\n{}", label, instruction)
+            Instruction::Labelled(label) => write!(f, "{}:", label)
         }
     }
 }
