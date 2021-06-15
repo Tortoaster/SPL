@@ -621,12 +621,12 @@ impl<'a> Pos<'a, Operator> {
         let bp = match self.content {
             Operator::Times | Operator::Divide | Operator::Modulo => (15, 16),
             Operator::Plus | Operator::Minus => (13, 14),
+            Operator::Cons => (12, 11),
             Operator::Smaller | Operator::Greater |
-            Operator::SmallerEqual | Operator::GreaterEqual => (11, 12),
-            Operator::Equals | Operator::NotEqual => (9, 10),
+            Operator::SmallerEqual | Operator::GreaterEqual => (9, 10),
+            Operator::Equals | Operator::NotEqual => (7, 8),
             Operator::And => (6, 5),
             Operator::Or => (4, 3),
-            Operator::Cons => (2, 1),
             _ => return Err(self.with((ParseError::Fixity {
                 found: self.content.clone(),
                 prefix: false,
