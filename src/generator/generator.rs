@@ -203,7 +203,7 @@ impl<'a> SPL<'a> {
                 .map(|a| a.generate(&fun_call, scope, context))
                 .unwrap_or_else(|| match fun_call.id.content.0.as_str() {
                     "eq" => core::gen_eq(&fun_call).generate(&fun_call, scope, context),
-                    "print" => vec![],
+                    "print" => core::gen_show(&fun_call).generate(&fun_call, scope, context),
                     // "main" => return Err(GenError::MissingMain),
                     _ => panic!("cannot generate {}", fun_call.label())
                 });
@@ -482,8 +482,9 @@ mod core {
     use std::ops::Deref;
 
     use crate::generator::prelude::*;
-    use crate::parser::{Exp, FunCall, FunDecl, Id, Stmt};
-    use crate::typer::{Substitution, Type};
+    use crate::lexer::Lexable;
+    use crate::parser::{Exp, FunCall, FunDecl, Id, Parsable, PStmt, Stmt};
+    use crate::typer::{Generator, Substitution, Type, TypeClass};
 
     pub fn gen_eq<'a>(fun_call: &FunCall<'a>) -> FunDecl<'a> {
         let t = fun_call.type_args.borrow().deref().values().next().unwrap().clone();
@@ -493,22 +494,22 @@ mod core {
                 let l1 = Exp::FunCall(FunCall {
                     id: pos.with(Id("fst".to_owned())),
                     args: vec![fun_call.args[0].clone()],
-                    type_args: RefCell::new(Substitution::new())
+                    type_args: RefCell::new(Substitution::new()),
                 });
                 let r1 = Exp::FunCall(FunCall {
                     id: pos.with(Id("snd".to_owned())),
                     args: vec![fun_call.args[0].clone()],
-                    type_args: RefCell::new(Substitution::new())
+                    type_args: RefCell::new(Substitution::new()),
                 });
                 let l2 = Exp::FunCall(FunCall {
                     id: pos.with(Id("fst".to_owned())),
                     args: vec![fun_call.args[1].clone()],
-                    type_args: RefCell::new(Substitution::new())
+                    type_args: RefCell::new(Substitution::new()),
                 });
                 let r2 = Exp::FunCall(FunCall {
                     id: pos.with(Id("snd".to_owned())),
                     args: vec![fun_call.args[1].clone()],
-                    type_args: RefCell::new(Substitution::new())
+                    type_args: RefCell::new(Substitution::new()),
                 });
                 let l_subst = fun_call.type_args
                     .borrow()
@@ -542,6 +543,72 @@ mod core {
                     fun_type: RefCell::new(pos.with(Some(pos.with(Type::Function(Box::new(t.clone()), Box::new(pos.with(Type::Function(Box::new(t), Box::new(pos.with(Type::Bool)))))))))),
                     var_decls: vec![],
                     stmts: vec![pos.with(ret)],
+                }
+            }
+            Type::List(_) => unimplemented!(),
+            _ => panic!()
+        }
+    }
+
+    pub fn gen_show<'a>(fun_call: &FunCall<'a>) -> FunDecl<'a> {
+        let t = fun_call.type_args.borrow().deref().values().next().unwrap().clone();
+        match &t.content {
+            Type::Tuple(l_type, r_type) => {
+                let pos = fun_call.id.with(());
+                let l = Exp::FunCall(FunCall {
+                    id: pos.with(Id("fst".to_owned())),
+                    args: vec![fun_call.args[0].clone()],
+                    type_args: RefCell::new(Substitution::new()),
+                });
+                let r = Exp::FunCall(FunCall {
+                    id: pos.with(Id("snd".to_owned())),
+                    args: vec![fun_call.args[0].clone()],
+                    type_args: RefCell::new(Substitution::new()),
+                });
+                let l_subst = fun_call.type_args
+                    .borrow()
+                    .iter()
+                    .map(|(k, _)| (k.clone(), l_type.deref().clone()))
+                    .collect();
+                let l_fun_call = pos.with(Stmt::FunCall(FunCall {
+                    id: fun_call.id.clone(),
+                    args: vec![pos.with(l)],
+                    type_args: RefCell::new(l_subst),
+                }));
+                let r_subst = fun_call.type_args
+                    .borrow()
+                    .iter()
+                    .map(|(k, _)| (k.clone(), r_type.deref().clone()))
+                    .collect();
+                let r_fun_call = pos.with(Stmt::FunCall(FunCall {
+                    id: fun_call.id.clone(),
+                    args: vec![pos.with(r)],
+                    type_args: RefCell::new(r_subst),
+                }));
+                let mut gen = Generator::new();
+                let x: Vec<PStmt> = vec![
+                    Stmt::parse(&mut "print('(');".tokenize().unwrap().peekable()).unwrap(),
+                    Stmt::parse(&mut "print(',');".tokenize().unwrap().peekable()).unwrap(),
+                    Stmt::parse(&mut "print(' ');".tokenize().unwrap().peekable()).unwrap(),
+                    Stmt::parse(&mut "print(')');".tokenize().unwrap().peekable()).unwrap()
+                ]
+                    .into_iter()
+                    .map(|stmt| {
+                        let mut var = gen.fresh();
+                        var.impose(TypeClass::Show);
+                        if let Stmt::FunCall(f) = &stmt.content {
+                            f.type_args.borrow_mut().insert(var, pos.with(Type::Char));
+                        }
+                        stmt
+                    })
+                    .collect();
+
+                FunDecl {
+                    id: fun_call.id.clone(),
+                    args: vec![pos.with(Id("t".to_owned()))],
+                    fun_type: RefCell::new(pos.with(Some(pos.with(Type::Void)))),
+                    var_decls: vec![],
+                    stmts: vec![x[0].clone(), l_fun_call, x[1].clone(), x[2].clone(), r_fun_call, x[3].clone()],
                 }
             }
             Type::List(_) => unimplemented!(),
