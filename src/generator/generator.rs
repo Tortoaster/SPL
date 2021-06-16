@@ -197,16 +197,16 @@ impl<'a> SPL<'a> {
                 .iter()
                 .find_map(|decl| match &decl.content {
                     Decl::FunDecl(fun_decl) =>
-                        (fun_decl.id == fun_call.id).then(|| fun_decl),
+                        (fun_decl.id == fun_call.id).then(|| Ok(fun_decl.clone())),
                     _ => None
                 })
-                .map(|a| a.generate(&fun_call, scope, context))
                 .unwrap_or_else(|| match fun_call.id.content.0.as_str() {
-                    "eq" => core::gen_eq(&fun_call).generate(&fun_call, scope, context),
-                    "print" => core::gen_show(&fun_call).generate(&fun_call, scope, context),
-                    // "main" => return Err(GenError::MissingMain),
+                    "eq" => Ok(core::gen_eq(&fun_call)),
+                    "print" => Ok(core::gen_show(&fun_call)),
+                    "main" => Err(GenError::MissingMain),
                     _ => panic!("cannot generate {}", fun_call.label())
-                });
+                })?
+                .generate(&fun_call, scope, context);
             instructions.append(&mut function)
         }
 
@@ -484,10 +484,16 @@ mod core {
     use crate::generator::prelude::*;
     use crate::lexer::Lexable;
     use crate::parser::{Exp, FunCall, FunDecl, Id, Parsable, PStmt, Stmt};
-    use crate::typer::{Generator, Substitution, Type, TypeClass};
+    use crate::typer::{Substitution, Type, TypeClass};
 
     pub fn gen_eq<'a>(fun_call: &FunCall<'a>) -> FunDecl<'a> {
-        let t = fun_call.type_args.borrow().deref().values().next().unwrap().clone();
+        let t = fun_call.type_args
+            .borrow()
+            .deref()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
         match &t.content {
             Type::Tuple(l_type, r_type) => {
                 let pos = fun_call.id.with(());
@@ -551,7 +557,13 @@ mod core {
     }
 
     pub fn gen_show<'a>(fun_call: &FunCall<'a>) -> FunDecl<'a> {
-        let t = fun_call.type_args.borrow().deref().values().next().unwrap().clone();
+        let t = fun_call.type_args
+            .borrow()
+            .deref()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
         match &t.content {
             Type::Tuple(l_type, r_type) => {
                 let pos = fun_call.id.with(());
@@ -585,7 +597,6 @@ mod core {
                     args: vec![pos.with(r)],
                     type_args: RefCell::new(r_subst),
                 }));
-                let mut gen = Generator::new();
                 let x: Vec<PStmt> = vec![
                     Stmt::parse(&mut "print('(');".tokenize().unwrap().peekable()).unwrap(),
                     Stmt::parse(&mut "print(',');".tokenize().unwrap().peekable()).unwrap(),
@@ -594,7 +605,7 @@ mod core {
                 ]
                     .into_iter()
                     .map(|stmt| {
-                        let mut var = gen.fresh();
+                        let mut var = fun_call.type_args.borrow().iter().find_map(|(var, _)| Some(var.clone())).unwrap();
                         var.impose(TypeClass::Show);
                         if let Stmt::FunCall(f) = &stmt.content {
                             f.type_args.borrow_mut().insert(var, pos.with(Type::Char));
