@@ -90,21 +90,16 @@ impl<'a> Type<'a> {
         }
 
         let result = match class {
-            TypeClass::Show => match self {
+            TypeClass::Show | TypeClass::Eq => match self {
                 Type::Int | Type::Char | Type::Bool => true,
                 Type::Tuple(l, r) => l.implements(class)? && r.implements(class)?,
                 Type::Array(a) => a.implements(class)?,
-                _ => false
-            }
-            TypeClass::Eq => match self {
-                Type::Int | Type::Bool | Type::Char => true,
                 _ => false
             }
             TypeClass::Ord => match self {
                 Type::Int | Type::Char => true,
                 _ => false
             }
-            // _ => return Err(TypeError::UndefinedClass(class.clone()))
         };
 
         Ok(result)

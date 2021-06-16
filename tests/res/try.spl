@@ -1,6 +1,43 @@
+//prant(list) :: Show a => [a] -> Void {
+//    print('[');
+//    while(!isEmpty(list)) {
+//        print(list.hd);
+//        list = list.tl;
+//        if(!isEmpty(list)) {
+//            print(',');
+//            print(' ');
+//        }
+//    }
+//    print(']');
+//}
+//
+//pront(tuple) :: Show a, Show b => (a, b) -> Void {
+//    print('(');
+//    print(tuple.fst);
+//    print(',');
+//    print(' ');
+//    print(tuple.snd);
+//    print(')');
+//}
+//
+//eqq(l1, l2) :: Eq a => [a] [a] -> Bool {
+//    while(!isEmpty(l1) && !isEmpty(l2)) {
+//        if(l1.hd != l2.hd) {
+//            return False;
+//        }
+//        l1 = l1.tl;
+//        l2 = l2.tl;
+//    }
+//    return isEmpty(l1) && isEmpty(l2);
+//}
+//
+//eqqq(t1, t2) :: Eq a, Eq b => (a, b) (a, b) -> Bool {
+//    return t1.fst == t2.fst && t1.snd == t2.snd;
+//}
 var tuple = (0, 1);
 var list = 3 : 7 : 11 : [];
 var both = (tuple, list);
+var ten = (1, 0);
 
 var value1 = 4 + value2;
 var value2 = 4;
@@ -30,7 +67,7 @@ monomorphic(x, y) {
     return x == y;
 }
 
-// Should print 0123456780
+// Should print 0123456789(1, 0)
 main() {
     var i = 0;
     print(tuple.fst); // 0
@@ -55,4 +92,7 @@ main() {
     }
     print(value1); // 8
     print(both.snd.hd + both.fst.snd * 6); // 9
+    if(ten == (1, 0)) {
+//        print(ten); // (1, 0)
+    }
 }

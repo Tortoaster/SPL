@@ -13,12 +13,12 @@ use crate::generator::Register::R7 as GP;
 use crate::lexer::Field;
 use crate::parser::{Decl, Exp, FunCall, FunDecl, Id, PStmt, SPL, Stmt, VarDecl};
 use crate::position::Pos;
-use crate::typer::{Space, Substitution};
+use crate::typer::{Space, Substitution, Type};
 
 const MAIN: &str = "main";
 
 #[derive(Debug)]
-struct Context<'a> {
+pub struct Context<'a> {
     /// Function variants that still need to be generated
     needed: BTreeSet<FunCall<'a>>,
     /// Function variants that have been generated
@@ -35,7 +35,7 @@ impl Context<'_> {
 }
 
 #[derive(Clone, Debug)]
-struct Scope<'a> {
+pub struct Scope<'a> {
     /// Get the value of a global variable
     global_values: HashMap<Id, Vec<Instruction>>,
     /// Get the address of a global variable
@@ -117,14 +117,6 @@ impl<'a> Scope<'a> {
     }
 }
 
-impl SPL<'_> {
-    pub fn generate_code(&self) -> Result<Program> {
-        Ok(Program {
-            instructions: self.generate(&mut Scope::new(self), &mut Context::new())?
-        })
-    }
-}
-
 pub struct Program {
     instructions: Vec<Instruction>,
 }
@@ -139,10 +131,16 @@ impl fmt::Display for Program {
 }
 
 trait Gen<'a> {
-    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>>;
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Vec<Instruction>;
 }
 
-impl<'a> Gen<'a> for SPL<'a> {
+impl<'a> SPL<'a> {
+    pub fn generate_code(&self) -> Result<Program> {
+        Ok(Program {
+            instructions: self.generate(&mut Scope::new(self), &mut Context::new())?
+        })
+    }
+
     fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
         let (mut core_functions, core_labels) = core::core();
         context.generated.extend(core_labels);
@@ -202,8 +200,13 @@ impl<'a> Gen<'a> for SPL<'a> {
                         (fun_decl.id == fun_call.id).then(|| fun_decl),
                     _ => None
                 })
-                .ok_or(GenError::MissingMain)?
-                .generate(&fun_call, scope, context)?;
+                .map(|a| a.generate(&fun_call, scope, context))
+                .unwrap_or_else(|| match fun_call.id.content.0.as_str() {
+                    "eq" => core::gen_eq(&fun_call).generate(&fun_call, scope, context),
+                    "print" => vec![],
+                    // "main" => return Err(GenError::MissingMain),
+                    _ => panic!("cannot generate {}", fun_call.label())
+                });
             instructions.append(&mut function)
         }
 
@@ -216,7 +219,7 @@ impl<'a> VarDecl<'a> {
         let offset = -index;
 
         // Initialization
-        let mut instructions = self.exp.generate(scope, context)?;
+        let mut instructions = self.exp.generate(scope, context);
         instructions.push(LoadRegister { reg: GP });
         instructions.push(StoreByAddress { offset });
 
@@ -233,10 +236,10 @@ impl<'a> VarDecl<'a> {
         Ok(instructions)
     }
 
-    fn generate_local(&self, index: isize, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
+    fn generate_local(&self, index: isize, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Vec<Instruction> {
         let offset = index + 1;
         // Initialization
-        let mut instructions = self.exp.generate(scope, context)?;
+        let mut instructions = self.exp.generate(scope, context);
         instructions.push(StoreLocal { offset });
 
         // Retrieving
@@ -247,12 +250,12 @@ impl<'a> VarDecl<'a> {
             LoadLocalAddress { offset }
         ]);
 
-        Ok(instructions)
+        instructions
     }
 }
 
 impl<'a> FunDecl<'a> {
-    fn generate(&self, fun_call: &FunCall<'a>, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
+    fn generate(&self, fun_call: &FunCall<'a>, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Vec<Instruction> {
         let label = fun_call.label();
         context.needed.remove(fun_call);
         context.generated.insert(label.clone());
@@ -265,34 +268,31 @@ impl<'a> FunDecl<'a> {
         instructions.push(Labelled(label));
         instructions.push(Link { length: self.var_decls.len() });
         for (i, var) in self.var_decls.iter().enumerate() {
-            let mut vars = var.generate_local(i as isize, &mut scope, context)?;
+            let mut vars = var.generate_local(i as isize, &mut scope, context);
             instructions.append(&mut vars);
         }
         for stmt in &self.stmts {
-            let mut stmts = stmt.generate(&mut scope, context)?;
+            let mut stmts = stmt.generate(&mut scope, context);
             instructions.append(&mut stmts);
         }
         instructions.push(Unlink);
         instructions.push(Return);
 
-        Ok(instructions)
+        instructions
     }
 }
 
 impl<'a> Gen<'a> for Vec<PStmt<'a>> {
-    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
-        Ok(self
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Vec<Instruction> {
+        self
             .iter()
-            .map(|stmt| stmt.generate(scope, context))
-            .collect::<Result<Vec<Vec<Instruction>>>>()?
-            .into_iter()
-            .flatten()
-            .collect())
+            .flat_map(|stmt| stmt.generate(scope, context))
+            .collect()
     }
 }
 
 impl<'a> Gen<'a> for Stmt<'a> {
-    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Vec<Instruction> {
         let instructions = match self {
             Stmt::If(c, t, e) => {
                 scope.ifs += 1;
@@ -304,17 +304,17 @@ impl<'a> Gen<'a> for Stmt<'a> {
                     .clone()
                     .with_suffix(Suffix::EndIf(scope.ifs));
 
-                let mut instructions = c.generate(scope, context)?;
+                let mut instructions = c.generate(scope, context);
                 if e.is_empty() {
                     instructions.push(BranchFalse { label: end_label.clone() });
                 } else {
                     instructions.push(BranchFalse { label: else_label.clone() });
                 }
-                let mut then = t.generate(scope, context)?;
+                let mut then = t.generate(scope, context);
                 instructions.append(&mut then);
                 if !e.is_empty() {
                     instructions.push(Branch { label: end_label.clone() });
-                    let mut otherwise = e.generate(scope, context)?;
+                    let mut otherwise = e.generate(scope, context);
                     otherwise.insert(0, Labelled(else_label));
                     instructions.append(&mut otherwise);
                 }
@@ -331,11 +331,11 @@ impl<'a> Gen<'a> for Stmt<'a> {
                     .clone()
                     .with_suffix(Suffix::EndWhile(scope.whiles));
 
-                let mut instructions = c.generate(scope, context)?;
+                let mut instructions = c.generate(scope, context);
                 let labeled = Labelled(start_label.clone());
                 instructions.insert(0, labeled);
                 instructions.push(BranchFalse { label: end_label.clone() });
-                let mut t = t.generate(scope, context)?;
+                let mut t = t.generate(scope, context);
                 t.push(Branch { label: start_label });
                 t.push(Labelled(end_label));
                 instructions.append(&mut t);
@@ -343,7 +343,7 @@ impl<'a> Gen<'a> for Stmt<'a> {
             }
             Stmt::Assignment(id, fields, exp) => {
                 // Generate value
-                let mut instructions = exp.generate(scope, context)?;
+                let mut instructions = exp.generate(scope, context);
 
                 // Generate address
                 instructions.append(&mut scope.push_address(id));
@@ -361,7 +361,7 @@ impl<'a> Gen<'a> for Stmt<'a> {
 
                 instructions
             }
-            Stmt::FunCall(fun_call) => fun_call.generate(scope, context)?,
+            Stmt::FunCall(fun_call) => fun_call.generate(scope, context),
             Stmt::Return(ret) => {
                 match ret {
                     None => vec![
@@ -369,7 +369,7 @@ impl<'a> Gen<'a> for Stmt<'a> {
                         Return
                     ],
                     Some(exp) => exp
-                        .generate(scope, context)?
+                        .generate(scope, context)
                         .into_iter()
                         .chain(vec![
                             StoreRegister { reg: RR },
@@ -381,38 +381,38 @@ impl<'a> Gen<'a> for Stmt<'a> {
             }
         };
 
-        Ok(instructions)
+        instructions
     }
 }
 
 /// Generates an expression, leaving the result on top of the stack
 impl<'a> Gen<'a> for Exp<'a> {
-    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Vec<Instruction> {
         let instructions = match self {
             Exp::Variable(id) => scope.push_var(id),
             Exp::Number(n) => vec![LoadConstant(*n)],
             Exp::Character(c) => vec![LoadConstant(*c as i32)],
             Exp::Boolean(b) => vec![LoadConstant(if *b { -1 } else { 0 })],
             Exp::FunCall(fun_call) => {
-                let mut instructions = fun_call.generate(scope, context)?;
+                let mut instructions = fun_call.generate(scope, context);
                 instructions.push(LoadRegister { reg: RR });
                 instructions
             }
             Exp::Nil => vec![LoadConstant(0)],
             Exp::Tuple(l, r) => {
-                let mut instructions = r.generate(scope, context)?;
-                instructions.append(&mut l.generate(scope, context)?);
+                let mut instructions = r.generate(scope, context);
+                instructions.append(&mut l.generate(scope, context));
                 instructions.push(StoreMultiHeap { length: 2 });
                 instructions
             }
         };
 
-        Ok(instructions)
+        instructions
     }
 }
 
 impl<'a> Gen<'a> for FunCall<'a> {
-    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Result<Vec<Instruction>> {
+    fn generate(&self, scope: &mut Scope<'a>, context: &mut Context<'a>) -> Vec<Instruction> {
         let fun_call = {
             match scope.current_call.borrow().as_ref() {
                 None => self.clone(),
@@ -436,10 +436,7 @@ impl<'a> Gen<'a> for FunCall<'a> {
 
         let instructions = fun_call.args
             .iter()
-            .map(|arg| arg.generate(scope, context))
-            .collect::<Result<Vec<Vec<Instruction>>>>()?
-            .into_iter()
-            .flatten()
+            .flat_map(|arg| arg.generate(scope, context))
             .chain(vec![
                 // Branch to function
                 BranchSubroutine { label },
@@ -448,7 +445,7 @@ impl<'a> Gen<'a> for FunCall<'a> {
             ])
             .collect();
 
-        Ok(instructions)
+        instructions
     }
 }
 
@@ -459,7 +456,7 @@ impl FunCall<'_> {
             name.push_str(format!("{}", self.type_args
                 .borrow()
                 .iter()
-                .map(|(_, t)| format!("-t{}", t.content))
+                .map(|(_, t)| format!("{}", t.label()))
                 .collect::<Vec<String>>()
                 .join("-a")
             ).as_str());
@@ -468,8 +465,89 @@ impl FunCall<'_> {
     }
 }
 
+impl Type<'_> {
+    fn label(&self) -> String {
+        match self {
+            Type::Tuple(l, r) => format!("-P{}-c{}-p", l.label(), r.label()),
+            Type::Array(a) => format!("-L{}-l", a.label()),
+            // Type::Function(_, _) => {},
+            // Type::Polymorphic(_) => String::from("-x"),
+            _ => format!("-t{}", self)
+        }
+    }
+}
+
 mod core {
+    use std::cell::RefCell;
+    use std::ops::Deref;
+
     use crate::generator::prelude::*;
+    use crate::parser::{Exp, FunCall, FunDecl, Id, Stmt};
+    use crate::typer::{Substitution, Type};
+
+    pub fn gen_eq<'a>(fun_call: &FunCall<'a>) -> FunDecl<'a> {
+        let t = fun_call.type_args.borrow().deref().values().next().unwrap().clone();
+        match &t.content {
+            Type::Tuple(l_type, r_type) => {
+                let pos = fun_call.id.with(());
+                let l1 = Exp::FunCall(FunCall {
+                    id: pos.with(Id("fst".to_owned())),
+                    args: vec![fun_call.args[0].clone()],
+                    type_args: RefCell::new(Substitution::new())
+                });
+                let r1 = Exp::FunCall(FunCall {
+                    id: pos.with(Id("snd".to_owned())),
+                    args: vec![fun_call.args[0].clone()],
+                    type_args: RefCell::new(Substitution::new())
+                });
+                let l2 = Exp::FunCall(FunCall {
+                    id: pos.with(Id("fst".to_owned())),
+                    args: vec![fun_call.args[1].clone()],
+                    type_args: RefCell::new(Substitution::new())
+                });
+                let r2 = Exp::FunCall(FunCall {
+                    id: pos.with(Id("snd".to_owned())),
+                    args: vec![fun_call.args[1].clone()],
+                    type_args: RefCell::new(Substitution::new())
+                });
+                let l_subst = fun_call.type_args
+                    .borrow()
+                    .iter()
+                    .map(|(k, _)| (k.clone(), l_type.deref().clone()))
+                    .collect();
+                let l_fun_call = FunCall {
+                    id: fun_call.id.clone(),
+                    args: vec![pos.with(l1), pos.with(l2)],
+                    type_args: RefCell::new(l_subst),
+                };
+                let r_subst = fun_call.type_args
+                    .borrow()
+                    .iter()
+                    .map(|(k, _)| (k.clone(), r_type.deref().clone()))
+                    .collect();
+                let r_fun_call = FunCall {
+                    id: fun_call.id.clone(),
+                    args: vec![pos.with(r1), pos.with(r2)],
+                    type_args: RefCell::new(r_subst),
+                };
+                let and = FunCall {
+                    id: pos.with(Id("and".to_owned())),
+                    args: vec![pos.with(Exp::FunCall(r_fun_call)), pos.with(Exp::FunCall(l_fun_call))],
+                    type_args: RefCell::new(Substitution::new()),
+                };
+                let ret = Stmt::Return(Some(pos.with(Exp::FunCall(and))));
+                FunDecl {
+                    id: fun_call.id.clone(),
+                    args: vec![pos.with(Id("left".to_owned())), pos.with(Id("right".to_owned()))],
+                    fun_type: RefCell::new(pos.with(Some(pos.with(Type::Function(Box::new(t.clone()), Box::new(pos.with(Type::Function(Box::new(t), Box::new(pos.with(Type::Bool)))))))))),
+                    var_decls: vec![],
+                    stmts: vec![pos.with(ret)],
+                }
+            }
+            Type::Array(_) => unimplemented!(),
+            _ => panic!()
+        }
+    }
 
     pub fn core() -> (Vec<Instruction>, Vec<Label>) {
         let mut instructions = Vec::new();
