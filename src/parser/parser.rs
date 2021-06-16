@@ -249,7 +249,7 @@ impl<'a> Parsable<'a> for Option<PType<'a>> {
             _ => {
                 let parsed = Type::parse_basic(tokens, &mut Generator::new(), &mut HashMap::new())?;
                 match parsed.content {
-                    Type::Int | Type::Bool | Type::Char | Type::Tuple(_, _) | Type::Array(_) => {
+                    Type::Int | Type::Bool | Type::Char | Type::Tuple(_, _) | Type::List(_) => {
                         let (pos, inner) = parsed.eject();
                         Ok(pos.with(Some(pos.with(inner))))
                     }
@@ -320,7 +320,7 @@ impl<'a> Type<'a> {
                 token
                     .extend(&t)
                     .extend(&close)
-                    .with(Type::Array(Box::new(t)))
+                    .with(Type::List(Box::new(t)))
             }
             Token::Identifier(ref s) => {
                 let id = Id(s.clone());

@@ -389,15 +389,15 @@ impl<'a> TryInfer<'a> for PStmt<'a> {
                         let inner = e.with(Type::Polymorphic(gen.fresh()));
                         match field.content {
                             Field::Head => {
-                                let thing = current.with(Type::Array(Box::new(inner.clone())));
+                                let thing = current.with(Type::List(Box::new(inner.clone())));
                                 let subst_u = thing.unify_with(&current)?;
                                 current = inner.apply(&subst_u);
                                 Ok(subst_u.compose(&subst))
                             }
                             Field::Tail => {
-                                let thing = current.with(Type::Array(Box::new(inner.clone())));
+                                let thing = current.with(Type::List(Box::new(inner.clone())));
                                 let subst_u = thing.unify_with(&current)?;
-                                current = current.with(Type::Array(Box::new(inner))).apply(&subst_u);
+                                current = current.with(Type::List(Box::new(inner))).apply(&subst_u);
                                 Ok(subst_u.compose(&subst))
                             }
                             Field::First => {
@@ -445,7 +445,7 @@ impl<'a> Infer<'a> for PExp<'a> {
             Exp::Character(_) => Ok((Substitution::new(), self.with(Type::Char))),
             Exp::Boolean(_) => Ok((Substitution::new(), self.with(Type::Bool))),
             Exp::FunCall(fun_call) => fun_call.infer(env, gen),
-            Exp::Nil => Ok((Substitution::new(), self.with(Type::Array(Box::new(self.with(Type::Polymorphic(gen.fresh()))))))),
+            Exp::Nil => Ok((Substitution::new(), self.with(Type::List(Box::new(self.with(Type::Polymorphic(gen.fresh()))))))),
             Exp::Tuple(l, r) => {
                 let (l_subst, l_inferred) = l.infer(env, gen)?;
                 let (r_subst, r_inferred) = r.infer(&env.apply(&l_subst), gen)?;

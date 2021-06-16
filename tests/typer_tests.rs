@@ -26,7 +26,7 @@ fn list_exp() {
     let exp = Exp::parse(&mut "'a' : []".tokenize().unwrap().peekable()).unwrap();
     let (_, inferred) = exp.infer(&env, &mut gen).unwrap();
 
-    if let Type::Array(t) = inferred.content {
+    if let Type::List(t) = inferred.content {
         assert_eq!(Type::Char, t.content);
     } else {
         panic!();
@@ -55,7 +55,7 @@ fn assignment() {
 
     let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
-    if let Type::Array(t) = &result.inner.content {
+    if let Type::List(t) = &result.inner.content {
         assert_eq!(Type::Int, t.content);
     } else {
         panic!();
@@ -146,7 +146,7 @@ fn fields() {
 
     let result = env.get(&(Id("x".to_owned()), Space::Var)).unwrap();
 
-    if let Type::Array(result) = &result.inner.content {
+    if let Type::List(result) = &result.inner.content {
         if let Type::Tuple(result, _) = &result.content {
             if let Type::Tuple(_, result) = &result.content {
                 assert_eq!(Type::Bool, result.content);

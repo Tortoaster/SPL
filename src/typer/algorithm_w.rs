@@ -76,7 +76,7 @@ pub enum Type<'a> {
     Bool,
     Char,
     Tuple(Box<PType<'a>>, Box<PType<'a>>),
-    Array(Box<PType<'a>>),
+    List(Box<PType<'a>>),
     Function(Box<PType<'a>>, Box<PType<'a>>),
     Polymorphic(TypeVariable),
 }
@@ -93,7 +93,7 @@ impl<'a> Type<'a> {
             TypeClass::Show | TypeClass::Eq => match self {
                 Type::Int | Type::Char | Type::Bool => true,
                 Type::Tuple(l, r) => l.implements(class)? && r.implements(class)?,
-                Type::Array(a) => a.implements(class)?,
+                Type::List(a) => a.implements(class)?,
                 _ => false
             }
             TypeClass::Ord => match self {
@@ -113,7 +113,7 @@ impl<'a> Type<'a> {
             Type::Char => format!("Char"),
             Type::Tuple(l, r) =>
                 format!("({}, {})", l.format(poly_names), r.format(poly_names)),
-            Type::Array(a) => format!("[{}]", a.format(poly_names)),
+            Type::List(a) => format!("[{}]", a.format(poly_names)),
             Type::Function(a, b) => match b.content {
                 Type::Function(_, _) => format!("{} {}", a.format(poly_names), b.format(poly_names)),
                 _ => format!("{} -> {}", a.format(poly_names), b.format(poly_names))
@@ -135,7 +135,7 @@ impl<'a> PType<'a> {
                 let subst_r = r1.apply(&subst_l).unify_with(&r2.apply(&subst_l))?;
                 Ok(subst_r.compose(&subst_l))
             }
-            (Type::Array(t1), Type::Array(t2)) => t1.unify_with(t2),
+            (Type::List(t1), Type::List(t2)) => t1.unify_with(t2),
             (Type::Function(a1, b1), Type::Function(a2, b2)) => {
                 let subst_a = a1.unify_with(a2)?;
                 let subst_b = b1.apply(&subst_a).unify_with(&b2.apply(&subst_a))?;
@@ -159,7 +159,7 @@ impl<'a> PType<'a> {
             (Type::Tuple(l1, r1), Type::Tuple(l2, r2)) => l1
                 .find_substitution(l2)
                 .compose(&r1.find_substitution(r2)),
-            (Type::Array(a1), Type::Array(a2)) => a1.find_substitution(a2),
+            (Type::List(a1), Type::List(a2)) => a1.find_substitution(a2),
             (Type::Function(arg1, res1), Type::Function(arg2, res2)) => arg1
                 .find_substitution(arg2)
                 .compose(&res1.find_substitution(res2)),
@@ -426,7 +426,7 @@ impl<'a> Typed<'a> for PType<'a> {
                 .union(&r.free_vars())
                 .cloned()
                 .collect(),
-            Type::Array(a) => a.free_vars(),
+            Type::List(a) => a.free_vars(),
             Type::Function(a, b) => a
                 .free_vars()
                 .union(&b.free_vars())
@@ -441,8 +441,8 @@ impl<'a> Typed<'a> for PType<'a> {
             Type::Void | Type::Int | Type::Bool | Type::Char => self.clone(),
             Type::Tuple(l, r) => self
                 .with(Type::Tuple(Box::new(l.apply(subst)), Box::new(r.apply(subst)))),
-            Type::Array(a) => self
-                .with(Type::Array(Box::new(a.apply(subst)))),
+            Type::List(a) => self
+                .with(Type::List(Box::new(a.apply(subst)))),
             Type::Function(a, b) => self
                 .with(Type::Function(Box::new(a.apply(subst)), Box::new(b.apply(subst)))),
             Type::Polymorphic(v) => subst.get(v).unwrap_or(self).clone(),

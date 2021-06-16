@@ -469,7 +469,7 @@ impl Type<'_> {
     fn label(&self) -> String {
         match self {
             Type::Tuple(l, r) => format!("-P{}-c{}-p", l.label(), r.label()),
-            Type::Array(a) => format!("-L{}-l", a.label()),
+            Type::List(a) => format!("-L{}-l", a.label()),
             // Type::Function(_, _) => {},
             // Type::Polymorphic(_) => String::from("-x"),
             _ => format!("-t{}", self)
@@ -544,7 +544,7 @@ mod core {
                     stmts: vec![pos.with(ret)],
                 }
             }
-            Type::Array(_) => unimplemented!(),
+            Type::List(_) => unimplemented!(),
             _ => panic!()
         }
     }
