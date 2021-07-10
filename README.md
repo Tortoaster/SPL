@@ -1,6 +1,12 @@
 # SPL Compiler
 
-This is a work-in-progress compiler for the Simple Programming Language specification, written in Rust. Currently, it
-features a simple lexer and parser. The operator precedence handling is done
-using [Pratt parsing](https://en.wikipedia.org/wiki/Operator-precedence_parser).
-See [this blog](https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html) for more details.
+This Simple Programming Language compiler features:
+
+* Variables
+* Functions, some of which are overloaded
+* Conditionals and loops
+* Boolean and arithmetic expressions, tuples, and lists
+* A static type system that supports basic types, types composed of tuples and lists, and polymorphic types
+* Polymorphic type inference
+
+Please see the [tests](https://github.com/Tortoaster/SPL/tree/main/tests/res) for example programs.
